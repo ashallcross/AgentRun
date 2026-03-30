@@ -7,13 +7,13 @@ import type { UmbRoute } from "@umbraco-cms/backoffice/router";
 export class ShallaiDashboardElement extends UmbLitElement {
   private _routes: UmbRoute[] = [
     {
-      path: "workflows",
-      component: () => import("./shallai-workflow-list.element.js"),
+      path: "workflows/:alias",
+      component: () => import("./shallai-instance-list.element.js"),
       setup: () => {},
     },
     {
-      path: "workflows/:alias",
-      component: () => import("./shallai-instance-list.element.js"),
+      path: "workflows",
+      component: () => import("./shallai-workflow-list.element.js"),
       setup: () => {},
     },
     {

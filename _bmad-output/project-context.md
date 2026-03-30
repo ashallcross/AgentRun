@@ -127,6 +127,7 @@ _This file contains critical rules and patterns that AI agents must follow when 
 #### Build & Run
 - Backend: `dotnet run` from TestSite project for local development
 - Frontend: `npm run watch` from `Client/` folder — Vite rebuilds on change
+- **CRITICAL: The repo root contains multiple projects** — always specify the solution file explicitly: `dotnet test Shallai.UmbracoAgentRunner.slnx` (not bare `dotnet test`). Bare `dotnet test` fails with MSB1011.
 - Frontend build output: `wwwroot/App_Plugins/ShallaiUmbracoAgentRunner/` (no dots in folder name)
 - Umbraco has a 10-second manifest cache in development — frontend changes may not appear instantly
 - Run `npm run build` in `Client/` before committing to ensure `wwwroot/` output is up to date

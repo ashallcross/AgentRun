@@ -124,7 +124,7 @@ export class ShallaiWorkflowListElement extends UmbLitElement {
               </uui-table-cell>
               <uui-table-cell>${w.stepCount} steps</uui-table-cell>
               <uui-table-cell>
-                <uui-badge>${w.mode}</uui-badge>
+                <uui-tag>${w.mode}</uui-tag>
               </uui-table-cell>
             </uui-table-row>
           `

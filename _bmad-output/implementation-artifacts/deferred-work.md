@@ -33,3 +33,12 @@
 
 - Cancel endpoint TOCTOU race between FindInstanceAsync and SetInstanceStatusAsync — status could change between the two calls allowing cancellation of a just-completed instance. Requires InstanceManager-level locking (same as 3-1 read-modify-write race).
 - Delete endpoint TOCTOU race between FindInstanceAsync and DeleteInstanceAsync — same TOCTOU pattern. A concurrent status change could cause DeleteInstanceAsync to throw an unhandled InvalidOperationException (500). Requires InstanceManager-level locking.
+
+## Deferred from: code review of 3-3-instance-list-dashboard (2026-03-31)
+
+- _formatStep edge cases with out-of-range stepIndex or stepCount=0 — If backend returns `currentStepIndex >= stepCount`, displays "6 of 3". When stepCount=0, falls back to "Step N". Pre-existing backend data integrity concern.
+- Empty workflowAlias not guarded — If URL ends with `/`, extractWorkflowAlias returns empty string. Umbraco router matching makes this unlikely in practice.
+- relativeTime never shows years — Dates >365 days show "12 months ago", "24 months ago" etc. No year category. Instances unlikely to be that old at current scale.
+- Promise.all partial failure — If getWorkflows succeeds but getInstances fails (or vice versa), both results are discarded. Acceptable for current scope.
+- No abort on component disconnect — _loadData promise is fire-and-forget; if component disconnects mid-fetch, state sets on detached element. Standard Lit lifecycle pattern.
+- Full workflow list fetch for name resolution — Fetches entire workflow list to resolve one name. Acceptable at current scale.

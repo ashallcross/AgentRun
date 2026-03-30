@@ -9,14 +9,14 @@ let e = class extends u {
   constructor() {
     super(...arguments), this._routes = [
       {
-        path: "workflows",
-        component: () => import("./shallai-workflow-list.element-DDeE5c60.js"),
+        path: "workflows/:alias",
+        component: () => import("./shallai-instance-list.element-CieA6PCC.js"),
         setup: () => {
         }
       },
       {
-        path: "workflows/:alias",
-        component: () => import("./shallai-instance-list.element-D3dzDShQ.js"),
+        path: "workflows",
+        component: () => import("./shallai-workflow-list.element-hdaZN7IP.js"),
         setup: () => {
         }
       },
@@ -53,4 +53,4 @@ export {
   e as ShallaiDashboardElement,
   f as default
 };
-//# sourceMappingURL=shallai-dashboard.element-CV9h4JhB.js.map
+//# sourceMappingURL=shallai-dashboard.element-mcaPlQ7N.js.map
