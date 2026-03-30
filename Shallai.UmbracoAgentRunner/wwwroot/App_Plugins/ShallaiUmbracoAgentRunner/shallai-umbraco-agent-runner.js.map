@@ -1,0 +1,1 @@
+{"version":3,"file":"shallai-umbraco-agent-runner.js","sources":["../../../Client/src/manifests.ts"],"sourcesContent":["export const manifests: Array<UmbExtensionManifest> = [];\n"],"names":["manifests"],"mappings":"AAAO,MAAMA,IAAyC,CAAA;"}
