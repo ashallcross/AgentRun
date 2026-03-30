@@ -32,6 +32,12 @@ so that {{benefit}}.
 - Alignment with unified project structure (paths, modules, naming)
 - Detected conflicts or variances (with rationale)
 
+### Retrospective Intelligence
+
+- Lessons learned from previous sprints/epics that apply to this story
+- Patterns to repeat and anti-patterns to avoid
+- [Source: retrospective report file(s)]
+
 ### References
 
 - Cite all technical details with source paths and sections, e.g. [Source: docs/<file>.md#Section]

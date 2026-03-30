@@ -1,0 +1,7 @@
+name: Invalid Mode Workflow
+description: Mode field has wrong value
+mode: batch
+steps:
+  - id: step_one
+    name: Step One
+    agent: agents/worker.md

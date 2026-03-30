@@ -232,6 +232,19 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
   all learnings that could impact current story implementation</action>
   </check>
 
+  <!-- Retrospective intelligence from all completed sprints/epics -->
+  <action>Search {implementation_artifacts} for ALL retrospective report files (e.g., *retrospective*, *retro*)</action>
+  <check if="retrospective reports found">
+    <action>Load and analyze ALL retrospective reports from previous sprints/epics</action>
+    **RETROSPECTIVE INTELLIGENCE:**
+    - Lessons learned that apply to this story's technical domain
+    - Patterns or approaches that worked well and should be repeated
+    - Anti-patterns or pitfalls discovered that must be avoided
+    - Process improvements that affect story implementation
+    - Technical debt or deferred items that may impact this story
+    <action>Extract all actionable hints and tips relevant to the current story and include them in the story file</action>
+  </check>
+
   <!-- Git intelligence for previous work patterns -->
   <check
     if="previous story exists AND git repository detected">
@@ -316,6 +329,11 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
   <check
     if="previous story learnings available">
     <template-output file="{default_output_file}">previous_story_intelligence</template-output>
+  </check>
+
+  <!-- Retrospective intelligence from completed sprints/epics -->
+  <check if="retrospective reports found">
+    <template-output file="{default_output_file}">retrospective_intelligence</template-output>
   </check>
 
   <!-- Git intelligence -->

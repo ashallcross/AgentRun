@@ -1,0 +1,4 @@
+name: Empty Steps Workflow
+description: This workflow has an empty steps array
+mode: autonomous
+steps: []

@@ -18,6 +18,7 @@
     <PackageReference Include="Umbraco.Cms.Web.Common" Version="17.2.2" />
     <PackageReference Include="Umbraco.Cms.Api.Common" Version="17.2.2" />
     <PackageReference Include="Umbraco.Cms.Api.Management" Version="17.2.2" />
+    <PackageReference Include="YamlDotNet" Version="16.3.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -30,6 +31,10 @@
 
   <ItemGroup>
     <Folder Include="wwwroot\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Schemas\workflow-schema.json" />
   </ItemGroup>
 
 </Project>

@@ -1,0 +1,7 @@
+name: Minimal Workflow
+description: A minimal valid workflow
+mode: interactive
+steps:
+  - id: only_step
+    name: Only Step
+    agent: agents/worker.md
