@@ -1,5 +1,5 @@
 # generated: 2026-03-30
-# last_updated: 2026-03-30 (story 2-1 done)
+# last_updated: 2026-03-30 (story 2-2 done)
 # project: Shallai.UmbracoAgentRunner
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-30
-last_updated: 2026-03-30
+last_updated: 2026-03-30 (story 2-2 done)
 project: Shallai.UmbracoAgentRunner
 project_key: NOKEY
 tracking_system: file-system
@@ -52,7 +52,7 @@ development_status:
   # Epic 2: Workflow Discovery & Browsing
   epic-2: in-progress
   2-1-workflow-yaml-parsing-and-validation: done
-  2-2-workflow-registry-and-discovery: backlog
+  2-2-workflow-registry-and-discovery: done
   2-3-workflow-list-api-and-dashboard: backlog
   epic-2-retrospective: optional
 
