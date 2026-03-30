@@ -10,7 +10,7 @@ let e = class extends u {
     super(...arguments), this._routes = [
       {
         path: "workflows",
-        component: () => import("./shallai-workflow-list.element-BllN_3Lq.js"),
+        component: () => import("./shallai-workflow-list.element-DDeE5c60.js"),
         setup: () => {
         }
       },
@@ -53,4 +53,4 @@ export {
   e as ShallaiDashboardElement,
   f as default
 };
-//# sourceMappingURL=shallai-dashboard.element-BadnQazo.js.map
+//# sourceMappingURL=shallai-dashboard.element-CV9h4JhB.js.map
