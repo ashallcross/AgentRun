@@ -7,7 +7,7 @@ using YamlDotNet.Serialization.NamingConventions;
 
 namespace Shallai.UmbracoAgentRunner.Instances;
 
-public sealed class InstanceManager : IInstanceManager
+public sealed partial class InstanceManager : IInstanceManager
 {
     private readonly string _dataRootPath;
     private readonly ILogger<InstanceManager> _logger;
@@ -255,6 +255,50 @@ public sealed class InstanceManager : IInstanceManager
 
         return true;
     }
+
+    public async Task<InstanceState?> FindInstanceAsync(
+        string instanceId,
+        CancellationToken cancellationToken)
+    {
+        if (!InstanceIdRegex().IsMatch(instanceId))
+        {
+            return null;
+        }
+
+        if (!Directory.Exists(_dataRootPath))
+        {
+            return null;
+        }
+
+        foreach (var workflowDir in Directory.GetDirectories(_dataRootPath))
+        {
+            var instanceDir = Path.GetFullPath(Path.Combine(workflowDir, instanceId));
+            if (!instanceDir.StartsWith(_dataRootPath, StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            var yamlPath = Path.Combine(instanceDir, "instance.yaml");
+
+            if (File.Exists(yamlPath))
+            {
+                try
+                {
+                    return await ReadStateAsync(yamlPath, cancellationToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogWarning(ex, "Failed to read instance state from {Path}, skipping", yamlPath);
+                    return null;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex("^[0-9a-f]{32}$")]
+    private static partial System.Text.RegularExpressions.Regex InstanceIdRegex();
 
     private string GetInstanceDirectory(string workflowAlias, string instanceId)
     {

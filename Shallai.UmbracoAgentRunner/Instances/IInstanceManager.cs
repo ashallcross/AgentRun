@@ -15,4 +15,6 @@ public interface IInstanceManager
     Task<InstanceState> SetInstanceStatusAsync(string workflowAlias, string instanceId, InstanceStatus status, CancellationToken cancellationToken);
 
     Task<bool> DeleteInstanceAsync(string workflowAlias, string instanceId, CancellationToken cancellationToken);
+
+    Task<InstanceState?> FindInstanceAsync(string instanceId, CancellationToken cancellationToken);
 }

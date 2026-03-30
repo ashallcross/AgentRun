@@ -290,6 +290,51 @@ public class InstanceManagerTests
     }
 
     [Test]
+    public async Task FindInstance_ReturnsInstanceAcrossWorkflows()
+    {
+        var definition = CreateTestDefinition();
+        var created = await _manager.CreateInstanceAsync("workflow-a", definition, "admin@example.com", CancellationToken.None);
+
+        var found = await _manager.FindInstanceAsync(created.InstanceId, CancellationToken.None);
+
+        Assert.That(found, Is.Not.Null);
+        Assert.That(found!.InstanceId, Is.EqualTo(created.InstanceId));
+        Assert.That(found.WorkflowAlias, Is.EqualTo("workflow-a"));
+    }
+
+    [Test]
+    public async Task FindInstance_ReturnsNull_WhenNotFound()
+    {
+        var result = await _manager.FindInstanceAsync("nonexistent", CancellationToken.None);
+
+        Assert.That(result, Is.Null);
+    }
+
+    [Test]
+    public async Task FindInstance_ReturnsNull_WhenNoDataRoot()
+    {
+        var nonExistentDir = Path.Combine(Path.GetTempPath(), "shallai-nonexistent-" + Guid.NewGuid().ToString("N"));
+        var logger = NSubstitute.Substitute.For<ILogger<InstanceManager>>();
+        var manager = new InstanceManager(nonExistentDir, logger);
+
+        var result = await manager.FindInstanceAsync("a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5", CancellationToken.None);
+
+        Assert.That(result, Is.Null);
+    }
+
+    [Test]
+    [TestCase("../traversal")]
+    [TestCase("abc")]
+    [TestCase("ABCDEF01234567890ABCDEF012345678")]
+    [TestCase("a0b1c2d3-e4f5-a6b7-c8d9-e0f1a2b3c4d5")]
+    public async Task FindInstance_ReturnsNull_WhenInstanceIdFormatInvalid(string invalidId)
+    {
+        var result = await _manager.FindInstanceAsync(invalidId, CancellationToken.None);
+
+        Assert.That(result, Is.Null);
+    }
+
+    [Test]
     public async Task AtomicWrites_NoTmpFilePersistedAfterWrite()
     {
         var definition = CreateTestDefinition();
