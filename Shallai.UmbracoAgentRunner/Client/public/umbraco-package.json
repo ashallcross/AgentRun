@@ -1,0 +1,14 @@
+{
+  "id": "Shallai.UmbracoAgentRunner",
+  "name": "Shallai.UmbracoAgentRunner",
+  "version": "0.0.0",
+  "allowTelemetry": true,
+  "extensions": [
+    {
+      "name": "Shallai Umbraco Agent Runner Bundle",
+      "alias": "Shallai.UmbracoAgentRunner.Bundle",
+      "type": "bundle",
+      "js": "/App_Plugins/ShallaiUmbracoAgentRunner/shallai-umbraco-agent-runner.js"
+    }
+  ]
+}

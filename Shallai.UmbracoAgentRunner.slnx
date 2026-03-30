@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="Shallai.UmbracoAgentRunner.Tests/Shallai.UmbracoAgentRunner.Tests.csproj" />
+  <Project Path="Shallai.UmbracoAgentRunner.TestSite/Shallai.UmbracoAgentRunner.TestSite.csproj" />
+  <Project Path="Shallai.UmbracoAgentRunner/Shallai.UmbracoAgentRunner.csproj" />
+</Solution>
