@@ -1,3 +1,4 @@
+using YamlDotNet.Core;
 using YamlDotNet.Serialization;
 
 namespace Shallai.UmbracoAgentRunner.Workflows;
@@ -36,7 +37,7 @@ public sealed class WorkflowValidator : IWorkflowValidator
         {
             rootDict = _deserializer.Deserialize<Dictionary<object, object>>(yamlContent);
         }
-        catch (Exception ex)
+        catch (YamlException ex)
         {
             errors.Add(new WorkflowValidationError("workflow", $"YAML parsing failed: {ex.Message}"));
             return new WorkflowValidationResult(errors);

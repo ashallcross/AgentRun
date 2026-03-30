@@ -176,6 +176,14 @@ Claude Opus 4.6 (1M context)
 
 N/A — clean implementation, no debugging required.
 
+### Review Pass 2 Notes (2026-03-30)
+
+- Three-layer adversarial review (Blind Hunter, Edge Case Hunter, Acceptance Auditor) produced 25 raw findings across layers, collapsed to 10 unique after dedup — 8 dismissed, 2 patched
+- Parser/Validator design split (IgnoreUnmatchedProperties vs strict rejection) flagged by all 3 layers — confirmed as deliberate, documented in pass 1 notes
+- List item type validation (tools, reads_from, writes_to accepting non-string items) re-flagged — already deferred to Story 5.4 in pass 1
+- Two deserializer instances (parser uses UnderscoredNamingConvention, validator uses raw Dictionary) is inherent to the design — parser needs typed deserialization, validator needs raw key access for unknown property detection
+- YamlDotNet scalar resolution in `Dictionary<object, object>` context: unquoted integers (e.g. `mode: 123`) are kept as strings, confirmed by passing tests — worth knowing for future YAML work
+
 ### Completion Notes List
 
 - Added YamlDotNet 16.3.0 NuGet package to main project
@@ -199,6 +207,11 @@ N/A — clean implementation, no debugging required.
 - [x] [Review][Patch] Removed dead `UnderscoredNamingConvention` from validator deserializer
 - [x] [Review][Defer] YAML date coercion on string fields — unquoted date-like values (e.g. `id: 2026-03-30`) silently coerced by YamlDotNet. Project context warns about this. Unlikely in workflow YAML but affects broader YamlDotNet usage — deferred, cross-cutting concern
 - [x] [Review][Defer] List item type validation — `tools`, `reads_from`, `writes_to` accept non-string items silently. Validator scope is structural; semantic tool validation is Story 5.4 — deferred, future story scope
+
+#### Review Pass 2 (2026-03-30)
+
+- [x] [Review][Patch] Validator catches bare `Exception` — narrowed to `YamlException` to avoid swallowing/misreporting unrelated exceptions [WorkflowValidator.cs:40]
+- [x] [Review][Patch] `WorkflowParser.Parse` null input throws unguarded `ArgumentNullException` — added `ArgumentNullException.ThrowIfNull(yamlContent)` guard [WorkflowParser.cs:16]
 
 ### File List
 

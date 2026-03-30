@@ -13,6 +13,8 @@ public sealed class WorkflowParser : IWorkflowParser
 
     public WorkflowDefinition Parse(string yamlContent)
     {
+        ArgumentNullException.ThrowIfNull(yamlContent);
+
         try
         {
             var result = _deserializer.Deserialize<WorkflowDefinition>(yamlContent);
