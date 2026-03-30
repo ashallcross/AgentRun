@@ -46,7 +46,7 @@ development_status:
   epic-1: in-progress
   1-1-scaffold-rcl-package-project: done
   1-2-frontend-build-toolchain: done
-  1-3-dashboard-shell-and-empty-views: backlog
+  1-3-dashboard-shell-and-empty-views: done
   epic-1-retrospective: optional
 
   # Epic 2: Workflow Discovery & Browsing
