@@ -113,6 +113,21 @@ public static class ToolLoop
                 {
                     throw;
                 }
+                catch (ToolExecutionException tex)
+                {
+                    logger.LogWarning(tex,
+                        "Tool {ToolName} execution error for step {StepId} in workflow {WorkflowAlias} instance {InstanceId}",
+                        tool.Name, context.StepId, context.WorkflowAlias, context.InstanceId);
+
+                    if (emitter is not null)
+                    {
+                        await emitter.EmitToolEndAsync(functionCall.CallId, cancellationToken);
+                    }
+
+                    resultContents.Add(new FunctionResultContent(
+                        functionCall.CallId,
+                        $"Tool '{tool.Name}' execution error: {tex.Message}"));
+                }
                 catch (Exception ex)
                 {
                     logger.LogWarning(ex,

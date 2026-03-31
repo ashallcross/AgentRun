@@ -39,7 +39,11 @@ public class AgentRunnerComposer : IComposer
         // Workflow orchestrator (step sequencing + mode logic)
         builder.Services.AddSingleton<IWorkflowOrchestrator, WorkflowOrchestrator>();
 
-        // Tools registered individually (Epic 5):
+        // Tools — register each IWorkflowTool individually (Epic 5)
+        // Concrete tools added in Stories 5.2 (file tools) and 5.3 (fetch_url):
         // builder.Services.AddSingleton<IWorkflowTool, ReadFileTool>();
+        // builder.Services.AddSingleton<IWorkflowTool, WriteFileTool>();
+        // builder.Services.AddSingleton<IWorkflowTool, ListFilesTool>();
+        // builder.Services.AddSingleton<IWorkflowTool, FetchUrlTool>();
     }
 }

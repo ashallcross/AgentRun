@@ -175,6 +175,7 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - **Commit-per-story** — one commit per completed story, never batch an entire epic
 - **Code reviewer checks epic plan first** — prevents flagging future work as bugs
 - **Stories must include "What NOT to Build"** — prevents agent scope creep
+- **Stories must include "Failure & Edge Cases" section** — list non-obvious failure modes: what happens if external dependencies misbehave (LLM loops, API timeouts), what happens on cancellation (OCE propagation, cleanup), and boundary conditions (empty lists, not-found, concurrent access). The dev agent implements what's specified — unspecified failure paths become bugs.
 - **Test targets ~10 per story** — set after story breakdown, treat as guidelines not ceilings
 - **Manual E2E validation in story specs** — it's a refinement loop, not just a gate
 - **Production smoke test in Definition of Done** — dev servers mask runtime differences

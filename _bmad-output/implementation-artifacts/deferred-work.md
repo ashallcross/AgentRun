@@ -74,3 +74,15 @@
 - TOCTOU race on concurrent POST /start requests — two requests can both pass the Running guard and execute concurrently. Per-instance SemaphoreSlim locking explicitly deferred in story spec.
 - No timeout/abort on frontend SSE stream reader — if server hangs, client waits indefinitely with no AbortController. Deferred to v2 (NFR5 reconnection scope).
 - No way to resume failed autonomous workflow — if an intermediate step fails, instance is stuck at Failed with advanced CurrentStepIndex. Retry/resume is Story 7.2.
+
+## Deferred from: code review of 5-1-tool-interface-and-registration (2026-03-31)
+
+- Generic `Exception` in ToolLoop logged at Warning — unexpected failures (bugs, OOM, network) should be Error level for monitoring/alerting [Engine/ToolLoop.cs:133]
+- Error catch blocks don't emit `tool.result` SSE event — success path emits both `tool.end` + `tool.result`, error paths only emit `tool.end`, creating inconsistency for frontend consumers [Engine/ToolLoop.cs:122-141]
+- Emitter exceptions not caught — if SSE connection drops mid-step, emitter calls at lines 44/85/92/106 propagate uncaught and kill the step [Engine/ToolLoop.cs]
+- `client.GetResponseAsync` exceptions propagate uncaught from ToolLoop — no retry or structured error for transient LLM failures [Engine/ToolLoop.cs:33]
+- `functionCall.Name` null from malformed LLM response causes `ArgumentNullException` on `OrdinalIgnoreCase` dictionary lookup [Engine/ToolLoop.cs:70]
+- Duplicate tool names in DI crash `StepExecutor.ToDictionary()` with unstructured `ArgumentException` — no guard or helpful error message [Engine/StepExecutor.cs:97]
+- No test for CancellationToken propagation to `client.GetResponseAsync` [Engine/ToolLoop.cs:33]
+- No test coverage for SSE emitter interactions — all ToolLoop tests pass null emitter
+- `ExecuteAsync` returns `Task<object>` — null return value untested, may produce null `FunctionResultContent.Result`

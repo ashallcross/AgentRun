@@ -275,4 +275,77 @@ public class ToolLoopTests
             async () => await ToolLoop.RunAsync(_chatClient, messages, new ChatOptions(), declaredTools, _context, _logger, CancellationToken.None));
         Assert.That(ex!.Message, Does.Contain("exceeded maximum"));
     }
+
+    [Test]
+    public async Task ToolExecutionException_ReturnedAsStructuredErrorResult()
+    {
+        // AC #8: ToolExecutionException caught with structured error message format
+        var tool = Substitute.For<IWorkflowTool>();
+        tool.Name.Returns("read_file");
+        tool.Description.Returns("Reads a file");
+        tool.ExecuteAsync(Arg.Any<IDictionary<string, object?>>(), Arg.Any<ToolExecutionContext>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new ToolExecutionException("file not found: test.txt"));
+
+        var declaredTools = new Dictionary<string, IWorkflowTool>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["read_file"] = tool
+        };
+
+        var callSequence = 0;
+        _chatClient.GetResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                callSequence++;
+                if (callSequence == 1)
+                    return MakeResponseWithToolCalls(("call-1", "read_file", null));
+                return MakeTextResponse("handled");
+            });
+
+        var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
+
+        await ToolLoop.RunAsync(_chatClient, messages, new ChatOptions(), declaredTools, _context, _logger, CancellationToken.None);
+
+        var toolMessage = messages.FirstOrDefault(m => m.Role == ChatRole.Tool);
+        Assert.That(toolMessage, Is.Not.Null);
+        var resultContent = toolMessage!.Contents.OfType<FunctionResultContent>().FirstOrDefault();
+        Assert.That(resultContent!.Result?.ToString(), Does.Contain("execution error"));
+        Assert.That(resultContent.Result?.ToString(), Does.Contain("file not found: test.txt"));
+    }
+
+    [Test]
+    public async Task GenericException_StillReturnedAsErrorResult_AfterToolExecutionExceptionCatch()
+    {
+        // AC #8: generic exceptions still handled by catch-all (backwards compatible)
+        var tool = Substitute.For<IWorkflowTool>();
+        tool.Name.Returns("failing_tool");
+        tool.Description.Returns("Fails generically");
+        tool.ExecuteAsync(Arg.Any<IDictionary<string, object?>>(), Arg.Any<ToolExecutionContext>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("unexpected error"));
+
+        var declaredTools = new Dictionary<string, IWorkflowTool>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["failing_tool"] = tool
+        };
+
+        var callSequence = 0;
+        _chatClient.GetResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                callSequence++;
+                if (callSequence == 1)
+                    return MakeResponseWithToolCalls(("call-1", "failing_tool", null));
+                return MakeTextResponse("handled");
+            });
+
+        var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
+
+        await ToolLoop.RunAsync(_chatClient, messages, new ChatOptions(), declaredTools, _context, _logger, CancellationToken.None);
+
+        var toolMessage = messages.FirstOrDefault(m => m.Role == ChatRole.Tool);
+        Assert.That(toolMessage, Is.Not.Null);
+        var resultContent = toolMessage!.Contents.OfType<FunctionResultContent>().FirstOrDefault();
+        // Generic catch uses "failed:" not "execution error:"
+        Assert.That(resultContent!.Result?.ToString(), Does.Contain("failed:"));
+        Assert.That(resultContent.Result?.ToString(), Does.Contain("unexpected error"));
+    }
 }
