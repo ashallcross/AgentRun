@@ -27,6 +27,8 @@ public class AgentRunnerComposer : IComposer
         // Engine services
         builder.Services.AddSingleton<IPromptAssembler, PromptAssembler>();
         builder.Services.AddSingleton<IProfileResolver, ProfileResolver>();
+        builder.Services.AddSingleton<ICompletionChecker, CompletionChecker>();
+        builder.Services.AddSingleton<IArtifactValidator, ArtifactValidator>();
 
         // Startup handler
         builder.AddNotificationHandler<UmbracoApplicationStartedNotification, WorkflowRegistryInitializer>();

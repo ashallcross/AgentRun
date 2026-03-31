@@ -10,6 +10,8 @@ public class StepExecutor : IStepExecutor
     private readonly IPromptAssembler _promptAssembler;
     private readonly IEnumerable<IWorkflowTool> _allTools;
     private readonly IInstanceManager _instanceManager;
+    private readonly IArtifactValidator _artifactValidator;
+    private readonly ICompletionChecker _completionChecker;
     private readonly ILogger<StepExecutor> _logger;
 
     public StepExecutor(
@@ -17,12 +19,16 @@ public class StepExecutor : IStepExecutor
         IPromptAssembler promptAssembler,
         IEnumerable<IWorkflowTool> allTools,
         IInstanceManager instanceManager,
+        IArtifactValidator artifactValidator,
+        ICompletionChecker completionChecker,
         ILogger<StepExecutor> logger)
     {
         _profileResolver = profileResolver;
         _promptAssembler = promptAssembler;
         _allTools = allTools;
         _instanceManager = instanceManager;
+        _artifactValidator = artifactValidator;
+        _completionChecker = completionChecker;
         _logger = logger;
     }
 
@@ -51,6 +57,32 @@ public class StepExecutor : IStepExecutor
             // Update step status to Active
             await _instanceManager.UpdateStepStatusAsync(
                 instance.WorkflowAlias, instance.InstanceId, stepIndex, StepStatus.Active, cancellationToken);
+
+            // Validate reads_from artifacts before calling the LLM
+            var validationResult = await _artifactValidator.ValidateInputArtifactsAsync(
+                step, context.InstanceFolderPath, cancellationToken);
+
+            if (!validationResult.Passed)
+            {
+                _logger.LogError(
+                    "Input artifact validation failed for step {StepId} in workflow {WorkflowAlias} instance {InstanceId}: missing files {MissingFiles}",
+                    step.Id, instance.WorkflowAlias, instance.InstanceId,
+                    string.Join(", ", validationResult.MissingFiles));
+
+                try
+                {
+                    await _instanceManager.UpdateStepStatusAsync(
+                        instance.WorkflowAlias, instance.InstanceId, stepIndex, StepStatus.Error, CancellationToken.None);
+                }
+                catch (Exception statusEx)
+                {
+                    _logger.LogCritical(statusEx,
+                        "Failed to update step status to Error for step {StepId} in workflow {WorkflowAlias} instance {InstanceId}",
+                        step.Id, instance.WorkflowAlias, instance.InstanceId);
+                }
+
+                return;
+            }
 
             // Resolve IChatClient via profile resolver
             var client = await _profileResolver.ResolveAndGetClientAsync(step, workflow, cancellationToken);
@@ -114,6 +146,32 @@ public class StepExecutor : IStepExecutor
             _logger.LogInformation(
                 "Tool loop complete for step {StepId} in workflow {WorkflowAlias} instance {InstanceId}",
                 step.Id, instance.WorkflowAlias, instance.InstanceId);
+
+            // Run completion check
+            var completionResult = await _completionChecker.CheckAsync(
+                step.CompletionCheck, context.InstanceFolderPath, cancellationToken);
+
+            if (!completionResult.Passed)
+            {
+                _logger.LogWarning(
+                    "Completion check failed for step {StepId} in workflow {WorkflowAlias} instance {InstanceId}: missing files {MissingFiles}",
+                    step.Id, instance.WorkflowAlias, instance.InstanceId,
+                    string.Join(", ", completionResult.MissingFiles));
+
+                try
+                {
+                    await _instanceManager.UpdateStepStatusAsync(
+                        instance.WorkflowAlias, instance.InstanceId, stepIndex, StepStatus.Error, CancellationToken.None);
+                }
+                catch (Exception statusEx)
+                {
+                    _logger.LogCritical(statusEx,
+                        "Failed to update step status to Error for step {StepId} in workflow {WorkflowAlias} instance {InstanceId}",
+                        step.Id, instance.WorkflowAlias, instance.InstanceId);
+                }
+
+                return;
+            }
 
             // Update step status to Complete
             await _instanceManager.UpdateStepStatusAsync(

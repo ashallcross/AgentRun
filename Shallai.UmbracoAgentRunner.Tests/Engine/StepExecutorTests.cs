@@ -16,6 +16,8 @@ public class StepExecutorTests
     private IProfileResolver _profileResolver = null!;
     private IPromptAssembler _promptAssembler = null!;
     private IInstanceManager _instanceManager = null!;
+    private IArtifactValidator _artifactValidator = null!;
+    private ICompletionChecker _completionChecker = null!;
     private IChatClient _chatClient = null!;
     private ILogger<StepExecutor> _logger = null!;
 
@@ -25,6 +27,8 @@ public class StepExecutorTests
         _profileResolver = Substitute.For<IProfileResolver>();
         _promptAssembler = Substitute.For<IPromptAssembler>();
         _instanceManager = Substitute.For<IInstanceManager>();
+        _artifactValidator = Substitute.For<IArtifactValidator>();
+        _completionChecker = Substitute.For<ICompletionChecker>();
         _chatClient = Substitute.For<IChatClient>();
         _logger = NullLogger<StepExecutor>.Instance;
 
@@ -43,6 +47,14 @@ public class StepExecutorTests
         // Default: chat client returns no tool calls
         _chatClient.GetResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
             .Returns(new ChatResponse(new ChatMessage(ChatRole.Assistant, "done")));
+
+        // Default: artifact validation passes
+        _artifactValidator.ValidateInputArtifactsAsync(Arg.Any<StepDefinition>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new ArtifactValidationResult(true, []));
+
+        // Default: completion check passes
+        _completionChecker.CheckAsync(Arg.Any<CompletionCheckDefinition?>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new CompletionCheckResult(true, []));
     }
 
     [TearDown]
@@ -58,6 +70,8 @@ public class StepExecutorTests
             _promptAssembler,
             tools ?? [],
             _instanceManager,
+            _artifactValidator,
+            _completionChecker,
             _logger);
     }
 
@@ -169,7 +183,7 @@ public class StepExecutorTests
     {
         // AC #11: structured logging with WorkflowAlias, InstanceId, StepId
         var loggerSub = Substitute.For<ILogger<StepExecutor>>();
-        var executor = new StepExecutor(_profileResolver, _promptAssembler, [], _instanceManager, loggerSub);
+        var executor = new StepExecutor(_profileResolver, _promptAssembler, [], _instanceManager, _artifactValidator, _completionChecker, loggerSub);
         var context = MakeExecutionContext();
 
         await executor.ExecuteStepAsync(context, CancellationToken.None);
@@ -200,5 +214,73 @@ public class StepExecutorTests
 
         Assert.ThrowsAsync<OperationCanceledException>(
             async () => await executor.ExecuteStepAsync(context, cts.Token));
+    }
+
+    [Test]
+    public async Task ReadsFromValidationFailure_SetsStepToError_LLMNeverCalled()
+    {
+        // AC #1, #2: reads_from validation fails → Error, no LLM call
+        _artifactValidator.ValidateInputArtifactsAsync(Arg.Any<StepDefinition>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new ArtifactValidationResult(false, ["missing-input.md"]));
+
+        var executor = CreateExecutor();
+        var context = MakeExecutionContext();
+
+        await executor.ExecuteStepAsync(context, CancellationToken.None);
+
+        await _instanceManager.Received(1).UpdateStepStatusAsync(
+            "test-workflow", "inst-001", 0, StepStatus.Error, Arg.Any<CancellationToken>());
+        await _chatClient.DidNotReceive().GetResponseAsync(
+            Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task CompletionCheckFailure_SetsStepToError()
+    {
+        // AC #5, #7: completion check fails → Error
+        _completionChecker.CheckAsync(Arg.Any<CompletionCheckDefinition?>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new CompletionCheckResult(false, ["output.md"]));
+
+        var executor = CreateExecutor();
+        var context = MakeExecutionContext();
+
+        await executor.ExecuteStepAsync(context, CancellationToken.None);
+
+        await _instanceManager.Received(1).UpdateStepStatusAsync(
+            "test-workflow", "inst-001", 0, StepStatus.Error, Arg.Any<CancellationToken>());
+        await _instanceManager.DidNotReceive().UpdateStepStatusAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), StepStatus.Complete, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task CompletionCheckPass_SetsStepToComplete()
+    {
+        // AC #5, #6: completion check passes → Complete
+        _completionChecker.CheckAsync(Arg.Any<CompletionCheckDefinition?>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new CompletionCheckResult(true, []));
+
+        var executor = CreateExecutor();
+        var context = MakeExecutionContext();
+
+        await executor.ExecuteStepAsync(context, CancellationToken.None);
+
+        await _instanceManager.Received(1).UpdateStepStatusAsync(
+            "test-workflow", "inst-001", 0, StepStatus.Complete, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task NullCompletionCheck_SetsStepToComplete()
+    {
+        // AC #8: null completion check → Complete (backwards compat)
+        var step = MakeStep();
+        // step.CompletionCheck is null by default
+        var context = MakeExecutionContext(step: step);
+
+        var executor = CreateExecutor();
+
+        await executor.ExecuteStepAsync(context, CancellationToken.None);
+
+        await _instanceManager.Received(1).UpdateStepStatusAsync(
+            "test-workflow", "inst-001", 0, StepStatus.Complete, Arg.Any<CancellationToken>());
     }
 }

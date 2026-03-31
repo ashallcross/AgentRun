@@ -63,3 +63,8 @@
 ## Deferred from: code review of 4-3-step-executor-and-tool-loop (2026-03-31)
 
 - AIFunction lambdas in StepExecutor contain actual execution logic (delegates passed to `AIFunctionFactory.Create`) — if the Umbraco.AI middleware pipeline ever includes `FunctionInvokingChatClient`, tools would execute twice (once by middleware, once by ToolLoop). Current architecture explicitly uses manual tool loop so this is latent only. Revisit if provider pipeline changes.
+
+## Deferred from: code review of 4-4-artifact-handoff-and-completion-checking (2026-03-31)
+
+- Null/empty entries inside `ReadsFrom`/`FilesExist` lists from YAML deserialization quirks — `Path.Combine(path, null)` throws `ArgumentNullException`, `Path.Combine(path, "")` returns folder path causing misleading "missing file" errors. Defensive validation belongs at YAML parse/validation boundary (Story 2.1 area), not in the Engine consumers.
+- `NullCompletionCheck` StepExecutor test name is misleading — mock returns `Passed=true` regardless, so it doesn't uniquely prove the null path. The actual null handling is covered by `CompletionCheckerTests.NullCheck_ReturnsPassed`. Cosmetic issue only.

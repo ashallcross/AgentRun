@@ -1,0 +1,41 @@
+using Shallai.UmbracoAgentRunner.Workflows;
+
+namespace Shallai.UmbracoAgentRunner.Engine;
+
+public sealed class ArtifactValidator : IArtifactValidator
+{
+    private readonly ILogger<ArtifactValidator> _logger;
+
+    public ArtifactValidator(ILogger<ArtifactValidator> logger)
+    {
+        _logger = logger;
+    }
+
+    public Task<ArtifactValidationResult> ValidateInputArtifactsAsync(
+        StepDefinition step,
+        string instanceFolderPath,
+        CancellationToken cancellationToken)
+    {
+        if (step.ReadsFrom is null || step.ReadsFrom.Count == 0)
+        {
+            return Task.FromResult(new ArtifactValidationResult(true, []));
+        }
+
+        var missingFiles = new List<string>();
+
+        foreach (var file in step.ReadsFrom)
+        {
+            var fullPath = Path.Combine(instanceFolderPath, file);
+            _logger.LogDebug("Checking input artifact: {FilePath}", fullPath);
+
+            if (!File.Exists(fullPath))
+            {
+                _logger.LogWarning("Input artifact missing: {FilePath}", file);
+                missingFiles.Add(file);
+            }
+        }
+
+        var result = new ArtifactValidationResult(missingFiles.Count == 0, missingFiles);
+        return Task.FromResult(result);
+    }
+}

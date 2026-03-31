@@ -73,8 +73,14 @@ public sealed class PromptAssembler : IPromptAssembler
         // Declared tools
         AppendToolsSection(builder, context.DeclaredTools);
 
+        // Input artifacts (reads_from) for current step
+        AppendInputArtifactsSection(builder, context);
+
         // Prior artifacts from completed steps
         AppendArtifactsSection(builder, context);
+
+        // Expected output files (writes_to) for current step
+        AppendOutputArtifactsSection(builder, context);
 
         // Section 4: Untrusted tool results warning
         builder.AppendLine();
@@ -139,6 +145,44 @@ public sealed class PromptAssembler : IPromptAssembler
         if (!hasArtifacts)
         {
             builder.AppendLine("- No prior artifacts");
+        }
+    }
+
+    private static void AppendInputArtifactsSection(
+        StringBuilder builder,
+        PromptAssemblyContext context)
+    {
+        if (context.Step.ReadsFrom is null || context.Step.ReadsFrom.Count == 0)
+        {
+            return;
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("**Input Artifacts (reads_from):**");
+
+        foreach (var artifactPath in context.Step.ReadsFrom)
+        {
+            var fullPath = Path.Combine(context.InstanceFolderPath, artifactPath);
+            var existsFlag = File.Exists(fullPath) ? "exists" : "missing";
+            builder.AppendLine($"- {artifactPath}: {existsFlag}");
+        }
+    }
+
+    private static void AppendOutputArtifactsSection(
+        StringBuilder builder,
+        PromptAssemblyContext context)
+    {
+        if (context.Step.WritesTo is null || context.Step.WritesTo.Count == 0)
+        {
+            return;
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("**Expected Output Files (writes_to):**");
+
+        foreach (var artifactPath in context.Step.WritesTo)
+        {
+            builder.AppendLine($"- {artifactPath}");
         }
     }
 

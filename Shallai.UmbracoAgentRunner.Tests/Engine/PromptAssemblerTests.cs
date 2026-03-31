@@ -60,13 +60,15 @@ public class PromptAssemblerTests
         string name,
         string agent = "agents/test.md",
         string? description = null,
-        List<string>? writesTo = null) => new()
+        List<string>? writesTo = null,
+        List<string>? readsFrom = null) => new()
     {
         Id = id,
         Name = name,
         Agent = agent,
         Description = description,
-        WritesTo = writesTo
+        WritesTo = writesTo,
+        ReadsFrom = readsFrom
     };
 
     private PromptAssemblyContext MakeContext(
@@ -336,5 +338,40 @@ public class PromptAssemblerTests
             async () => await _assembler.AssemblePromptAsync(context, CancellationToken.None));
 
         Assert.That(ex!.Message, Does.Contain("no agent file configured"));
+    }
+
+    [Test]
+    public async Task ReadsFromArtifacts_ListedInPrompt()
+    {
+        // AC #3: reads_from artifacts listed with existence status
+        WriteAgentFile("agents/test.md", "# Agent");
+        WriteArtifact("scan-results.md");
+
+        var step = MakeStep("analyse", "Analyse",
+            readsFrom: ["scan-results.md", "missing-input.md"]);
+        var context = MakeContext(step);
+
+        var result = await _assembler.AssemblePromptAsync(context, CancellationToken.None);
+
+        Assert.That(result, Does.Contain("**Input Artifacts (reads_from):**"));
+        Assert.That(result, Does.Contain("scan-results.md: exists"));
+        Assert.That(result, Does.Contain("missing-input.md: missing"));
+    }
+
+    [Test]
+    public async Task WritesToArtifacts_ListedInPrompt()
+    {
+        // AC #4: writes_to artifacts listed in prompt
+        WriteAgentFile("agents/test.md", "# Agent");
+
+        var step = MakeStep("analyse", "Analyse",
+            writesTo: ["analysis-report.md", "quality-scores.md"]);
+        var context = MakeContext(step);
+
+        var result = await _assembler.AssemblePromptAsync(context, CancellationToken.None);
+
+        Assert.That(result, Does.Contain("**Expected Output Files (writes_to):**"));
+        Assert.That(result, Does.Contain("- analysis-report.md"));
+        Assert.That(result, Does.Contain("- quality-scores.md"));
     }
 }
