@@ -216,23 +216,24 @@ let n = class extends x {
     const t = this._instance, e = t.status === "Pending" && !this._streaming, i = t.steps.some((o) => o.status === "Active"), s = t.status === "Running" && !i && !this._streaming && t.steps.some((o) => o.status === "Pending"), r = (t.status === "Running" || t.status === "Pending") && !this._streaming, c = this._providerError ? a`<div class="main-placeholder">Configure an AI provider in Umbraco.AI before workflows can run.</div>` : this._streaming || t.status === "Running" && i ? a`<div class="main-placeholder">Step in progress...</div>` : t.status === "Completed" ? a`<div class="main-placeholder">Workflow completed.</div>` : t.status === "Failed" ? a`<div class="main-placeholder">Workflow failed.</div>` : s ? a`<div class="main-placeholder">Step complete. Click 'Continue' to proceed.</div>` : a`<div class="main-placeholder">Click 'Start' to begin the workflow.</div>`;
     return a`
       <div class="header">
-        <uui-button look="secondary" compact @click=${this._navigateBack}>
+        <uui-button label="Back" look="secondary" compact @click=${this._navigateBack}>
           <uui-icon name="icon-arrow-left"></uui-icon>
         </uui-button>
         <h2>${t.workflowName || t.workflowAlias} — Run #${this._runNumber}</h2>
         ${e ? a`
-              <uui-button look="primary" @click=${this._onStartClick}>
+              <uui-button label="Start" look="primary" @click=${this._onStartClick}>
                 Start
               </uui-button>
             ` : d}
         ${s ? a`
-              <uui-button look="primary" @click=${this._onStartClick}>
+              <uui-button label="Continue" look="primary" @click=${this._onStartClick}>
                 Continue
               </uui-button>
             ` : d}
         ${this._streaming ? a`<uui-loader-bar></uui-loader-bar>` : d}
         ${r ? a`
               <uui-button
+                label="Cancel"
                 look="secondary"
                 color="danger"
                 ?disabled=${this._cancelling}
@@ -453,4 +454,4 @@ export {
   n as ShallaiInstanceDetailElement,
   J as default
 };
-//# sourceMappingURL=shallai-instance-detail.element-AwanNTgF.js.map
+//# sourceMappingURL=shallai-instance-detail.element-mEIVQnHx.js.map

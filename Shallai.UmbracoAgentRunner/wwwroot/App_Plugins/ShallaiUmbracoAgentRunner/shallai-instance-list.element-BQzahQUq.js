@@ -2,7 +2,7 @@ import { UmbLitElement as f } from "@umbraco-cms/backoffice/lit-element";
 import { html as r, nothing as p, css as m, state as n, customElement as b } from "@umbraco-cms/backoffice/external/lit";
 import { UMB_AUTH_CONTEXT as g } from "@umbraco-cms/backoffice/auth";
 import { umbConfirmModal as v } from "@umbraco-cms/backoffice/modal";
-import { g as y, a as k, c as $, d as C } from "./api-client-CgFnA5nu.js";
+import { g as k, a as y, c as $, d as C } from "./api-client-CgFnA5nu.js";
 import { e as A, n as S, b as x, a as I, s as T, r as N, i as P } from "./instance-list-helpers-D6jp37V8.js";
 var D = Object.defineProperty, L = Object.getOwnPropertyDescriptor, _ = (t) => {
   throw TypeError(t);
@@ -23,8 +23,8 @@ let i = class extends f {
   async _loadData() {
     try {
       const t = await d(this, u)?.getLatestToken(), [e, a] = await Promise.all([
-        y(t),
-        k(this._workflowAlias, t)
+        k(t),
+        y(this._workflowAlias, t)
       ]), o = e.find((l) => l.alias === this._workflowAlias);
       this._workflowName = o?.name ?? this._workflowAlias, this._stepCount = o?.stepCount ?? 0, this._instances = S(a), this._error = !1;
     } catch {
@@ -85,11 +85,12 @@ let i = class extends f {
         </div>
       ` : r`
       <div class="header">
-        <uui-button look="secondary" compact @click=${this._navigateBack}>
+        <uui-button label="Back" look="secondary" compact @click=${this._navigateBack}>
           <uui-icon name="icon-arrow-left"></uui-icon>
         </uui-button>
         <h2>${this._workflowName}</h2>
         <uui-button
+          label="New Run"
           look="primary"
           color="positive"
           ?disabled=${this._creating}
@@ -124,6 +125,7 @@ let i = class extends f {
                     <uui-table-cell class="actions-cell" @click=${this._onActionsClick}>
                       <uui-action-bar>
                         <uui-button
+                          label="Actions"
                           id=${`popover-trigger-${t.id}`}
                           look="secondary"
                           compact
@@ -228,4 +230,4 @@ export {
   i as ShallaiInstanceListElement,
   F as default
 };
-//# sourceMappingURL=shallai-instance-list.element-CeHLyLA1.js.map
+//# sourceMappingURL=shallai-instance-list.element-BQzahQUq.js.map

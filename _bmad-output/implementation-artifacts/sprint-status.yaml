@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-30
-last_updated: 2026-03-31 (story 5-2 ready-for-dev)
+last_updated: 2026-03-31 (story 5-2 done)
 project: Shallai.UmbracoAgentRunner
 project_key: NOKEY
 tracking_system: file-system
@@ -76,7 +76,7 @@ development_status:
   # Epic 5: Tool System
   epic-5: in-progress
   5-1-tool-interface-and-registration: done
-  5-2-file-tools-with-path-sandboxing: ready-for-dev
+  5-2-file-tools-with-path-sandboxing: done
   5-3-fetch-url-tool-with-ssrf-protection: backlog
   5-4-workflow-tool-validation: backlog
   epic-5-retrospective: optional

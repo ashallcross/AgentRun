@@ -199,11 +199,12 @@ export class ShallaiInstanceListElement extends UmbLitElement {
 
     return html`
       <div class="header">
-        <uui-button look="secondary" compact @click=${this._navigateBack}>
+        <uui-button label="Back" look="secondary" compact @click=${this._navigateBack}>
           <uui-icon name="icon-arrow-left"></uui-icon>
         </uui-button>
         <h2>${this._workflowName}</h2>
         <uui-button
+          label="New Run"
           look="primary"
           color="positive"
           ?disabled=${this._creating}
@@ -240,6 +241,7 @@ export class ShallaiInstanceListElement extends UmbLitElement {
                     <uui-table-cell class="actions-cell" @click=${this._onActionsClick}>
                       <uui-action-bar>
                         <uui-button
+                          label="Actions"
                           id=${`popover-trigger-${inst.id}`}
                           look="secondary"
                           compact

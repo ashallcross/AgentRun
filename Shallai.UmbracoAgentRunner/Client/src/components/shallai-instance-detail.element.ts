@@ -458,20 +458,20 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
 
     return html`
       <div class="header">
-        <uui-button look="secondary" compact @click=${this._navigateBack}>
+        <uui-button label="Back" look="secondary" compact @click=${this._navigateBack}>
           <uui-icon name="icon-arrow-left"></uui-icon>
         </uui-button>
         <h2>${inst.workflowName || inst.workflowAlias} — Run #${this._runNumber}</h2>
         ${showStart
           ? html`
-              <uui-button look="primary" @click=${this._onStartClick}>
+              <uui-button label="Start" look="primary" @click=${this._onStartClick}>
                 Start
               </uui-button>
             `
           : nothing}
         ${showContinue
           ? html`
-              <uui-button look="primary" @click=${this._onStartClick}>
+              <uui-button label="Continue" look="primary" @click=${this._onStartClick}>
                 Continue
               </uui-button>
             `
@@ -482,6 +482,7 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
         ${showCancel
           ? html`
               <uui-button
+                label="Cancel"
                 look="secondary"
                 color="danger"
                 ?disabled=${this._cancelling}

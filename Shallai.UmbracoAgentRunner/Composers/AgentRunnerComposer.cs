@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Shallai.UmbracoAgentRunner.Engine;
 using Shallai.UmbracoAgentRunner.Instances;
+using Shallai.UmbracoAgentRunner.Tools;
 using Shallai.UmbracoAgentRunner.Workflows;
 using Umbraco.Cms.Core.Composing;
 using Umbraco.Cms.Core.DependencyInjection;
@@ -40,10 +41,9 @@ public class AgentRunnerComposer : IComposer
         builder.Services.AddSingleton<IWorkflowOrchestrator, WorkflowOrchestrator>();
 
         // Tools — register each IWorkflowTool individually (Epic 5)
-        // Concrete tools added in Stories 5.2 (file tools) and 5.3 (fetch_url):
-        // builder.Services.AddSingleton<IWorkflowTool, ReadFileTool>();
-        // builder.Services.AddSingleton<IWorkflowTool, WriteFileTool>();
-        // builder.Services.AddSingleton<IWorkflowTool, ListFilesTool>();
-        // builder.Services.AddSingleton<IWorkflowTool, FetchUrlTool>();
+        builder.Services.AddSingleton<IWorkflowTool, ReadFileTool>();
+        builder.Services.AddSingleton<IWorkflowTool, WriteFileTool>();
+        builder.Services.AddSingleton<IWorkflowTool, ListFilesTool>();
+        // builder.Services.AddSingleton<IWorkflowTool, FetchUrlTool>(); // Story 5.3
     }
 }

@@ -3,7 +3,7 @@
 ## Deferred from: code review of 1-1-scaffold-rcl-package-project (2026-03-30)
 
 - AgentRunnerOptions string properties are nullable-unaware despite `<Nullable>enable</Nullable>` — public setters accept null via deserialization with no guard. Address when options binding is wired up.
-- DataRootPath trailing slash not normalised — consumer code may produce inconsistent path comparisons. Address when path resolution logic is implemented.
+- ~~DataRootPath trailing slash not normalised — consumer code may produce inconsistent path comparisons. Address when path resolution logic is implemented.~~ **RESOLVED in Story 5.2** — `PathSandbox.ValidatePath` normalises trailing separators before `StartsWith` check.
 
 ## Deferred from: code review of 2-1-workflow-yaml-parsing-and-validation (2026-03-30)
 
@@ -13,7 +13,7 @@
 ## Deferred from: code review of 2-2-workflow-registry-and-discovery (2026-03-30)
 
 - LoadWorkflowsAsync on IWorkflowRegistry interface — AC5 specifies only GetAllWorkflows/GetWorkflow as the public contract; load method exposes mutation to all consumers. Consider separating into IWorkflowRegistryLoader or moving to concrete class with forwarding DI registration.
-- Path traversal via step.Agent in VerifyAgentFiles — Path.Combine with unsanitised relative path could resolve outside workflow folder. Currently only File.Exists (info disclosure risk via logs). Will be addressed by Story 5.2 path sandboxing when agent files are actually read.
+- ~~Path traversal via step.Agent in VerifyAgentFiles — Path.Combine with unsanitised relative path could resolve outside workflow folder. Currently only File.Exists (info disclosure risk via logs). Will be addressed by Story 5.2 path sandboxing when agent files are actually read.~~ **RESOLVED in Story 5.2** — `PathSandbox` static helper available in `Security/PathSandbox.cs` for any code needing path validation.
 - RegisteredWorkflow wraps mutable WorkflowDefinition — sealed class with get-only properties but Definition has public setters and mutable Steps list. Consumers can mutate singleton state through the reference. Pre-existing design from Story 2.1 WorkflowDefinition.
 
 ## Deferred from: code review of 2-3-workflow-list-api-and-dashboard (2026-03-30)
@@ -53,7 +53,7 @@
 
 ## Deferred from: code review of 4-1-prompt-assembly (2026-03-31)
 
-- Path traversal on developer-authored paths — `Step.Agent`, `Step.Id`, and `WritesTo` paths used in `Path.Combine` are not validated to stay within their root folders. Inputs come from developer-authored YAML, not user input. Story 5.2 tool path sandboxing is the natural place for defence-in-depth.
+- ~~Path traversal on developer-authored paths — `Step.Agent`, `Step.Id`, and `WritesTo` paths used in `Path.Combine` are not validated to stay within their root folders. Inputs come from developer-authored YAML, not user input. Story 5.2 tool path sandboxing is the natural place for defence-in-depth.~~ **RESOLVED in Story 5.2** — `PathSandbox` static helper available in `Security/PathSandbox.cs` for any code needing path validation.
 - TOCTOU on File.Exists then ReadAllText — agent and sidecar files could be deleted between existence check and read. Theoretical; Story 4.3 instance locking will prevent concurrent modifications to running instances.
 
 ## Deferred from: code review of 4-2-profile-resolution (2026-03-31)
@@ -62,7 +62,7 @@
 
 ## Deferred from: code review of 4-3-step-executor-and-tool-loop (2026-03-31)
 
-- AIFunction lambdas in StepExecutor contain actual execution logic (delegates passed to `AIFunctionFactory.Create`) — if the Umbraco.AI middleware pipeline ever includes `FunctionInvokingChatClient`, tools would execute twice (once by middleware, once by ToolLoop). Current architecture explicitly uses manual tool loop so this is latent only. Revisit if provider pipeline changes.
+- ~~AIFunction lambdas in StepExecutor contain actual execution logic (delegates passed to `AIFunctionFactory.Create`) — if the Umbraco.AI middleware pipeline ever includes `FunctionInvokingChatClient`, tools would execute twice (once by middleware, once by ToolLoop). Current architecture explicitly uses manual tool loop so this is latent only. Revisit if provider pipeline changes.~~ **CONFIRMED in Story 5.2 E2E** — `FunctionInvokingChatClient` IS active in the Umbraco.AI pipeline and double-executes tool calls. After multiple ToolLoop iterations, the conversation history becomes malformed (`unexpected tool_use_id` in `tool_result` blocks), causing `AnthropicBadRequestException`. Fix required: either disable `FunctionInvokingChatClient` in the pipeline when getting the chat client, or remove our ToolLoop dispatch and let the middleware handle execution (but we need custom tool filtering). **Blocking real E2E execution.**
 
 ## Deferred from: code review of 4-4-artifact-handoff-and-completion-checking (2026-03-31)
 
