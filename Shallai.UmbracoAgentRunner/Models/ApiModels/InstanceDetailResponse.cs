@@ -6,6 +6,7 @@ public sealed class InstanceDetailResponse
 {
     public required string Id { get; init; }
     public required string WorkflowAlias { get; init; }
+    public required string WorkflowName { get; init; }
     public required InstanceStatus Status { get; init; }
     public required int CurrentStepIndex { get; init; }
     public required DateTime CreatedAt { get; init; }
@@ -17,7 +18,9 @@ public sealed class InstanceDetailResponse
 public sealed class StepResponse
 {
     public required string Id { get; init; }
+    public required string Name { get; init; }
     public required StepStatus Status { get; init; }
     public DateTime? StartedAt { get; init; }
     public DateTime? CompletedAt { get; init; }
+    public string[]? WritesTo { get; init; }
 }

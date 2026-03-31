@@ -23,8 +23,8 @@ public class InstanceEndpointsTests
         Mode = "interactive",
         Steps =
         [
-            new StepDefinition { Id = "step-1", Name = "Analyse", Agent = "agent.md" },
-            new StepDefinition { Id = "step-2", Name = "Report", Agent = "report.md" }
+            new StepDefinition { Id = "step-1", Name = "Analyse", Agent = "agent.md", WritesTo = ["scan-results.md"] },
+            new StepDefinition { Id = "step-2", Name = "Report", Agent = "report.md", WritesTo = ["quality-scores.md"] }
         ]
     };
 
@@ -175,6 +175,9 @@ public class InstanceEndpointsTests
         _instanceManager.FindInstanceAsync("abc123", Arg.Any<CancellationToken>())
             .Returns(state);
 
+        var registered = new RegisteredWorkflow("content-audit", "/workflows/content-audit", TestDefinition);
+        _workflowRegistry.GetWorkflow("content-audit").Returns(registered);
+
         var result = await _endpoints.GetInstance("abc123", CancellationToken.None);
 
         var okResult = result as OkObjectResult;
@@ -185,13 +188,41 @@ public class InstanceEndpointsTests
         Assert.That(detail, Is.Not.Null);
         Assert.That(detail!.Id, Is.EqualTo("abc123"));
         Assert.That(detail.CreatedBy, Is.EqualTo("admin"));
+        Assert.That(detail.WorkflowName, Is.EqualTo("Content Audit"));
         Assert.That(detail.Steps, Has.Length.EqualTo(2));
         Assert.That(detail.Steps[0].Id, Is.EqualTo("step-1"));
+        Assert.That(detail.Steps[0].Name, Is.EqualTo("Analyse"));
         Assert.That(detail.Steps[0].Status, Is.EqualTo(StepStatus.Complete));
         Assert.That(detail.Steps[0].StartedAt, Is.Not.Null);
         Assert.That(detail.Steps[0].CompletedAt, Is.Not.Null);
+        Assert.That(detail.Steps[0].WritesTo, Is.EqualTo(new[] { "scan-results.md" }));
         Assert.That(detail.Steps[1].Id, Is.EqualTo("step-2"));
+        Assert.That(detail.Steps[1].Name, Is.EqualTo("Report"));
         Assert.That(detail.Steps[1].Status, Is.EqualTo(StepStatus.Pending));
+        Assert.That(detail.Steps[1].WritesTo, Is.EqualTo(new[] { "quality-scores.md" }));
+    }
+
+    // Story 3.4 Task 1.6: GET detail falls back gracefully when workflow is missing
+    [Test]
+    public async Task GetInstance_FallsBackWhenWorkflowDeleted()
+    {
+        var state = CreateTestInstance();
+        _instanceManager.FindInstanceAsync("abc123", Arg.Any<CancellationToken>())
+            .Returns(state);
+
+        _workflowRegistry.GetWorkflow("content-audit").Returns((RegisteredWorkflow?)null);
+
+        var result = await _endpoints.GetInstance("abc123", CancellationToken.None);
+
+        var okResult = result as OkObjectResult;
+        Assert.That(okResult, Is.Not.Null);
+
+        var detail = okResult!.Value as InstanceDetailResponse;
+        Assert.That(detail, Is.Not.Null);
+        Assert.That(detail!.WorkflowName, Is.EqualTo(string.Empty));
+        Assert.That(detail.Steps[0].Name, Is.EqualTo("step-1"));
+        Assert.That(detail.Steps[0].WritesTo, Is.Null);
+        Assert.That(detail.Steps[1].Name, Is.EqualTo("step-2"));
     }
 
     // Task 4.6: GET detail returns 404 for unknown id

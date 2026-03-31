@@ -1,4 +1,4 @@
-import type { WorkflowSummary, InstanceResponse } from "./types.js";
+import type { WorkflowSummary, InstanceResponse, InstanceDetailResponse } from "./types.js";
 
 const API_BASE = "/umbraco/api/shallai";
 
@@ -57,4 +57,12 @@ export function createInstance(workflowAlias: string, token?: string): Promise<I
 
 export function deleteInstance(id: string, token?: string): Promise<void> {
   return deleteRequest(`/instances/${encodeURIComponent(id)}`, token);
+}
+
+export function getInstance(id: string, token?: string): Promise<InstanceDetailResponse> {
+  return fetchJson<InstanceDetailResponse>(`/instances/${encodeURIComponent(id)}`, token);
+}
+
+export function cancelInstance(id: string, token?: string): Promise<InstanceResponse> {
+  return postJson<InstanceResponse>(`/instances/${encodeURIComponent(id)}/cancel`, {}, token);
 }

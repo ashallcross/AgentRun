@@ -39,7 +39,7 @@ const e = [
     type: "sectionView",
     alias: "Shallai.UmbracoAgentRunner.SectionView.Dashboard",
     name: "Agent Workflows Dashboard View",
-    element: () => import("./shallai-dashboard.element-mcaPlQ7N.js"),
+    element: () => import("./shallai-dashboard.element-DzwgUv5M.js"),
     meta: {
       label: "Overview",
       pathname: "overview",

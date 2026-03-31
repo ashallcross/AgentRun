@@ -153,21 +153,34 @@ public class InstanceEndpoints : ControllerBase
         UpdatedAt = state.UpdatedAt
     };
 
-    private static InstanceDetailResponse MapToDetailResponse(InstanceState state) => new()
+    private InstanceDetailResponse MapToDetailResponse(InstanceState state)
     {
-        Id = state.InstanceId,
-        WorkflowAlias = state.WorkflowAlias,
-        Status = state.Status,
-        CurrentStepIndex = state.CurrentStepIndex,
-        CreatedAt = state.CreatedAt,
-        UpdatedAt = state.UpdatedAt,
-        CreatedBy = state.CreatedBy,
-        Steps = state.Steps.Select(s => new StepResponse
+        var registered = _workflowRegistry.GetWorkflow(state.WorkflowAlias);
+        var definition = registered?.Definition;
+
+        return new InstanceDetailResponse
         {
-            Id = s.Id,
-            Status = s.Status,
-            StartedAt = s.StartedAt,
-            CompletedAt = s.CompletedAt
-        }).ToArray()
-    };
+            Id = state.InstanceId,
+            WorkflowAlias = state.WorkflowAlias,
+            WorkflowName = definition?.Name ?? string.Empty,
+            Status = state.Status,
+            CurrentStepIndex = state.CurrentStepIndex,
+            CreatedAt = state.CreatedAt,
+            UpdatedAt = state.UpdatedAt,
+            CreatedBy = state.CreatedBy,
+            Steps = state.Steps.Select(s =>
+            {
+                var stepDef = definition?.Steps.FirstOrDefault(d => d.Id == s.Id);
+                return new StepResponse
+                {
+                    Id = s.Id,
+                    Name = stepDef?.Name ?? s.Id,
+                    Status = s.Status,
+                    StartedAt = s.StartedAt,
+                    CompletedAt = s.CompletedAt,
+                    WritesTo = stepDef?.WritesTo?.ToArray()
+                };
+            }).ToArray()
+        };
+    }
 }

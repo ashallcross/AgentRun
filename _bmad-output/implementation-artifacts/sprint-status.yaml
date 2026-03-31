@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-30
-last_updated: 2026-03-31 (story 3-3 done)
+last_updated: 2026-03-31 (story 3-4 done)
 project: Shallai.UmbracoAgentRunner
 project_key: NOKEY
 tracking_system: file-system
@@ -61,7 +61,7 @@ development_status:
   3-1-instance-state-management: done
   3-2-instance-api-endpoints: done
   3-3-instance-list-dashboard: done
-  3-4-instance-detail-view-and-step-progress-sidebar: backlog
+  3-4-instance-detail-view-and-step-progress-sidebar: done
   epic-3-retrospective: optional
 
   # Epic 4: Step Execution Engine

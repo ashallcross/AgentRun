@@ -42,3 +42,11 @@
 - Promise.all partial failure — If getWorkflows succeeds but getInstances fails (or vice versa), both results are discarded. Acceptable for current scope.
 - No abort on component disconnect — _loadData promise is fire-and-forget; if component disconnects mid-fetch, state sets on detached element. Standard Lit lifecycle pattern.
 - Full workflow list fetch for name resolution — Fetches entire workflow list to resolve one name. Acceptable at current scale.
+
+## Deferred from: manual testing of story-3.4 (2026-03-31)
+
+- UX: Move workflow list into section tree sidebar — Currently workflows are listed in the main content area as a dashboard route. Should use a proper section tree (`ManifestTree` / `UmbTreeElement`) with workflows as tree items, so clicking a workflow in the left-hand tree opens its runs list directly. Saves a click and follows standard Umbraco backoffice convention from other sections. Structural rework — consider for Epic 9 or a dedicated UX improvement pass.
+
+## Deferred from: code review of story-3.4 (2026-03-31)
+
+- TOCTOU race in cancel endpoint — `CancelInstance` reads instance status, checks it's Running/Pending, then writes Cancelled. Between read and write, the workflow runner could advance to Completed/Failed. The cancel would overwrite a terminal status. No optimistic concurrency guard visible. Pre-existing from Story 3.2. [InstanceEndpoints.cs:82-106]

@@ -1,76 +1,32 @@
-import { UmbLitElement as m } from "@umbraco-cms/backoffice/lit-element";
-import { html as l, nothing as p, css as w, state as s, customElement as g } from "@umbraco-cms/backoffice/external/lit";
-import { UMB_AUTH_CONTEXT as b } from "@umbraco-cms/backoffice/auth";
+import { UmbLitElement as f } from "@umbraco-cms/backoffice/lit-element";
+import { html as r, nothing as p, css as m, state as n, customElement as b } from "@umbraco-cms/backoffice/external/lit";
+import { UMB_AUTH_CONTEXT as g } from "@umbraco-cms/backoffice/auth";
 import { umbConfirmModal as v } from "@umbraco-cms/backoffice/modal";
-import { g as y, a as k, c as $, d as C } from "./api-client-DNQcFMx0.js";
-function A(t) {
-  const e = Math.floor((Date.now() - new Date(t).getTime()) / 1e3);
-  if (e < 60) return "just now";
-  const a = Math.floor(e / 60);
-  if (a < 60) return `${a} minute${a === 1 ? "" : "s"} ago`;
-  const i = Math.floor(a / 60);
-  if (i < 24) return `${i} hour${i === 1 ? "" : "s"} ago`;
-  const o = Math.floor(i / 24);
-  if (o < 30) return `${o} day${o === 1 ? "" : "s"} ago`;
-  const u = Math.floor(o / 30);
-  return `${u} month${u === 1 ? "" : "s"} ago`;
-}
-function S(t) {
-  const e = t.split("/"), a = e[e.length - 1];
-  return decodeURIComponent(a);
-}
-function I(t, e) {
-  const a = e.split("/");
-  return a.length >= 2 && a.splice(-2, 2, "instances", t), a.join("/");
-}
-function T(t) {
-  const e = t.lastIndexOf("/");
-  return e > 0 ? t.substring(0, e) : t;
-}
-function x(t) {
-  switch (t) {
-    case "Completed":
-      return "positive";
-    case "Failed":
-      return "danger";
-    case "Running":
-      return "warning";
-    default:
-      return;
-  }
-}
-function D(t) {
-  return t === "Completed" || t === "Failed" || t === "Cancelled";
-}
-function N(t) {
-  const a = [...t].sort(
-    (i, o) => new Date(i.createdAt).getTime() - new Date(o.createdAt).getTime()
-  ).map((i, o) => ({ ...i, runNumber: o + 1 }));
-  return a.reverse(), a;
-}
-var P = Object.defineProperty, L = Object.getOwnPropertyDescriptor, _ = (t) => {
+import { g as y, a as k, c as $, d as C } from "./api-client-pcmz0vNh.js";
+import { e as A, n as S, b as x, a as I, s as T, r as N, i as P } from "./instance-list-helpers-D6jp37V8.js";
+var D = Object.defineProperty, L = Object.getOwnPropertyDescriptor, _ = (t) => {
   throw TypeError(t);
-}, r = (t, e, a, i) => {
-  for (var o = i > 1 ? void 0 : i ? L(e, a) : e, u = t.length - 1, h; u >= 0; u--)
-    (h = t[u]) && (o = (i ? h(e, a, o) : h(o)) || o);
-  return i && o && P(e, a, o), o;
-}, f = (t, e, a) => e.has(t) || _("Cannot " + a), d = (t, e, a) => (f(t, e, "read from private field"), a ? a.call(t) : e.get(t)), M = (t, e, a) => e.has(t) ? _("Cannot add the same private member more than once") : e instanceof WeakSet ? e.add(t) : e.set(t, a), R = (t, e, a, i) => (f(t, e, "write to private field"), e.set(t, a), a), c;
-let n = class extends m {
+}, s = (t, e, a, o) => {
+  for (var l = o > 1 ? void 0 : o ? L(e, a) : e, c = t.length - 1, h; c >= 0; c--)
+    (h = t[c]) && (l = (o ? h(e, a, l) : h(l)) || l);
+  return o && l && D(e, a, l), l;
+}, w = (t, e, a) => e.has(t) || _("Cannot " + a), d = (t, e, a) => (w(t, e, "read from private field"), a ? a.call(t) : e.get(t)), E = (t, e, a) => e.has(t) ? _("Cannot add the same private member more than once") : e instanceof WeakSet ? e.add(t) : e.set(t, a), R = (t, e, a, o) => (w(t, e, "write to private field"), e.set(t, a), a), u;
+let i = class extends f {
   constructor() {
-    super(), M(this, c), this._instances = [], this._workflowName = "", this._workflowAlias = "", this._stepCount = 0, this._loading = !0, this._error = !1, this._creating = !1, this._deleting = null, this.consumeContext(b, (t) => {
-      R(this, c, t);
+    super(), E(this, u), this._instances = [], this._workflowName = "", this._workflowAlias = "", this._stepCount = 0, this._loading = !0, this._error = !1, this._creating = !1, this._deleting = null, this.consumeContext(g, (t) => {
+      R(this, u, t);
     });
   }
   connectedCallback() {
-    super.connectedCallback(), this._loading = !0, this._error = !1, this._workflowAlias = S(window.location.pathname), this._loadData();
+    super.connectedCallback(), this._loading = !0, this._error = !1, this._workflowAlias = A(window.location.pathname), this._loadData();
   }
   async _loadData() {
     try {
-      const t = await d(this, c)?.getLatestToken(), [e, a] = await Promise.all([
+      const t = await d(this, u)?.getLatestToken(), [e, a] = await Promise.all([
         y(t),
         k(this._workflowAlias, t)
-      ]), i = e.find((o) => o.alias === this._workflowAlias);
-      this._workflowName = i?.name ?? this._workflowAlias, this._stepCount = i?.stepCount ?? 0, this._instances = N(a), this._error = !1;
+      ]), o = e.find((l) => l.alias === this._workflowAlias);
+      this._workflowName = o?.name ?? this._workflowAlias, this._stepCount = o?.stepCount ?? 0, this._instances = S(a), this._error = !1;
     } catch {
       this._instances = [], this._error = !0;
     } finally {
@@ -78,16 +34,16 @@ let n = class extends m {
     }
   }
   _navigateToInstance(t) {
-    window.history.pushState({}, "", I(t, window.location.pathname));
+    window.history.pushState({}, "", x(t, window.location.pathname));
   }
   _navigateBack() {
-    window.history.pushState({}, "", T(window.location.pathname));
+    window.history.pushState({}, "", I(window.location.pathname));
   }
   async _createNewRun() {
     if (!this._creating) {
       this._creating = !0;
       try {
-        const t = await d(this, c)?.getLatestToken(), e = await $(this._workflowAlias, t);
+        const t = await d(this, u)?.getLatestToken(), e = await $(this._workflowAlias, t);
         this._navigateToInstance(e.id);
       } finally {
         this._creating = !1;
@@ -108,8 +64,8 @@ let n = class extends m {
       }
       this._deleting = t;
       try {
-        const a = await d(this, c)?.getLatestToken();
-        await C(t, a), this._instances = this._instances.filter((i) => i.id !== t);
+        const a = await d(this, u)?.getLatestToken();
+        await C(t, a), this._instances = this._instances.filter((o) => o.id !== t);
       } finally {
         this._deleting = null;
       }
@@ -122,12 +78,12 @@ let n = class extends m {
     return t.status === "Completed" ? "Complete" : this._stepCount > 0 ? `${t.currentStepIndex + 1} of ${this._stepCount}` : `Step ${t.currentStepIndex + 1}`;
   }
   render() {
-    return this._loading ? l`<uui-loader></uui-loader>` : this._error ? l`
+    return this._loading ? r`<uui-loader></uui-loader>` : this._error ? r`
         <div class="error-state">
           Failed to load instances. Check that you have backoffice access and
           try refreshing the page.
         </div>
-      ` : l`
+      ` : r`
       <div class="header">
         <uui-button look="secondary" compact @click=${this._navigateBack}>
           <uui-icon name="icon-arrow-left"></uui-icon>
@@ -143,7 +99,7 @@ let n = class extends m {
         </uui-button>
       </div>
 
-      ${this._instances.length === 0 ? l`<div class="empty-state">No runs yet. Click 'New Run' to start.</div>` : l`
+      ${this._instances.length === 0 ? r`<div class="empty-state">No runs yet. Click 'New Run' to start.</div>` : r`
             <uui-table>
               <uui-table-head>
                 <uui-table-head-cell style="width: 80px;">Run</uui-table-head-cell>
@@ -153,17 +109,17 @@ let n = class extends m {
                 <uui-table-head-cell class="actions-cell">Actions</uui-table-head-cell>
               </uui-table-head>
               ${this._instances.map(
-      (t) => l`
+      (t) => r`
                   <uui-table-row @click=${() => this._navigateToInstance(t.id)}>
                     <uui-table-cell>#${t.runNumber}</uui-table-cell>
                     <uui-table-cell>
-                      <uui-tag .color=${x(t.status) ?? p}>
+                      <uui-tag .color=${T(t.status) ?? p}>
                         ${t.status}
                       </uui-tag>
                     </uui-table-cell>
                     <uui-table-cell>${this._formatStep(t)}</uui-table-cell>
                     <uui-table-cell title=${t.createdAt}>
-                      ${A(t.createdAt)}
+                      ${N(t.createdAt)}
                     </uui-table-cell>
                     <uui-table-cell class="actions-cell" @click=${this._onActionsClick}>
                       <uui-action-bar>
@@ -184,7 +140,7 @@ let n = class extends m {
                               label="View"
                               @click-label=${() => this._navigateToInstance(t.id)}
                             ></uui-menu-item>
-                            ${D(t.status) ? l`
+                            ${P(t.status) ? r`
                                   <uui-menu-item
                                     label="Delete"
                                     @click-label=${(e) => this._deleteInstance(t.id, e)}
@@ -202,8 +158,8 @@ let n = class extends m {
     `;
   }
 };
-c = /* @__PURE__ */ new WeakMap();
-n.styles = w`
+u = /* @__PURE__ */ new WeakMap();
+i.styles = m`
     :host {
       display: block;
       padding: var(--uui-size-layout-1);
@@ -240,36 +196,36 @@ n.styles = w`
       width: 80px;
     }
   `;
-r([
-  s()
-], n.prototype, "_instances", 2);
-r([
-  s()
-], n.prototype, "_workflowName", 2);
-r([
-  s()
-], n.prototype, "_workflowAlias", 2);
-r([
-  s()
-], n.prototype, "_stepCount", 2);
-r([
-  s()
-], n.prototype, "_loading", 2);
-r([
-  s()
-], n.prototype, "_error", 2);
-r([
-  s()
-], n.prototype, "_creating", 2);
-r([
-  s()
-], n.prototype, "_deleting", 2);
-n = r([
-  g("shallai-instance-list")
-], n);
-const B = n;
+s([
+  n()
+], i.prototype, "_instances", 2);
+s([
+  n()
+], i.prototype, "_workflowName", 2);
+s([
+  n()
+], i.prototype, "_workflowAlias", 2);
+s([
+  n()
+], i.prototype, "_stepCount", 2);
+s([
+  n()
+], i.prototype, "_loading", 2);
+s([
+  n()
+], i.prototype, "_error", 2);
+s([
+  n()
+], i.prototype, "_creating", 2);
+s([
+  n()
+], i.prototype, "_deleting", 2);
+i = s([
+  b("shallai-instance-list")
+], i);
+const F = i;
 export {
-  n as ShallaiInstanceListElement,
-  B as default
+  i as ShallaiInstanceListElement,
+  F as default
 };
-//# sourceMappingURL=shallai-instance-list.element-CieA6PCC.js.map
+//# sourceMappingURL=shallai-instance-list.element-BfAuSlHI.js.map
