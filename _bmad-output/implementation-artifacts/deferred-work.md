@@ -59,3 +59,7 @@
 ## Deferred from: code review of 4-2-profile-resolution (2026-03-31)
 
 - `ProfileNotFoundException` missing typed `ProfileAlias` property — alias is baked into message string but not exposed as a property. Callers needing to programmatically inspect which alias failed must parse the exception message. Nice-to-have for future retry/fallback logic.
+
+## Deferred from: code review of 4-3-step-executor-and-tool-loop (2026-03-31)
+
+- AIFunction lambdas in StepExecutor contain actual execution logic (delegates passed to `AIFunctionFactory.Create`) — if the Umbraco.AI middleware pipeline ever includes `FunctionInvokingChatClient`, tools would execute twice (once by middleware, once by ToolLoop). Current architecture explicitly uses manual tool loop so this is latent only. Revisit if provider pipeline changes.

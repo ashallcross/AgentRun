@@ -1,0 +1,11 @@
+using Shallai.UmbracoAgentRunner.Instances;
+using Shallai.UmbracoAgentRunner.Workflows;
+
+namespace Shallai.UmbracoAgentRunner.Engine;
+
+public sealed record StepExecutionContext(
+    WorkflowDefinition Workflow,
+    StepDefinition Step,
+    InstanceState Instance,
+    string InstanceFolderPath,
+    string WorkflowFolderPath);

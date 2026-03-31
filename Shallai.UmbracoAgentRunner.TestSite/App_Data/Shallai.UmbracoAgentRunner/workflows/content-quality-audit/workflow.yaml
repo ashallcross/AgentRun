@@ -1,0 +1,29 @@
+name: Content Quality Audit
+description: Audits content for quality and consistency
+mode: autonomous
+default_profile: anthropic-sonnet-4-6
+steps:
+  - id: gather_content
+    name: Gather Content
+    agent: agents/content-gatherer.md
+    tools:
+      - read_file
+      - list_files
+    writes_to:
+      - artifacts/content-inventory.json
+    completion_check:
+      files_exist:
+        - artifacts/content-inventory.json
+  - id: analyse_quality
+    name: Analyse Quality
+    agent: agents/quality-analyser.md
+    profile: openai-gpt4
+    tools:
+      - read_file
+    reads_from:
+      - artifacts/content-inventory.json
+    writes_to:
+      - artifacts/quality-report.md
+    completion_check:
+      files_exist:
+        - artifacts/quality-report.md

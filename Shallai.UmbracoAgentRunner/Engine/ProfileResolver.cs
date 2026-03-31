@@ -39,7 +39,7 @@ public class ProfileResolver : IProfileResolver
         try
         {
             return await _chatService.CreateChatClientAsync(
-                chat => chat.WithProfile(alias),
+                chat => chat.WithAlias($"step-{step.Id}").WithProfile(alias),
                 cancellationToken);
         }
         catch (OperationCanceledException)
@@ -56,7 +56,8 @@ public class ProfileResolver : IProfileResolver
     {
         try
         {
-            var client = await _chatService.CreateChatClientAsync(_ => { }, cancellationToken);
+            var client = await _chatService.CreateChatClientAsync(
+                chat => chat.WithAlias("provider-check"), cancellationToken);
             (client as IDisposable)?.Dispose();
             _logger.LogDebug("Provider prerequisite check passed: at least one Umbraco.AI provider is configured");
             return true;

@@ -31,10 +31,10 @@ public class AgentRunnerComposer : IComposer
         // Startup handler
         builder.AddNotificationHandler<UmbracoApplicationStartedNotification, WorkflowRegistryInitializer>();
 
-        // Scoped services for per-request state:
-        // builder.Services.AddScoped<IStepExecutor, StepExecutor>();
+        // Step execution engine
+        builder.Services.AddSingleton<IStepExecutor, StepExecutor>();
 
-        // Tools registered individually:
+        // Tools registered individually (Epic 5):
         // builder.Services.AddSingleton<IWorkflowTool, ReadFileTool>();
     }
 }
