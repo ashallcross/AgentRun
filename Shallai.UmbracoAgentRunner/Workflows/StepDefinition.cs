@@ -6,6 +6,8 @@ public sealed class StepDefinition
 
     public string Name { get; set; } = string.Empty;
 
+    public string? Description { get; set; }
+
     public string Agent { get; set; } = string.Empty;
 
     public string? Profile { get; set; }

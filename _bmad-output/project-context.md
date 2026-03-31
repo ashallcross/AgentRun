@@ -179,6 +179,9 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - **Manual E2E validation in story specs** — it's a refinement loop, not just a gate
 - **Production smoke test in Definition of Done** — dev servers mask runtime differences
 - **Deferred items need explicit triage** — record disposition (fix now / defer / won't fix) and track volume
+- **Simplest fix first** — always try the simplest, most robust solution before iterating. Don't overcomplicate bug fixes.
+- **Browser testing shortcut** — when stuck on frontend issues, ask Adam to verify in the browser rather than guessing repeatedly
+- **Live provider testing** — Epic 4+ stories should include manual E2E validation steps exercising a real Anthropic provider
 
 #### Technical Rules (Learned the Hard Way)
 - **YAML Date coercion** — YAML parsers silently coerce date-like strings (e.g., `2026-03-30` becomes a Date object). Quote date-like values or configure the deserializer to treat them as strings. Critical for workflow YAML files.
@@ -202,4 +205,4 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - Review periodically for outdated rules
 - Remove rules that become obvious over time
 
-Last Updated: 2026-03-30
+Last Updated: 2026-03-31

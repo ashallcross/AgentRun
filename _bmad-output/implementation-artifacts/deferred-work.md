@@ -50,3 +50,8 @@
 ## Deferred from: code review of story-3.4 (2026-03-31)
 
 - TOCTOU race in cancel endpoint — `CancelInstance` reads instance status, checks it's Running/Pending, then writes Cancelled. Between read and write, the workflow runner could advance to Completed/Failed. The cancel would overwrite a terminal status. No optimistic concurrency guard visible. Pre-existing from Story 3.2. [InstanceEndpoints.cs:82-106]
+
+## Deferred from: code review of 4-1-prompt-assembly (2026-03-31)
+
+- Path traversal on developer-authored paths — `Step.Agent`, `Step.Id`, and `WritesTo` paths used in `Path.Combine` are not validated to stay within their root folders. Inputs come from developer-authored YAML, not user input. Story 5.2 tool path sandboxing is the natural place for defence-in-depth.
+- TOCTOU on File.Exists then ReadAllText — agent and sidecar files could be deleted between existence check and read. Theoretical; Story 4.3 instance locking will prevent concurrent modifications to running instances.

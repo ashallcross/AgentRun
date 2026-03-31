@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Shallai.UmbracoAgentRunner.Engine;
 using Shallai.UmbracoAgentRunner.Instances;
 using Shallai.UmbracoAgentRunner.Workflows;
 using Umbraco.Cms.Core.Composing;
@@ -22,6 +23,9 @@ public class AgentRunnerComposer : IComposer
 
         // Instance management (singleton — disk-based, no in-memory cache)
         builder.Services.AddSingleton<IInstanceManager, InstanceManager>();
+
+        // Engine services
+        builder.Services.AddSingleton<IPromptAssembler, PromptAssembler>();
 
         // Startup handler
         builder.AddNotificationHandler<UmbracoApplicationStartedNotification, WorkflowRegistryInitializer>();
