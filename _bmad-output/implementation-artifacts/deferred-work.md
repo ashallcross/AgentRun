@@ -55,3 +55,7 @@
 
 - Path traversal on developer-authored paths — `Step.Agent`, `Step.Id`, and `WritesTo` paths used in `Path.Combine` are not validated to stay within their root folders. Inputs come from developer-authored YAML, not user input. Story 5.2 tool path sandboxing is the natural place for defence-in-depth.
 - TOCTOU on File.Exists then ReadAllText — agent and sidecar files could be deleted between existence check and read. Theoretical; Story 4.3 instance locking will prevent concurrent modifications to running instances.
+
+## Deferred from: code review of 4-2-profile-resolution (2026-03-31)
+
+- `ProfileNotFoundException` missing typed `ProfileAlias` property — alias is baked into message string but not exposed as a property. Callers needing to programmatically inspect which alias failed must parse the exception message. Nice-to-have for future retry/fallback logic.
