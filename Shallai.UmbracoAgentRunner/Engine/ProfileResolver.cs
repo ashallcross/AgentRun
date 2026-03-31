@@ -52,14 +52,30 @@ public class ProfileResolver : IProfileResolver
         }
     }
 
-    public async Task<bool> HasConfiguredProviderAsync(CancellationToken cancellationToken)
+    public async Task<bool> HasConfiguredProviderAsync(
+        WorkflowDefinition? workflow,
+        CancellationToken cancellationToken)
     {
         try
         {
+            // Resolve profile using the same fallback chain as execution:
+            // workflow default_profile → site-default → bare (no profile)
+            string? profile = null;
+            if (!string.IsNullOrWhiteSpace(workflow?.DefaultProfile))
+                profile = workflow.DefaultProfile;
+            else if (!string.IsNullOrWhiteSpace(_options.DefaultProfile))
+                profile = _options.DefaultProfile;
+
             var client = await _chatService.CreateChatClientAsync(
-                chat => chat.WithAlias("provider-check"), cancellationToken);
+                chat =>
+                {
+                    chat.WithAlias("provider-check");
+                    if (profile is not null) chat.WithProfile(profile);
+                },
+                cancellationToken);
             (client as IDisposable)?.Dispose();
-            _logger.LogDebug("Provider prerequisite check passed: at least one Umbraco.AI provider is configured");
+            _logger.LogDebug("Provider prerequisite check passed: Umbraco.AI provider is configured (profile: {Profile})",
+                profile ?? "(default)");
             return true;
         }
         catch (OperationCanceledException)

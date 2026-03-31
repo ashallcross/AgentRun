@@ -66,3 +66,12 @@ export function getInstance(id: string, token?: string): Promise<InstanceDetailR
 export function cancelInstance(id: string, token?: string): Promise<InstanceResponse> {
   return postJson<InstanceResponse>(`/instances/${encodeURIComponent(id)}/cancel`, {}, token);
 }
+
+export async function startInstance(id: string, token?: string): Promise<Response> {
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return fetch(`${API_BASE}/instances/${encodeURIComponent(id)}/start`, {
+    method: "POST",
+    headers,
+  });
+}

@@ -141,7 +141,8 @@ public class StepExecutor : IStepExecutor
 
             // Run the tool loop
             await ToolLoop.RunAsync(
-                client, messages, chatOptions, toolDict, toolExecutionContext, _logger, cancellationToken);
+                client, messages, chatOptions, toolDict, toolExecutionContext, _logger, cancellationToken,
+                context.EventEmitter);
 
             _logger.LogInformation(
                 "Tool loop complete for step {StepId} in workflow {WorkflowAlias} instance {InstanceId}",

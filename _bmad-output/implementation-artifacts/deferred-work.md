@@ -68,3 +68,9 @@
 
 - Null/empty entries inside `ReadsFrom`/`FilesExist` lists from YAML deserialization quirks — `Path.Combine(path, null)` throws `ArgumentNullException`, `Path.Combine(path, "")` returns folder path causing misleading "missing file" errors. Defensive validation belongs at YAML parse/validation boundary (Story 2.1 area), not in the Engine consumers.
 - `NullCompletionCheck` StepExecutor test name is misleading — mock returns `Passed=true` regardless, so it doesn't uniquely prove the null path. The actual null handling is covered by `CompletionCheckerTests.NullCheck_ReturnsPassed`. Cosmetic issue only.
+
+## Deferred from: code review of story-4.5 (2026-03-31)
+
+- TOCTOU race on concurrent POST /start requests — two requests can both pass the Running guard and execute concurrently. Per-instance SemaphoreSlim locking explicitly deferred in story spec.
+- No timeout/abort on frontend SSE stream reader — if server hangs, client waits indefinitely with no AbortController. Deferred to v2 (NFR5 reconnection scope).
+- No way to resume failed autonomous workflow — if an intermediate step fails, instance is stuck at Failed with advanced CurrentStepIndex. Retry/resume is Story 7.2.

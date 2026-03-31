@@ -36,6 +36,9 @@ public class AgentRunnerComposer : IComposer
         // Step execution engine
         builder.Services.AddSingleton<IStepExecutor, StepExecutor>();
 
+        // Workflow orchestrator (step sequencing + mode logic)
+        builder.Services.AddSingleton<IWorkflowOrchestrator, WorkflowOrchestrator>();
+
         // Tools registered individually (Epic 5):
         // builder.Services.AddSingleton<IWorkflowTool, ReadFileTool>();
     }

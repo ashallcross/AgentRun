@@ -297,6 +297,38 @@ public sealed partial class InstanceManager : IInstanceManager
         return null;
     }
 
+    public async Task<InstanceState> AdvanceStepAsync(
+        string workflowAlias,
+        string instanceId,
+        CancellationToken cancellationToken)
+    {
+        var instanceDir = GetInstanceDirectory(workflowAlias, instanceId);
+        var yamlPath = Path.Combine(instanceDir, "instance.yaml");
+
+        var state = await ReadStateAsync(yamlPath, cancellationToken)
+            ?? throw new InvalidOperationException($"Instance {instanceId} not found for workflow {workflowAlias}.");
+
+        if (state.CurrentStepIndex >= state.Steps.Count - 1)
+        {
+            throw new InvalidOperationException(
+                $"Cannot advance step index for instance {instanceId}: already on the last step (index {state.CurrentStepIndex} of {state.Steps.Count}).");
+        }
+
+        state.CurrentStepIndex++;
+        state.UpdatedAt = DateTime.UtcNow;
+
+        await WriteStateAtomicAsync(instanceDir, state, cancellationToken);
+
+        _logger.LogInformation(
+            "Advanced CurrentStepIndex to {StepIndex} for instance {InstanceId} of workflow {WorkflowAlias}",
+            state.CurrentStepIndex, instanceId, workflowAlias);
+
+        return state;
+    }
+
+    public string GetInstanceFolderPath(string workflowAlias, string instanceId)
+        => GetInstanceDirectory(workflowAlias, instanceId);
+
     [System.Text.RegularExpressions.GeneratedRegex("^[0-9a-f]{32}$")]
     private static partial System.Text.RegularExpressions.Regex InstanceIdRegex();
 

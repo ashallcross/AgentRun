@@ -280,13 +280,49 @@ describe("shallai-instance-detail", () => {
 
     // 8.10: Start button only renders for Pending status
     it("Start button renders only for Pending instance status", () => {
-      const shouldShowStart = (status: string) => status === "Pending";
+      const shouldShowStart = (status: string, streaming: boolean) =>
+        status === "Pending" && !streaming;
 
-      expect(shouldShowStart("Pending")).to.be.true;
-      expect(shouldShowStart("Running")).to.be.false;
-      expect(shouldShowStart("Completed")).to.be.false;
-      expect(shouldShowStart("Failed")).to.be.false;
-      expect(shouldShowStart("Cancelled")).to.be.false;
+      expect(shouldShowStart("Pending", false)).to.be.true;
+      expect(shouldShowStart("Pending", true)).to.be.false;
+      expect(shouldShowStart("Running", false)).to.be.false;
+      expect(shouldShowStart("Completed", false)).to.be.false;
+      expect(shouldShowStart("Failed", false)).to.be.false;
+      expect(shouldShowStart("Cancelled", false)).to.be.false;
+    });
+
+    // Continue button logic for interactive mode
+    it("Continue button shows when Running, no active step, and pending steps remain", () => {
+      const shouldShowContinue = (
+        status: string,
+        hasActiveStep: boolean,
+        hasPendingSteps: boolean,
+        streaming: boolean,
+      ) =>
+        status === "Running" && !hasActiveStep && !streaming && hasPendingSteps;
+
+      // Running with completed current step and remaining steps
+      expect(shouldShowContinue("Running", false, true, false)).to.be.true;
+      // Running but step is active (in progress)
+      expect(shouldShowContinue("Running", true, true, false)).to.be.false;
+      // Running but streaming (button hidden during SSE)
+      expect(shouldShowContinue("Running", false, true, true)).to.be.false;
+      // Pending — not Continue, that's Start
+      expect(shouldShowContinue("Pending", false, true, false)).to.be.false;
+      // Completed — no buttons
+      expect(shouldShowContinue("Completed", false, false, false)).to.be.false;
+      // Running but no pending steps (all done)
+      expect(shouldShowContinue("Running", false, false, false)).to.be.false;
+    });
+
+    // Action buttons hidden for terminal states
+    it("all action buttons hidden for Completed, Failed, Cancelled", () => {
+      for (const status of ["Completed", "Failed", "Cancelled"]) {
+        const showStart = status === "Pending";
+        const showCancel = status === "Running" || status === "Pending";
+        expect(showStart).to.be.false;
+        expect(showCancel).to.be.false;
+      }
     });
 
     // 8.11: Cancel button only renders for Running or Pending status

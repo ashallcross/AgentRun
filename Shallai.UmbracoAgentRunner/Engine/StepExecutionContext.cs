@@ -1,3 +1,4 @@
+using Shallai.UmbracoAgentRunner.Engine.Events;
 using Shallai.UmbracoAgentRunner.Instances;
 using Shallai.UmbracoAgentRunner.Workflows;
 
@@ -8,4 +9,5 @@ public sealed record StepExecutionContext(
     StepDefinition Step,
     InstanceState Instance,
     string InstanceFolderPath,
-    string WorkflowFolderPath);
+    string WorkflowFolderPath,
+    ISseEventEmitter? EventEmitter = null);

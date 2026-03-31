@@ -8,7 +8,7 @@ import {
 } from "@umbraco-cms/backoffice/external/lit";
 import { UMB_AUTH_CONTEXT } from "@umbraco-cms/backoffice/auth";
 import { umbConfirmModal } from "@umbraco-cms/backoffice/modal";
-import { getInstance, getInstances, cancelInstance } from "../api/api-client.js";
+import { getInstance, getInstances, cancelInstance, startInstance } from "../api/api-client.js";
 import type {
   InstanceDetailResponse,
   StepDetailResponse,
@@ -42,6 +42,12 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
 
   @state()
   private _runNumber = 0;
+
+  @state()
+  private _streaming = false;
+
+  @state()
+  private _providerError = false;
 
   static styles = css`
     :host {
@@ -269,8 +275,86 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
     );
   }
 
-  private _onStartClick(): void {
-    console.log("Start not yet implemented");
+  private async _onStartClick(): Promise<void> {
+    if (this._streaming || !this._instance) return;
+
+    this._streaming = true;
+    this._providerError = false;
+
+    try {
+      const token = await this.#authContext?.getLatestToken();
+      const response = await startInstance(this._instance.id, token);
+
+      if (!response.ok) {
+        if (response.status === 400) {
+          // Provider prerequisite error
+          this._providerError = true;
+          return;
+        }
+        // 409 or other error — reload data to get fresh state
+        await this._loadData();
+        return;
+      }
+
+      if (!response.body) return;
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const events = buffer.split("\n\n");
+        buffer = events.pop()!;
+        for (const event of events) {
+          const lines = event.split("\n");
+          const eventType = lines.find((l) => l.startsWith("event:"))?.slice(7);
+          const data = lines.find((l) => l.startsWith("data:"))?.slice(5);
+          if (eventType && data) {
+            this._handleSseEvent(eventType, JSON.parse(data));
+          }
+        }
+      }
+    } catch {
+      console.warn("Streaming failed");
+    } finally {
+      this._streaming = false;
+      await this._loadData();
+    }
+  }
+
+  private _handleSseEvent(eventType: string, data: Record<string, unknown>): void {
+    switch (eventType) {
+      case "step.started":
+        if (this._instance) {
+          const step = this._instance.steps.find((s) => s.id === data.stepId);
+          if (step) step.status = "Active";
+          this.requestUpdate();
+        }
+        break;
+      case "step.finished":
+        if (this._instance) {
+          const step = this._instance.steps.find((s) => s.id === data.stepId);
+          if (step) step.status = data.status as string;
+          this.requestUpdate();
+        }
+        break;
+      case "run.finished":
+        if (this._instance) {
+          this._instance.status = "Completed";
+          this.requestUpdate();
+        }
+        break;
+      case "run.error":
+        if (this._instance) {
+          this._instance.status = "Failed";
+          this.requestUpdate();
+        }
+        break;
+    }
   }
 
   private async _onCancelClick(): Promise<void> {
@@ -354,8 +438,23 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
     }
 
     const inst = this._instance;
-    const showStart = inst.status === "Pending";
-    const showCancel = inst.status === "Running" || inst.status === "Pending";
+    const showStart = inst.status === "Pending" && !this._streaming;
+    const hasActiveStep = inst.steps.some((s) => s.status === "Active");
+    const showContinue = inst.status === "Running" && !hasActiveStep && !this._streaming
+      && inst.steps.some((s) => s.status === "Pending");
+    const showCancel = (inst.status === "Running" || inst.status === "Pending") && !this._streaming;
+
+    const mainContent = this._providerError
+      ? html`<div class="main-placeholder">Configure an AI provider in Umbraco.AI before workflows can run.</div>`
+      : this._streaming || (inst.status === "Running" && hasActiveStep)
+        ? html`<div class="main-placeholder">Step in progress...</div>`
+        : inst.status === "Completed"
+          ? html`<div class="main-placeholder">Workflow completed.</div>`
+          : inst.status === "Failed"
+            ? html`<div class="main-placeholder">Workflow failed.</div>`
+            : showContinue
+              ? html`<div class="main-placeholder">Step complete. Click 'Continue' to proceed.</div>`
+              : html`<div class="main-placeholder">Click 'Start' to begin the workflow.</div>`;
 
     return html`
       <div class="header">
@@ -369,6 +468,16 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
                 Start
               </uui-button>
             `
+          : nothing}
+        ${showContinue
+          ? html`
+              <uui-button look="primary" @click=${this._onStartClick}>
+                Continue
+              </uui-button>
+            `
+          : nothing}
+        ${this._streaming
+          ? html`<uui-loader-bar></uui-loader-bar>`
           : nothing}
         ${showCancel
           ? html`
@@ -386,9 +495,7 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
 
       <div class="detail-grid">
         ${this._renderStepProgress()}
-        <div class="main-placeholder">
-          Click 'Start' to begin the workflow.
-        </div>
+        ${mainContent}
       </div>
     `;
   }

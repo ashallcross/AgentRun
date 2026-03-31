@@ -144,7 +144,7 @@ public class ProfileResolverTests
             .Returns(_chatClient);
         var resolver = CreateResolver();
 
-        var result = await resolver.HasConfiguredProviderAsync(CancellationToken.None);
+        var result = await resolver.HasConfiguredProviderAsync(null, CancellationToken.None);
 
         Assert.That(result, Is.True);
     }
@@ -157,7 +157,7 @@ public class ProfileResolverTests
             .ThrowsAsync(new InvalidOperationException("No provider configured"));
         var resolver = CreateResolver();
 
-        var result = await resolver.HasConfiguredProviderAsync(CancellationToken.None);
+        var result = await resolver.HasConfiguredProviderAsync(null, CancellationToken.None);
 
         Assert.That(result, Is.False);
     }
@@ -232,7 +232,7 @@ public class ProfileResolverTests
         var resolver = CreateResolver();
 
         Assert.ThrowsAsync<OperationCanceledException>(async () =>
-            await resolver.HasConfiguredProviderAsync(CancellationToken.None));
+            await resolver.HasConfiguredProviderAsync(null, CancellationToken.None));
     }
 
     [Test]

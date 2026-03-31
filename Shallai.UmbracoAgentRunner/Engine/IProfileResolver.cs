@@ -7,5 +7,5 @@ public interface IProfileResolver
 {
     Task<IChatClient> ResolveAndGetClientAsync(StepDefinition step, WorkflowDefinition workflow, CancellationToken cancellationToken);
 
-    Task<bool> HasConfiguredProviderAsync(CancellationToken cancellationToken);
+    Task<bool> HasConfiguredProviderAsync(WorkflowDefinition? workflow, CancellationToken cancellationToken);
 }

@@ -2,7 +2,7 @@ import { UmbLitElement as f } from "@umbraco-cms/backoffice/lit-element";
 import { html as r, nothing as p, css as m, state as n, customElement as b } from "@umbraco-cms/backoffice/external/lit";
 import { UMB_AUTH_CONTEXT as g } from "@umbraco-cms/backoffice/auth";
 import { umbConfirmModal as v } from "@umbraco-cms/backoffice/modal";
-import { g as y, a as k, c as $, d as C } from "./api-client-pcmz0vNh.js";
+import { g as y, a as k, c as $, d as C } from "./api-client-CgFnA5nu.js";
 import { e as A, n as S, b as x, a as I, s as T, r as N, i as P } from "./instance-list-helpers-D6jp37V8.js";
 var D = Object.defineProperty, L = Object.getOwnPropertyDescriptor, _ = (t) => {
   throw TypeError(t);
@@ -228,4 +228,4 @@ export {
   i as ShallaiInstanceListElement,
   F as default
 };
-//# sourceMappingURL=shallai-instance-list.element-BfAuSlHI.js.map
+//# sourceMappingURL=shallai-instance-list.element-CeHLyLA1.js.map

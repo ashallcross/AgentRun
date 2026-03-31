@@ -1,4 +1,5 @@
 using Microsoft.Extensions.AI;
+using Shallai.UmbracoAgentRunner.Engine.Events;
 using Shallai.UmbracoAgentRunner.Tools;
 
 namespace Shallai.UmbracoAgentRunner.Engine;
@@ -14,7 +15,8 @@ public static class ToolLoop
         IReadOnlyDictionary<string, IWorkflowTool> declaredTools,
         ToolExecutionContext context,
         ILogger logger,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ISseEventEmitter? emitter = null)
     {
         var iteration = 0;
         while (true)
@@ -29,6 +31,21 @@ public static class ToolLoop
             }
 
             var response = await client.GetResponseAsync(messages, options, cancellationToken);
+
+            // Emit text.delta for any text content in the response
+            if (emitter is not null)
+            {
+                foreach (var message in response.Messages)
+                {
+                    foreach (var content in message.Contents.OfType<TextContent>())
+                    {
+                        if (!string.IsNullOrEmpty(content.Text))
+                        {
+                            await emitter.EmitTextDeltaAsync(content.Text, cancellationToken);
+                        }
+                    }
+                }
+            }
 
             var functionCalls = response.Messages
                 .SelectMany(m => m.Contents.OfType<FunctionCallContent>())
@@ -62,14 +79,33 @@ public static class ToolLoop
                     continue;
                 }
 
+                // Emit tool.start
+                if (emitter is not null)
+                {
+                    await emitter.EmitToolStartAsync(functionCall.CallId, tool.Name, cancellationToken);
+                }
+
+                // Emit tool.args
+                var arguments = functionCall.Arguments ?? new Dictionary<string, object?>();
+                if (emitter is not null)
+                {
+                    await emitter.EmitToolArgsAsync(functionCall.CallId, arguments, cancellationToken);
+                }
+
                 logger.LogInformation(
                     "Tool {ToolName} executing for step {StepId} in workflow {WorkflowAlias} instance {InstanceId}",
                     tool.Name, context.StepId, context.WorkflowAlias, context.InstanceId);
 
                 try
                 {
-                    var arguments = functionCall.Arguments ?? new Dictionary<string, object?>();
                     var result = await tool.ExecuteAsync(arguments, context, cancellationToken);
+
+                    // Emit tool.end and tool.result
+                    if (emitter is not null)
+                    {
+                        await emitter.EmitToolEndAsync(functionCall.CallId, cancellationToken);
+                        await emitter.EmitToolResultAsync(functionCall.CallId, result, cancellationToken);
+                    }
 
                     resultContents.Add(new FunctionResultContent(functionCall.CallId, result));
                 }
@@ -82,6 +118,12 @@ public static class ToolLoop
                     logger.LogWarning(ex,
                         "Tool {ToolName} failed for step {StepId} in workflow {WorkflowAlias} instance {InstanceId}",
                         tool.Name, context.StepId, context.WorkflowAlias, context.InstanceId);
+
+                    // Emit tool.end even on failure
+                    if (emitter is not null)
+                    {
+                        await emitter.EmitToolEndAsync(functionCall.CallId, cancellationToken);
+                    }
 
                     resultContents.Add(new FunctionResultContent(
                         functionCall.CallId,
