@@ -38,6 +38,9 @@ public class AgentRunnerComposer : IComposer
         // Startup handler
         builder.AddNotificationHandler<UmbracoApplicationStartedNotification, WorkflowRegistryInitializer>();
 
+        // Active instance registry (message queue for running instances)
+        builder.Services.AddSingleton<IActiveInstanceRegistry, ActiveInstanceRegistry>();
+
         // Step execution engine
         builder.Services.AddSingleton<IStepExecutor, StepExecutor>();
 

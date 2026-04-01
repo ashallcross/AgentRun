@@ -9,4 +9,6 @@ public interface IConversationRecorder
     Task RecordToolResultAsync(string toolCallId, string toolResult, CancellationToken cancellationToken);
 
     Task RecordSystemMessageAsync(string message, CancellationToken cancellationToken);
+
+    Task RecordUserMessageAsync(string content, CancellationToken cancellationToken);
 }

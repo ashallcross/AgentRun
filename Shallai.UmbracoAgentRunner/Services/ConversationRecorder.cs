@@ -107,4 +107,24 @@ public class ConversationRecorder : IConversationRecorder
                 _stepId, _workflowAlias, _instanceId);
         }
     }
+
+    public async Task RecordUserMessageAsync(string content, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var entry = new ConversationEntry
+            {
+                Role = "user",
+                Content = content,
+                Timestamp = DateTime.UtcNow
+            };
+            await _store.AppendAsync(_workflowAlias, _instanceId, _stepId, entry, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Failed to record user message for step {StepId} in workflow {WorkflowAlias} instance {InstanceId}",
+                _stepId, _workflowAlias, _instanceId);
+        }
+    }
 }

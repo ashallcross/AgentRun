@@ -56,7 +56,7 @@ export interface ToolCallData {
 }
 
 export interface ChatMessage {
-  role: "agent" | "system";
+  role: "agent" | "system" | "user";
   content: string;
   timestamp: string;
   isStreaming?: boolean;

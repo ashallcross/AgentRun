@@ -13,6 +13,7 @@ public static class SseEventTypes
     public const string RunFinished = "run.finished";
     public const string RunError = "run.error";
     public const string SystemMessage = "system.message";
+    public const string UserMessage = "user.message";
 }
 
 public sealed record RunStartedPayload(string InstanceId);
@@ -26,3 +27,4 @@ public sealed record StepFinishedPayload(string StepId, string Status);
 public sealed record RunFinishedPayload(string InstanceId, string Status);
 public sealed record RunErrorPayload(string Error, string Message);
 public sealed record SystemMessagePayload(string Message);
+public sealed record UserMessagePayload(string Content);

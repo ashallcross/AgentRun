@@ -1,4 +1,5 @@
 using System.Text;
+using System.Threading.Channels;
 using Microsoft.Extensions.AI;
 using Shallai.UmbracoAgentRunner.Engine.Events;
 using Shallai.UmbracoAgentRunner.Tools;
@@ -8,6 +9,7 @@ namespace Shallai.UmbracoAgentRunner.Engine;
 public static class ToolLoop
 {
     internal const int MaxIterations = 100;
+    internal static TimeSpan UserMessageTimeout = TimeSpan.FromMinutes(5);
 
     public static async Task<ChatResponse> RunAsync(
         IChatClient client,
@@ -17,6 +19,7 @@ public static class ToolLoop
         ToolExecutionContext context,
         ILogger logger,
         CancellationToken cancellationToken,
+        ChannelReader<string>? userMessageReader = null,
         ISseEventEmitter? emitter = null,
         IConversationRecorder? recorder = null)
     {
@@ -31,6 +34,9 @@ public static class ToolLoop
                 throw new AgentRunnerException(
                     $"Tool loop exceeded maximum of {MaxIterations} iterations for step '{context.StepId}'");
             }
+
+            // Drain any user messages queued from the message endpoint
+            await DrainUserMessagesAsync(userMessageReader, messages, recorder, emitter, cancellationToken);
 
             // Stream the LLM response, emitting text.delta events for each chunk
             var textBuilder = new StringBuilder();
@@ -86,7 +92,42 @@ public static class ToolLoop
 
             if (functionCalls.Count == 0)
             {
-                // No tool calls — return a ChatResponse from the accumulated updates
+                // No tool calls — check if we should wait for user input
+                if (userMessageReader is null)
+                {
+                    // Non-interactive mode — exit immediately
+                    return new ChatResponse(messages.Where(m => m.Role == ChatRole.Assistant).LastOrDefault()
+                        ?? new ChatMessage(ChatRole.Assistant, accumulatedText));
+                }
+
+                // Try non-blocking drain first
+                var drained = await DrainUserMessagesAsync(
+                    userMessageReader, messages, recorder, emitter, cancellationToken);
+
+                if (drained > 0)
+                    continue;
+
+                // Nothing waiting — block with timeout
+                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeoutCts.CancelAfter(UserMessageTimeout);
+
+                try
+                {
+                    if (await userMessageReader.WaitToReadAsync(timeoutCts.Token))
+                    {
+                        await DrainUserMessagesAsync(
+                            userMessageReader, messages, recorder, emitter, cancellationToken);
+                        continue;
+                    }
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    // Timeout — not real cancellation. Exit normally.
+                    logger.LogInformation(
+                        "User message wait timed out for step {StepId} in workflow {WorkflowAlias} instance {InstanceId}",
+                        context.StepId, context.WorkflowAlias, context.InstanceId);
+                }
+
                 return new ChatResponse(messages.Where(m => m.Role == ChatRole.Assistant).LastOrDefault()
                     ?? new ChatMessage(ChatRole.Assistant, accumulatedText));
             }
@@ -189,6 +230,30 @@ public static class ToolLoop
 
             // Add tool results as a single tool-role message
             messages.Add(new ChatMessage(ChatRole.Tool, resultContents));
+
+            // Drain any user messages sent during tool execution
+            await DrainUserMessagesAsync(userMessageReader, messages, recorder, emitter, cancellationToken);
         }
+    }
+
+    private static async Task<int> DrainUserMessagesAsync(
+        ChannelReader<string>? userMessageReader,
+        IList<ChatMessage> messages,
+        IConversationRecorder? recorder,
+        ISseEventEmitter? emitter,
+        CancellationToken cancellationToken)
+    {
+        var count = 0;
+        while (userMessageReader is not null && userMessageReader.TryRead(out var userMsg))
+        {
+            count++;
+            messages.Add(new ChatMessage(ChatRole.User, userMsg));
+            await (recorder?.RecordUserMessageAsync(userMsg, cancellationToken) ?? Task.CompletedTask);
+            if (emitter is not null)
+            {
+                await emitter.EmitUserMessageAsync(userMsg, cancellationToken);
+            }
+        }
+        return count;
     }
 }

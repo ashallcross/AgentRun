@@ -1,3 +1,4 @@
+using System.Threading.Channels;
 using Shallai.UmbracoAgentRunner.Engine.Events;
 using Shallai.UmbracoAgentRunner.Instances;
 using Shallai.UmbracoAgentRunner.Workflows;
@@ -11,4 +12,5 @@ public sealed record StepExecutionContext(
     string InstanceFolderPath,
     string WorkflowFolderPath,
     ISseEventEmitter? EventEmitter = null,
-    IConversationRecorder? ConversationRecorder = null);
+    IConversationRecorder? ConversationRecorder = null,
+    ChannelReader<string>? UserMessageReader = null);

@@ -23,4 +23,6 @@ public interface ISseEventEmitter
     Task EmitRunErrorAsync(string error, string message, CancellationToken cancellationToken);
 
     Task EmitSystemMessageAsync(string message, CancellationToken cancellationToken);
+
+    Task EmitUserMessageAsync(string content, CancellationToken cancellationToken);
 }

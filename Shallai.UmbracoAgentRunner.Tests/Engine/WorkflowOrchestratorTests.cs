@@ -61,6 +61,7 @@ public class WorkflowOrchestratorTests
             _workflowRegistry,
             _stepExecutor,
             Substitute.For<IConversationStore>(),
+            Substitute.For<IActiveInstanceRegistry>(),
             NullLoggerFactory.Instance,
             NullLogger<WorkflowOrchestrator>.Instance);
     }

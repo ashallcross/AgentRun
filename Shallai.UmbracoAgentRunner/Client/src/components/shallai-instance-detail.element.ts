@@ -8,7 +8,7 @@ import {
 } from "@umbraco-cms/backoffice/external/lit";
 import { UMB_AUTH_CONTEXT } from "@umbraco-cms/backoffice/auth";
 import { umbConfirmModal } from "@umbraco-cms/backoffice/modal";
-import { getInstance, getInstances, cancelInstance, startInstance, getConversation, mapConversationToChat } from "../api/api-client.js";
+import { getInstance, getInstances, cancelInstance, startInstance, sendMessage, getConversation, mapConversationToChat } from "../api/api-client.js";
 import type {
   InstanceDetailResponse,
   StepDetailResponse,
@@ -77,24 +77,29 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
       display: flex;
       align-items: center;
       gap: var(--uui-size-space-3);
-      margin-bottom: var(--uui-size-layout-1);
+      margin-bottom: var(--uui-size-space-4);
+      flex-shrink: 0;
     }
 
     .header h2 {
       flex: 1;
       margin: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
     }
 
     .detail-grid {
       display: grid;
       grid-template-columns: 240px 1fr;
       gap: var(--uui-size-layout-1);
-      height: 100%;
     }
 
     .step-sidebar {
       border-right: 1px solid var(--uui-color-border);
       padding-right: var(--uui-size-layout-1);
+      overflow-y: auto;
     }
 
     .step-sidebar ul {
@@ -565,6 +570,9 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
           this.requestUpdate();
         }
         break;
+      case "user.message":
+        // Server confirms user message was injected — already added optimistically, ignore echo
+        break;
       case "run.error":
         this._finaliseStreamingMessage();
         if (this._instance) {
@@ -580,6 +588,36 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
           },
         ];
         break;
+    }
+  }
+
+  private async _onSendMessage(e: CustomEvent<{ message: string }>): Promise<void> {
+    if (!this._instance) return;
+    const message = e.detail.message;
+
+    // Optimistically add user message to chat
+    this._chatMessages = [
+      ...this._chatMessages,
+      {
+        role: "user" as const,
+        content: message,
+        timestamp: new Date().toISOString(),
+      },
+    ];
+
+    try {
+      const token = await this.#authContext?.getLatestToken();
+      await sendMessage(this._instance.id, message, token);
+    } catch {
+      // Message failed — add system error message
+      this._chatMessages = [
+        ...this._chatMessages,
+        {
+          role: "system",
+          content: "Failed to send message. Try again.",
+          timestamp: new Date().toISOString(),
+        },
+      ];
     }
   }
 
@@ -633,7 +671,7 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
               >
                 <div class="step-icon-wrapper">
                   <uui-icon
-                    class="step-icon ${step.status === "Active" ? "step-icon-spin" : ""}"
+                    class="step-icon"
                     name=${stepIconName(step.status)}
                   ></uui-icon>
                 </div>
@@ -670,11 +708,20 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
       && inst.steps.some((s) => s.status === "Pending");
     const showCancel = (inst.status === "Running" || inst.status === "Pending") && !this._streaming;
 
+    const activeStep = inst.steps.find(s => s.status === "Active");
+    const inputEnabled = this._streaming && !this._viewingStepId;
+    const inputPlaceholder = inst.status === "Completed" || inst.status === "Failed"
+      ? "Workflow complete"
+      : activeStep ? "Step complete" : "Click 'Start' to begin the workflow.";
+
     const mainContent = this._providerError
       ? html`<div class="main-placeholder">Configure an AI provider in Umbraco.AI before workflows can run.</div>`
       : html`<shallai-chat-panel
           .messages=${this._viewingStepId ? this._historyMessages : this._chatMessages}
           ?is-streaming=${this._streaming && !this._viewingStepId}
+          ?input-enabled=${inputEnabled}
+          input-placeholder=${inputPlaceholder}
+          @send-message=${this._onSendMessage}
         ></shallai-chat-panel>`;
 
     return html`
@@ -697,9 +744,7 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
               </uui-button>
             `
           : nothing}
-        ${this._streaming
-          ? html`<uui-loader-bar></uui-loader-bar>`
-          : nothing}
+        ${nothing}
         ${showCancel
           ? html`
               <uui-button

@@ -74,6 +74,17 @@ public class ConversationRecorderTests
     }
 
     [Test]
+    public async Task RecordUserMessageAsync_CreatesEntryWithUserRole()
+    {
+        await _recorder.RecordUserMessageAsync("Hello agent", CancellationToken.None);
+
+        await _store.Received(1).AppendAsync(
+            "test-workflow", "inst-001", "step-1",
+            Arg.Is<ConversationEntry>(e => e.Role == "user" && e.Content == "Hello agent"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task RecordingFailure_IsCaughtAndLogged_DoesNotPropagate()
     {
         _store.AppendAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
@@ -85,9 +96,10 @@ public class ConversationRecorderTests
         await _recorder.RecordToolCallAsync("c1", "tool", "{}", CancellationToken.None);
         await _recorder.RecordToolResultAsync("c1", "result", CancellationToken.None);
         await _recorder.RecordSystemMessageAsync("msg", CancellationToken.None);
+        await _recorder.RecordUserMessageAsync("user msg", CancellationToken.None);
 
-        // Verify all 4 methods were attempted despite failures
-        await _store.Received(4).AppendAsync(
+        // Verify all 5 methods were attempted despite failures
+        await _store.Received(5).AppendAsync(
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
             Arg.Any<ConversationEntry>(), Arg.Any<CancellationToken>());
     }

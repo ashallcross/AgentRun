@@ -11,6 +11,7 @@ public class WorkflowOrchestrator : IWorkflowOrchestrator
     private readonly IWorkflowRegistry _workflowRegistry;
     private readonly IStepExecutor _stepExecutor;
     private readonly IConversationStore _conversationStore;
+    private readonly IActiveInstanceRegistry _activeInstanceRegistry;
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<WorkflowOrchestrator> _logger;
 
@@ -19,6 +20,7 @@ public class WorkflowOrchestrator : IWorkflowOrchestrator
         IWorkflowRegistry workflowRegistry,
         IStepExecutor stepExecutor,
         IConversationStore conversationStore,
+        IActiveInstanceRegistry activeInstanceRegistry,
         ILoggerFactory loggerFactory,
         ILogger<WorkflowOrchestrator> logger)
     {
@@ -26,6 +28,7 @@ public class WorkflowOrchestrator : IWorkflowOrchestrator
         _workflowRegistry = workflowRegistry;
         _stepExecutor = stepExecutor;
         _conversationStore = conversationStore;
+        _activeInstanceRegistry = activeInstanceRegistry;
         _loggerFactory = loggerFactory;
         _logger = logger;
     }
@@ -41,7 +44,10 @@ public class WorkflowOrchestrator : IWorkflowOrchestrator
 
         var workflow = registered.Definition;
         var isFirstStep = true;
+        var userMessageReader = _activeInstanceRegistry.RegisterInstance(instanceId);
 
+        try
+        {
         while (true)
         {
             var instance = await _instanceManager.FindInstanceAsync(instanceId, cancellationToken)
@@ -81,6 +87,7 @@ public class WorkflowOrchestrator : IWorkflowOrchestrator
 
             // Build StepExecutionContext
             var instanceFolderPath = _instanceManager.GetInstanceFolderPath(workflowAlias, instanceId);
+
             var context = new StepExecutionContext(
                 Workflow: workflow,
                 Step: step,
@@ -88,7 +95,8 @@ public class WorkflowOrchestrator : IWorkflowOrchestrator
                 InstanceFolderPath: instanceFolderPath,
                 WorkflowFolderPath: registered.FolderPath,
                 EventEmitter: emitter,
-                ConversationRecorder: recorder);
+                ConversationRecorder: recorder,
+                UserMessageReader: userMessageReader);
 
             // Execute the step
             await _stepExecutor.ExecuteStepAsync(context, cancellationToken);
@@ -161,6 +169,11 @@ public class WorkflowOrchestrator : IWorkflowOrchestrator
                 $"Auto-advancing to {nextStep.Name}...", cancellationToken);
 
             await Task.Delay(1000, cancellationToken);
+        }
+        }
+        finally
+        {
+            _activeInstanceRegistry.UnregisterInstance(instanceId);
         }
     }
 }

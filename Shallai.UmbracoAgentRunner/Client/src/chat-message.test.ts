@@ -221,6 +221,32 @@ describe("extractToolSummary", () => {
   });
 });
 
+describe("mapConversationToChat with user messages", () => {
+  it("maps user entries to user role", () => {
+    const entries: ConversationEntryResponse[] = [
+      { role: "user", content: "Hello agent", timestamp: "2026-04-01T10:00:00Z" },
+    ];
+    const result = mapConversationToChat(entries);
+    expect(result).to.have.length(1);
+    expect(result[0].role).to.equal("user");
+    expect(result[0].content).to.equal("Hello agent");
+  });
+
+  it("interleaves user and agent messages correctly", () => {
+    const entries: ConversationEntryResponse[] = [
+      { role: "assistant", content: "I can help with that", timestamp: "2026-04-01T10:00:00Z" },
+      { role: "user", content: "Please read the file", timestamp: "2026-04-01T10:00:01Z" },
+      { role: "assistant", content: "Reading now...", timestamp: "2026-04-01T10:00:02Z" },
+    ];
+    const result = mapConversationToChat(entries);
+    expect(result).to.have.length(3);
+    expect(result[0].role).to.equal("agent");
+    expect(result[1].role).to.equal("user");
+    expect(result[1].content).to.equal("Please read the file");
+    expect(result[2].role).to.equal("agent");
+  });
+});
+
 describe("Live SSE tool event sequence", () => {
   it("creates ToolCallData correctly through tool.start -> tool.args -> tool.end -> tool.result", () => {
     // Simulate the SSE event handling logic from instance-detail

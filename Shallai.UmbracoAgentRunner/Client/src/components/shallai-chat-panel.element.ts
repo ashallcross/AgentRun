@@ -18,6 +18,15 @@ export class ShallaiChatPanelElement extends UmbLitElement {
   @property({ type: Boolean, attribute: "is-streaming" })
   isStreaming = false;
 
+  @property({ type: Boolean, attribute: "input-enabled" })
+  inputEnabled = false;
+
+  @property({ type: String, attribute: "input-placeholder" })
+  inputPlaceholder = "Click 'Start' to begin the workflow.";
+
+  @state()
+  private _inputValue = "";
+
   @state()
   private _autoScrollPaused = false;
 
@@ -29,14 +38,12 @@ export class ShallaiChatPanelElement extends UmbLitElement {
 
   static styles = css`
     :host {
-      display: flex;
-      flex-direction: column;
-      height: 100%;
+      display: block;
       position: relative;
     }
 
     uui-scroll-container {
-      flex: 1;
+      height: 600px;
       overflow-y: auto;
     }
 
@@ -57,11 +64,26 @@ export class ShallaiChatPanelElement extends UmbLitElement {
     }
 
     .new-messages-indicator {
-      position: absolute;
-      bottom: var(--uui-size-space-4);
-      left: 50%;
-      transform: translateX(-50%);
-      z-index: 10;
+      display: flex;
+      justify-content: center;
+      padding: var(--uui-size-space-2) 0;
+    }
+
+    .input-area {
+      display: flex;
+      gap: var(--uui-size-space-3);
+      padding: var(--uui-size-space-3);
+      border-top: 1px solid var(--uui-color-border);
+      align-items: flex-end;
+      flex-shrink: 0;
+    }
+
+    .input-area uui-button {
+      flex-shrink: 0;
+    }
+
+    .input-area uui-textarea {
+      flex: 1;
     }
 
     .sr-only {
@@ -97,6 +119,28 @@ export class ShallaiChatPanelElement extends UmbLitElement {
     (container as HTMLElement).scrollTop = (container as HTMLElement).scrollHeight;
     this._autoScrollPaused = false;
     this._hasNewMessages = false;
+  }
+
+  private _onInput(e: Event): void {
+    this._inputValue = (e.target as HTMLTextAreaElement).value;
+  }
+
+  private _onKeydown(e: KeyboardEvent): void {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      this._onSend();
+    }
+  }
+
+  private _onSend(): void {
+    const msg = this._inputValue.trim();
+    if (!msg || !this.inputEnabled) return;
+    this._inputValue = "";
+    this.dispatchEvent(new CustomEvent("send-message", {
+      detail: { message: msg },
+      bubbles: true,
+      composed: true,
+    }));
   }
 
   protected override updated(): void {
@@ -160,6 +204,25 @@ export class ShallaiChatPanelElement extends UmbLitElement {
             </div>
           `
         : nothing}
+
+      <div class="input-area">
+        <uui-textarea
+          aria-label="Message to agent"
+          placeholder=${this.inputEnabled ? "Message the agent..." : this.inputPlaceholder}
+          ?disabled=${!this.inputEnabled}
+          .value=${this._inputValue}
+          @input=${this._onInput}
+          @keydown=${this._onKeydown}
+        ></uui-textarea>
+        <uui-button
+          label="Send"
+          look="primary"
+          ?disabled=${!this.inputEnabled || !this._inputValue.trim()}
+          @click=${this._onSend}
+        >
+          Send
+        </uui-button>
+      </div>
 
       <div class="sr-only" aria-live="assertive">
         ${this.isStreaming ? "Agent is responding..." : ""}

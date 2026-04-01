@@ -68,6 +68,18 @@ export function cancelInstance(id: string, token?: string): Promise<InstanceResp
   return postJson<InstanceResponse>(`/instances/${encodeURIComponent(id)}/cancel`, {}, token);
 }
 
+export async function sendMessage(instanceId: string, message: string, token?: string): Promise<void> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const response = await fetch(
+    `${API_BASE}/instances/${encodeURIComponent(instanceId)}/message`,
+    { method: "POST", headers, body: JSON.stringify({ message }) },
+  );
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status} ${response.statusText}`);
+  }
+}
+
 export async function startInstance(id: string, token?: string): Promise<Response> {
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -138,6 +150,12 @@ export function mapConversationToChat(entries: ConversationEntryResponse[]): Cha
           break;
         }
       }
+    } else if (entry.role === "user" && entry.content != null) {
+      messages.push({
+        role: "user",
+        content: entry.content,
+        timestamp: entry.timestamp,
+      });
     } else if (entry.role === "system" && entry.content != null) {
       messages.push({
         role: "system",

@@ -18,6 +18,7 @@ public class ExecutionEndpoints : ControllerBase
     private readonly IProfileResolver _profileResolver;
     private readonly IWorkflowOrchestrator _workflowOrchestrator;
     private readonly IWorkflowRegistry _workflowRegistry;
+    private readonly IActiveInstanceRegistry _activeInstanceRegistry;
     private readonly ILogger<ExecutionEndpoints> _logger;
     private readonly ILoggerFactory _loggerFactory;
 
@@ -26,6 +27,7 @@ public class ExecutionEndpoints : ControllerBase
         IProfileResolver profileResolver,
         IWorkflowOrchestrator workflowOrchestrator,
         IWorkflowRegistry workflowRegistry,
+        IActiveInstanceRegistry activeInstanceRegistry,
         ILogger<ExecutionEndpoints> logger,
         ILoggerFactory loggerFactory)
     {
@@ -33,6 +35,7 @@ public class ExecutionEndpoints : ControllerBase
         _profileResolver = profileResolver;
         _workflowOrchestrator = workflowOrchestrator;
         _workflowRegistry = workflowRegistry;
+        _activeInstanceRegistry = activeInstanceRegistry;
         _logger = logger;
         _loggerFactory = loggerFactory;
     }
@@ -148,5 +151,34 @@ public class ExecutionEndpoints : ControllerBase
 
         // SSE stream ends naturally when the method returns
         return new EmptyResult();
+    }
+
+    [HttpPost("instances/{id}/message")]
+    [ProducesResponseType(200)]
+    [ProducesResponseType<ErrorResponse>(400)]
+    [ProducesResponseType<ErrorResponse>(409)]
+    public IActionResult SendMessage(string id, [FromBody] SendMessageRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Message))
+        {
+            return BadRequest(new ErrorResponse
+            {
+                Error = "empty_message",
+                Message = "Message cannot be empty."
+            });
+        }
+
+        var writer = _activeInstanceRegistry.GetMessageWriter(id);
+        if (writer is null)
+        {
+            return Conflict(new ErrorResponse
+            {
+                Error = "not_running",
+                Message = $"Instance '{id}' is not currently executing a step."
+            });
+        }
+
+        writer.TryWrite(request.Message);
+        return Ok();
     }
 }

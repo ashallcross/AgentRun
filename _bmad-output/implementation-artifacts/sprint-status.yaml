@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-30
-last_updated: 2026-04-01 (story 6-3 done)
+last_updated: 2026-04-01 (story 6-4 review)
 project: Shallai.UmbracoAgentRunner
 project_key: NOKEY
 tracking_system: file-system
@@ -86,7 +86,7 @@ development_status:
   6-1-conversation-persistence: done
   6-2-chat-panel-and-message-streaming: done
   6-3-tool-call-display: done
-  6-4-user-messaging-and-multi-turn-conversation: backlog
+  6-4-user-messaging-and-multi-turn-conversation: review
   epic-6-retrospective: optional
 
   # Epic 7: Error Handling & Recovery
