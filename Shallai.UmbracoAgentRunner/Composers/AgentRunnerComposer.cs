@@ -26,6 +26,9 @@ public class AgentRunnerComposer : IComposer
         // Instance management (singleton — disk-based, no in-memory cache)
         builder.Services.AddSingleton<IInstanceManager, InstanceManager>();
 
+        // Conversation persistence (JSONL append-only per step)
+        builder.Services.AddSingleton<IConversationStore, ConversationStore>();
+
         // Engine services
         builder.Services.AddSingleton<IPromptAssembler, PromptAssembler>();
         builder.Services.AddSingleton<IProfileResolver, ProfileResolver>();

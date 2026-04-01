@@ -183,6 +183,8 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - **Simplest fix first** — always try the simplest, most robust solution before iterating. Don't overcomplicate bug fixes.
 - **Browser testing shortcut** — when stuck on frontend issues, ask Adam to verify in the browser rather than guessing repeatedly
 - **Live provider testing** — Epic 4+ stories should include manual E2E validation steps exercising a real Anthropic provider
+- **Security code: deny by default** — for any story touching security-relevant code (sandboxing, access control, input validation, network access), the Failure & Edge Cases section must explicitly state: "Unrecognised or unspecified inputs must be denied/rejected." The dev agent implements what's specified — a missing deny-by-default statement results in permissive implementation.
+- **Validate complex fixes with architect** — when E2E reveals an architecture-level bug, validate the fix approach with the architect before the dev agent implements. Prevents iterating on wrong approaches.
 
 #### Technical Rules (Learned the Hard Way)
 - **YAML Date coercion** — YAML parsers silently coerce date-like strings (e.g., `2026-03-30` becomes a Date object). Quote date-like values or configure the deserializer to treat them as strings. Critical for workflow YAML files.
@@ -206,4 +208,4 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - Review periodically for outdated rules
 - Remove rules that become obvious over time
 
-Last Updated: 2026-03-31
+Last Updated: 2026-04-01

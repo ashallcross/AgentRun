@@ -90,3 +90,7 @@
 ## Deferred from: code review of 5-3-fetch-url-tool-with-ssrf-protection (2026-04-01)
 
 - SsrfProtection depends on Tools namespace (ToolExecutionException) — Security/ importing from Tools/ is an inverted dependency direction. Could be fixed by moving ToolExecutionException to a shared namespace or introducing a security-specific exception type. Pre-existing architectural pattern.
+
+## Deferred from: code review of 6-1-conversation-persistence (2026-04-01)
+
+- stepId has no format validation for filesystem safety in WorkflowValidator — step IDs from workflow YAML are interpolated into filenames (`conversation-{stepId}.jsonl`) without character-set validation. A step ID containing path separators (e.g., `../../foo`) would escape the instance folder. The API endpoint validates stepId against the instance's Steps list (security gate per spec), but `ConversationStore.AppendAsync` is public and will be called directly by StepExecutor in a future story. Recommend adding step ID format regex (`^[a-zA-Z0-9_-]+$`) to `WorkflowValidator`.

@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-30
-last_updated: 2026-04-01 (story 5-4 done)
+last_updated: 2026-04-01 (story 6-1 done)
 project: Shallai.UmbracoAgentRunner
 project_key: NOKEY
 tracking_system: file-system
@@ -74,16 +74,16 @@ development_status:
   epic-4-retrospective: done
 
   # Epic 5: Tool System
-  epic-5: in-progress
+  epic-5: done
   5-1-tool-interface-and-registration: done
   5-2-file-tools-with-path-sandboxing: done
   5-3-fetch-url-tool-with-ssrf-protection: done
   5-4-workflow-tool-validation: done
-  epic-5-retrospective: optional
+  epic-5-retrospective: done
 
   # Epic 6: Real-Time Chat Experience
-  epic-6: backlog
-  6-1-conversation-persistence: backlog
+  epic-6: in-progress
+  6-1-conversation-persistence: done
   6-2-chat-panel-and-message-streaming: backlog
   6-3-tool-call-display: backlog
   6-4-user-messaging-and-multi-turn-conversation: backlog
