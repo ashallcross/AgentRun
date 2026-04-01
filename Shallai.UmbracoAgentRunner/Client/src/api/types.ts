@@ -28,6 +28,7 @@ export interface InstanceDetailResponse {
   id: string;
   workflowAlias: string;
   workflowName: string;
+  workflowMode: string;
   status: string;
   currentStepIndex: number;
   createdAt: string;

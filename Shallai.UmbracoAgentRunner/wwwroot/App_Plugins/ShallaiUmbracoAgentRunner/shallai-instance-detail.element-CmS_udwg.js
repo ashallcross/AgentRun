@@ -1,10 +1,10 @@
-import { UmbLitElement as M } from "@umbraco-cms/backoffice/lit-element";
-import { css as I, property as g, state as u, customElement as z, html as r, nothing as h } from "@umbraco-cms/backoffice/external/lit";
-import { UMB_AUTH_CONTEXT as D } from "@umbraco-cms/backoffice/auth";
-import { umbConfirmModal as L } from "@umbraco-cms/backoffice/modal";
-import { b as B, a as H, e as j, m as q, s as R, f as U, h as W, i as F } from "./api-client-D3kCoM-2.js";
-import { n as V } from "./instance-list-helpers-D6jp37V8.js";
-const K = /* @__PURE__ */ new Set([
+import { UmbLitElement as z } from "@umbraco-cms/backoffice/lit-element";
+import { css as T, property as g, state as p, customElement as E, html as r, nothing as d } from "@umbraco-cms/backoffice/external/lit";
+import { UMB_AUTH_CONTEXT as j } from "@umbraco-cms/backoffice/auth";
+import { umbConfirmModal as q } from "@umbraco-cms/backoffice/modal";
+import { b as W, a as U, e as F, m as V, s as K, f as J, h as P, i as G } from "./api-client-D3kCoM-2.js";
+import { n as X } from "./instance-list-helpers-D6jp37V8.js";
+const Y = /* @__PURE__ */ new Set([
   "p",
   "h1",
   "h2",
@@ -30,86 +30,86 @@ const K = /* @__PURE__ */ new Set([
   "thead",
   "tbody"
 ]);
-function J(e) {
-  const t = G(e);
-  return Y(t);
+function Q(e) {
+  const t = Z(e);
+  return te(t);
 }
-function G(e) {
+function Z(e) {
   const t = [], a = e.replace(/```[\s\S]*?```/g, (o) => {
-    const l = t.length, m = o.replace(/^```[^\n]*\n?/, "").replace(/\n?```$/, "");
-    return t.push(`<pre><code>${E(m)}</code></pre>`), `\0CB${l}\0`;
+    const c = t.length, f = o.replace(/^```[^\n]*\n?/, "").replace(/\n?```$/, "");
+    return t.push(`<pre><code>${N(f)}</code></pre>`), `\0CB${c}\0`;
   }).split(`
 `), i = [];
   let n = 0;
   for (; n < a.length; ) {
-    const o = a[n], l = o.match(/^\x00CB(\d+)\x00$/);
-    if (l) {
-      i.push(t[parseInt(l[1], 10)]), n++;
+    const o = a[n], c = o.match(/^\x00CB(\d+)\x00$/);
+    if (c) {
+      i.push(t[parseInt(c[1], 10)]), n++;
       continue;
     }
     if (/^(---+|\*\*\*+|___+)\s*$/.test(o)) {
       i.push("<hr>"), n++;
       continue;
     }
-    const m = o.match(/^(#{1,6})\s+(.+)$/);
-    if (m) {
-      const p = m[1].length;
-      i.push(`<h${p}>${k(m[2])}</h${p}>`), n++;
+    const f = o.match(/^(#{1,6})\s+(.+)$/);
+    if (f) {
+      const l = f[1].length;
+      i.push(`<h${l}>${I(f[2])}</h${l}>`), n++;
       continue;
     }
     if (o.startsWith("> ")) {
-      const p = [];
+      const l = [];
       for (; n < a.length && a[n].startsWith("> "); )
-        p.push(a[n].slice(2)), n++;
-      i.push(`<blockquote>${k(p.join("<br>"))}</blockquote>`);
+        l.push(a[n].slice(2)), n++;
+      i.push(`<blockquote>${I(l.join("<br>"))}</blockquote>`);
       continue;
     }
     if (/^[-*]\s+/.test(o)) {
-      const p = [];
+      const l = [];
       for (; n < a.length && /^[-*]\s+/.test(a[n]); )
-        p.push(a[n].replace(/^[-*]\s+/, "")), n++;
-      i.push("<ul>" + p.map((x) => `<li>${k(x)}</li>`).join("") + "</ul>");
+        l.push(a[n].replace(/^[-*]\s+/, "")), n++;
+      i.push("<ul>" + l.map((S) => `<li>${I(S)}</li>`).join("") + "</ul>");
       continue;
     }
     if (/^\d+\.\s+/.test(o)) {
-      const p = [];
+      const l = [];
       for (; n < a.length && /^\d+\.\s+/.test(a[n]); )
-        p.push(a[n].replace(/^\d+\.\s+/, "")), n++;
-      i.push("<ol>" + p.map((x) => `<li>${k(x)}</li>`).join("") + "</ol>");
+        l.push(a[n].replace(/^\d+\.\s+/, "")), n++;
+      i.push("<ol>" + l.map((S) => `<li>${I(S)}</li>`).join("") + "</ol>");
       continue;
     }
     if (o.trim() === "") {
       n++;
       continue;
     }
-    const c = [];
+    const u = [];
     for (; n < a.length && a[n].trim() !== "" && !/^(#{1,6}\s|[-*]\s|>\s|\d+\.\s|---+|___+|\*\*\*+|\x00CB)/.test(a[n]); )
-      c.push(a[n]), n++;
-    c.length > 0 && i.push(`<p>${k(c.join("<br>"))}</p>`);
+      u.push(a[n]), n++;
+    u.length > 0 && i.push(`<p>${I(u.join("<br>"))}</p>`);
   }
   return i.join("");
 }
-function k(e) {
-  return e = e.replace(/`([^`]+)`/g, (t, s) => `<code>${E(s)}</code>`), e = e.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>"), e = e.replace(/__(.+?)__/g, "<strong>$1</strong>"), e = e.replace(/\*(.+?)\*/g, "<em>$1</em>"), e = e.replace(/_(.+?)_/g, "<em>$1</em>"), e = e.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (t, s, a) => /^https?:\/\//i.test(a) ? `<a href="${X(a)}" target="_blank" rel="noopener">${E(s)}</a>` : s), e;
+function I(e) {
+  return e = e.replace(/`([^`]+)`/g, (t, s) => `<code>${N(s)}</code>`), e = e.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>"), e = e.replace(/__(.+?)__/g, "<strong>$1</strong>"), e = e.replace(/\*(.+?)\*/g, "<em>$1</em>"), e = e.replace(/_(.+?)_/g, "<em>$1</em>"), e = e.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (t, s, a) => /^https?:\/\//i.test(a) ? `<a href="${ee(a)}" target="_blank" rel="noopener">${N(s)}</a>` : s), e;
 }
-function E(e) {
+function N(e) {
   return e.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
-function X(e) {
+function ee(e) {
   return e.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/'/g, "&#39;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
-function Y(e) {
+function te(e) {
   const t = document.createElement("template");
-  t.innerHTML = e, P(t.content);
+  t.innerHTML = e, A(t.content);
   const s = document.createElement("div");
   return s.appendChild(t.content.cloneNode(!0)), s.innerHTML;
 }
-function P(e) {
+function A(e) {
   const t = Array.from(e.childNodes);
   for (const s of t)
     if (s.nodeType === Node.ELEMENT_NODE) {
       const a = s, i = a.tagName.toLowerCase();
-      if (K.has(i)) {
+      if (Y.has(i)) {
         const n = Array.from(a.attributes);
         for (const o of n)
           i === "a" && (o.name === "href" || o.name === "target" || o.name === "rel") || a.removeAttribute(o.name);
@@ -117,19 +117,19 @@ function P(e) {
           const o = a.getAttribute("href") ?? "";
           /^https?:\/\//i.test(o) || a.removeAttribute("href"), a.setAttribute("target", "_blank"), a.setAttribute("rel", "noopener");
         }
-        P(a);
+        A(a);
       } else {
         const n = document.createTextNode(a.textContent ?? "");
         e.replaceChild(n, s);
       }
     } else s.nodeType !== Node.TEXT_NODE && e.removeChild(s);
 }
-var Q = Object.defineProperty, Z = Object.getOwnPropertyDescriptor, S = (e, t, s, a) => {
-  for (var i = a > 1 ? void 0 : a ? Z(t, s) : t, n = e.length - 1, o; n >= 0; n--)
+var se = Object.defineProperty, ae = Object.getOwnPropertyDescriptor, x = (e, t, s, a) => {
+  for (var i = a > 1 ? void 0 : a ? ae(t, s) : t, n = e.length - 1, o; n >= 0; n--)
     (o = e[n]) && (i = (a ? o(t, s, i) : o(i)) || i);
-  return a && i && Q(t, s, i), i;
+  return a && i && se(t, s, i), i;
 };
-let v = class extends M {
+let v = class extends z {
   constructor() {
     super(...arguments), this.toolName = "", this.toolCallId = "", this.summary = "", this.arguments = null, this.result = null, this.status = "running", this._expanded = !1;
   }
@@ -148,13 +148,13 @@ let v = class extends M {
         ${this.arguments ? r`
               <div class="section-label">Arguments</div>
               <div class="mono-block">${JSON.stringify(this.arguments, null, 2)}</div>
-            ` : h}
+            ` : d}
         ${this.result != null ? r`
               <div class="section-label">Result</div>
               <div class="mono-block">${this.result}</div>
-            ` : h}
+            ` : d}
       </div>
-    ` : h;
+    ` : d;
   }
   render() {
     const e = this.status !== "running";
@@ -163,8 +163,8 @@ let v = class extends M {
         class="tool-call ${this.status}"
         role="group"
         aria-label="Tool call: ${this.toolName}"
-        aria-expanded=${e ? String(this._expanded) : h}
-        tabindex=${e ? "0" : h}
+        aria-expanded=${e ? String(this._expanded) : d}
+        tabindex=${e ? "0" : d}
         @click=${this._toggle}
         @keydown=${this._onKeydown}
       >
@@ -172,14 +172,14 @@ let v = class extends M {
           ${this._renderStatusIcon()}
           <span class="tool-name">${this.toolName}</span>
           <span class="tool-summary">${this.summary ? `— ${this.summary}` : ""}</span>
-          ${e ? r`<uui-icon class="chevron ${this._expanded ? "open" : ""}" name="icon-navigation-down"></uui-icon>` : h}
+          ${e ? r`<uui-icon class="chevron ${this._expanded ? "open" : ""}" name="icon-navigation-down"></uui-icon>` : d}
         </div>
         ${this._renderBody()}
       </div>
     `;
   }
 };
-v.styles = I`
+v.styles = T`
     :host {
       display: block;
       margin-top: var(--uui-size-space-2);
@@ -272,36 +272,36 @@ v.styles = I`
       max-height: 300px;
     }
   `;
-S([
+x([
   g({ type: String })
 ], v.prototype, "toolName", 2);
-S([
+x([
   g({ type: String })
 ], v.prototype, "toolCallId", 2);
-S([
+x([
   g({ type: String })
 ], v.prototype, "summary", 2);
-S([
+x([
   g({ attribute: !1 })
 ], v.prototype, "arguments", 2);
-S([
+x([
   g({ type: String })
 ], v.prototype, "result", 2);
-S([
+x([
   g({ type: String })
 ], v.prototype, "status", 2);
-S([
-  u()
+x([
+  p()
 ], v.prototype, "_expanded", 2);
-v = S([
-  z("shallai-tool-call")
+v = x([
+  E("shallai-tool-call")
 ], v);
-var ee = Object.defineProperty, te = Object.getOwnPropertyDescriptor, $ = (e, t, s, a) => {
-  for (var i = a > 1 ? void 0 : a ? te(t, s) : t, n = e.length - 1, o; n >= 0; n--)
+var ie = Object.defineProperty, ne = Object.getOwnPropertyDescriptor, $ = (e, t, s, a) => {
+  for (var i = a > 1 ? void 0 : a ? ne(t, s) : t, n = e.length - 1, o; n >= 0; n--)
     (o = e[n]) && (i = (a ? o(t, s, i) : o(i)) || i);
-  return a && i && ee(t, s, i), i;
+  return a && i && ie(t, s, i), i;
 };
-let w = class extends M {
+let k = class extends z {
   constructor() {
     super(...arguments), this.role = "agent", this.content = "", this.timestamp = "", this.isStreaming = !1, this.toolCalls = [];
   }
@@ -314,7 +314,7 @@ let w = class extends M {
     }
   }
   _renderMarkdown(e) {
-    const t = J(e), s = document.createElement("div");
+    const t = Q(e), s = document.createElement("div");
     return s.className = "agent-content", s.innerHTML = t, r`${this._templateFromNode(s)}`;
   }
   _templateFromNode(e) {
@@ -336,7 +336,7 @@ let w = class extends M {
       return r`
         <div class="user-message" role="listitem" aria-label="Your message">
           <span class="user-content">${this.content}</span>
-          ${this.timestamp ? r`<span class="user-timestamp">${this._formatTime(this.timestamp)}</span>` : h}
+          ${this.timestamp ? r`<span class="user-timestamp">${this._formatTime(this.timestamp)}</span>` : d}
         </div>
       `;
     const e = this.isStreaming ? r`<span class="agent-content" style="white-space:pre-wrap">${this.content}<span class="cursor">▋</span></span>` : this._renderMarkdown(this.content);
@@ -355,12 +355,12 @@ let w = class extends M {
         `)}
         ${this.timestamp ? r`<span class="agent-timestamp"
               >${this._formatTime(this.timestamp)}</span
-            >` : h}
+            >` : d}
       </div>
     `;
   }
 };
-w.styles = I`
+k.styles = T`
     :host {
       display: block;
     }
@@ -486,28 +486,28 @@ w.styles = I`
   `;
 $([
   g({ type: String })
-], w.prototype, "role", 2);
+], k.prototype, "role", 2);
 $([
   g({ type: String })
-], w.prototype, "content", 2);
+], k.prototype, "content", 2);
 $([
   g({ type: String })
-], w.prototype, "timestamp", 2);
+], k.prototype, "timestamp", 2);
 $([
   g({ type: Boolean, attribute: "is-streaming" })
-], w.prototype, "isStreaming", 2);
+], k.prototype, "isStreaming", 2);
 $([
   g({ attribute: !1 })
-], w.prototype, "toolCalls", 2);
-w = $([
-  z("shallai-chat-message")
-], w);
-var se = Object.defineProperty, ae = Object.getOwnPropertyDescriptor, b = (e, t, s, a) => {
-  for (var i = a > 1 ? void 0 : a ? ae(t, s) : t, n = e.length - 1, o; n >= 0; n--)
+], k.prototype, "toolCalls", 2);
+k = $([
+  E("shallai-chat-message")
+], k);
+var oe = Object.defineProperty, re = Object.getOwnPropertyDescriptor, y = (e, t, s, a) => {
+  for (var i = a > 1 ? void 0 : a ? re(t, s) : t, n = e.length - 1, o; n >= 0; n--)
     (o = e[n]) && (i = (a ? o(t, s, i) : o(i)) || i);
-  return a && i && se(t, s, i), i;
+  return a && i && oe(t, s, i), i;
 };
-let _ = class extends M {
+let _ = class extends z {
   constructor() {
     super(...arguments), this.messages = [], this.isStreaming = !1, this.inputEnabled = !1, this.inputPlaceholder = "Click 'Start' to begin the workflow.", this._inputValue = "", this._autoScrollPaused = !1, this._hasNewMessages = !1, this._wasStreaming = !1;
   }
@@ -544,7 +544,7 @@ let _ = class extends M {
   }
   render() {
     if (this.messages.length === 0)
-      return r`<div class="empty-state">Start the workflow to begin</div>`;
+      return r`<div class="empty-state">Send a message to begin.</div>`;
     const e = this.messages.length - 1;
     return r`
       <uui-scroll-container @scroll=${this._onScroll}>
@@ -574,7 +574,7 @@ let _ = class extends M {
                 New messages ↓
               </uui-button>
             </div>
-          ` : h}
+          ` : d}
 
       <div class="input-area">
         <uui-textarea
@@ -602,7 +602,7 @@ let _ = class extends M {
     `;
   }
 };
-_.styles = I`
+_.styles = T`
     :host {
       display: block;
       position: relative;
@@ -664,47 +664,47 @@ _.styles = I`
       border-width: 0;
     }
   `;
-b([
+y([
   g({ attribute: !1 })
 ], _.prototype, "messages", 2);
-b([
+y([
   g({ type: Boolean, attribute: "is-streaming" })
 ], _.prototype, "isStreaming", 2);
-b([
+y([
   g({ type: Boolean, attribute: "input-enabled" })
 ], _.prototype, "inputEnabled", 2);
-b([
+y([
   g({ type: String, attribute: "input-placeholder" })
 ], _.prototype, "inputPlaceholder", 2);
-b([
-  u()
+y([
+  p()
 ], _.prototype, "_inputValue", 2);
-b([
-  u()
+y([
+  p()
 ], _.prototype, "_autoScrollPaused", 2);
-b([
-  u()
+y([
+  p()
 ], _.prototype, "_hasNewMessages", 2);
-b([
-  u()
+y([
+  p()
 ], _.prototype, "_wasStreaming", 2);
-_ = b([
-  z("shallai-chat-panel")
+_ = y([
+  E("shallai-chat-panel")
 ], _);
-function ie(e) {
+function le(e) {
   const t = e.split("/");
   return decodeURIComponent(t[t.length - 1]);
 }
-function ne(e, t) {
+function ce(e, t) {
   const s = e.split("/");
   return s.length >= 2 && s.splice(-2, 2, "workflows", encodeURIComponent(t)), s.join("/");
 }
-function N(e) {
+function O(e) {
   switch (e.status) {
     case "Pending":
       return "Pending";
     case "Active":
-      return "Running...";
+      return "In progress";
     case "Complete":
       return e.writesTo?.[0] ?? "Complete";
     case "Error":
@@ -713,7 +713,7 @@ function N(e) {
       return e.status;
   }
 }
-function oe(e) {
+function ue(e) {
   switch (e) {
     case "Pending":
       return "icon-circle-dotted";
@@ -727,17 +727,20 @@ function oe(e) {
       return "icon-circle-dotted";
   }
 }
-var re = Object.defineProperty, le = Object.getOwnPropertyDescriptor, O = (e) => {
+function pe(e, t) {
+  return e === "Active" && t;
+}
+var he = Object.defineProperty, de = Object.getOwnPropertyDescriptor, D = (e) => {
   throw TypeError(e);
-}, f = (e, t, s, a) => {
-  for (var i = a > 1 ? void 0 : a ? le(t, s) : t, n = e.length - 1, o; n >= 0; n--)
+}, m = (e, t, s, a) => {
+  for (var i = a > 1 ? void 0 : a ? de(t, s) : t, n = e.length - 1, o; n >= 0; n--)
     (o = e[n]) && (i = (a ? o(t, s, i) : o(i)) || i);
-  return a && i && re(t, s, i), i;
-}, A = (e, t, s) => t.has(e) || O("Cannot " + s), C = (e, t, s) => (A(e, t, "read from private field"), s ? s.call(e) : t.get(e)), ce = (e, t, s) => t.has(e) ? O("Cannot add the same private member more than once") : t instanceof WeakSet ? t.add(e) : t.set(e, s), ue = (e, t, s, a) => (A(e, t, "write to private field"), t.set(e, s), s), y;
-let d = class extends M {
+  return a && i && he(t, s, i), i;
+}, L = (e, t, s) => t.has(e) || D("Cannot " + s), C = (e, t, s) => (L(e, t, "read from private field"), s ? s.call(e) : t.get(e)), ge = (e, t, s) => t.has(e) ? D("Cannot add the same private member more than once") : t instanceof WeakSet ? t.add(e) : t.set(e, s), me = (e, t, s, a) => (L(e, t, "write to private field"), t.set(e, s), s), w;
+let h = class extends z {
   constructor() {
-    super(), ce(this, y), this._instance = null, this._loading = !0, this._error = !1, this._selectedStepId = null, this._cancelling = !1, this._runNumber = 0, this._streaming = !1, this._providerError = !1, this._chatMessages = [], this._streamingText = "", this._viewingStepId = null, this._historyMessages = [], this._toolBatchOpen = !1, this.consumeContext(D, (e) => {
-      ue(this, y, e);
+    super(), ge(this, w), this._instance = null, this._loading = !0, this._error = !1, this._selectedStepId = null, this._cancelling = !1, this._runNumber = 0, this._streaming = !1, this._providerError = !1, this._chatMessages = [], this._streamingText = "", this._viewingStepId = null, this._historyMessages = [], this._stepCompletable = !1, this._agentResponding = !1, this._toolBatchOpen = !1, this.consumeContext(j, (e) => {
+      me(this, w, e);
     });
   }
   connectedCallback() {
@@ -745,9 +748,9 @@ let d = class extends M {
   }
   async _loadData() {
     try {
-      const e = ie(window.location.pathname), t = await C(this, y)?.getLatestToken(), s = await B(e, t);
+      const e = le(window.location.pathname), t = await C(this, w)?.getLatestToken(), s = await W(e, t);
       this._instance = s;
-      const a = await H(s.workflowAlias, t), n = V(a).find((o) => o.id === s.id);
+      const a = await U(s.workflowAlias, t), n = X(a).find((o) => o.id === s.id);
       this._runNumber = n?.runNumber ?? 0, this._error = !1;
     } catch {
       this._error = !0;
@@ -757,7 +760,7 @@ let d = class extends M {
   }
   _navigateBack() {
     if (!this._instance) return;
-    const e = ne(
+    const e = ce(
       window.location.pathname,
       this._instance.workflowAlias
     );
@@ -777,21 +780,21 @@ let d = class extends M {
       }
       this._viewingStepId = e.id;
       try {
-        const t = await C(this, y)?.getLatestToken(), s = this._instance.id, a = await j(s, e.id, t);
-        this._historyMessages = q(a);
+        const t = await C(this, w)?.getLatestToken(), s = this._instance.id, a = await F(s, e.id, t);
+        this._historyMessages = V(a);
       } catch {
         this._historyMessages = [];
       }
     }
   }
   disconnectedCallback() {
-    super.disconnectedCallback(), this._streaming = !1;
+    super.disconnectedCallback(), this._streaming = !1, this._agentResponding = !1;
   }
   async _onStartClick() {
     if (!(this._streaming || !this._instance)) {
       this._streaming = !0, this._providerError = !1, this._viewingStepId = null, this._streamingText = "";
       try {
-        const e = await C(this, y)?.getLatestToken(), t = await R(this._instance.id, e);
+        const e = await C(this, w)?.getLatestToken(), t = await K(this._instance.id, e);
         if (!t.ok) {
           if (t.status === 400) {
             this._providerError = !0;
@@ -807,14 +810,14 @@ let d = class extends M {
           const { done: n, value: o } = await s.read();
           if (n) break;
           i += a.decode(o, { stream: !0 });
-          const l = i.split(`
+          const c = i.split(`
 
 `);
-          i = l.pop();
-          for (const m of l) {
-            const c = m.split(`
-`), p = c.find((T) => T.startsWith("event:"))?.slice(7), x = c.find((T) => T.startsWith("data:"))?.slice(5);
-            p && x && this._handleSseEvent(p, JSON.parse(x));
+          i = c.pop();
+          for (const f of c) {
+            const u = f.split(`
+`), l = u.find((M) => M.startsWith("event:"))?.slice(7), S = u.find((M) => M.startsWith("data:"))?.slice(5);
+            l && S && this._handleSseEvent(l, JSON.parse(S));
           }
         }
       } catch {
@@ -827,9 +830,18 @@ let d = class extends M {
           }
         ];
       } finally {
-        this._streaming = !1, await this._loadData();
+        this._streaming = !1, this._agentResponding = !1, await this._loadData(), this._checkStepCompletable();
       }
     }
+  }
+  _checkStepCompletable() {
+    if (!this._instance) return;
+    if (!(this._instance.workflowMode !== "autonomous")) {
+      this._stepCompletable = !1;
+      return;
+    }
+    const s = !this._instance.steps.find((i) => i.status === "Active") && this._instance.steps.some((i) => i.status === "Complete"), a = this._instance.steps.some((i) => i.status === "Pending");
+    this._stepCompletable = s && a;
   }
   _finaliseStreamingMessage() {
     if (!this._streamingText) return;
@@ -840,7 +852,7 @@ let d = class extends M {
     ]), this._streamingText = "";
   }
   _handleSseEvent(e, t) {
-    switch (e) {
+    switch (["text.delta", "tool.start"].includes(e) && (this._agentResponding = !0), e) {
       case "text.delta": {
         const s = t.content;
         if (!s) break;
@@ -899,11 +911,11 @@ let d = class extends M {
       }
       case "tool.args": {
         const s = t.toolCallId, a = t.arguments, i = this._chatMessages.findLastIndex(
-          (l) => l.role === "agent" && l.toolCalls?.some((m) => m.toolCallId === s)
+          (c) => c.role === "agent" && c.toolCalls?.some((f) => f.toolCallId === s)
         );
         if (i === -1) break;
         const n = this._chatMessages[i], o = n.toolCalls.map(
-          (l) => l.toolCallId === s ? { ...l, arguments: a, summary: U(l.toolName, a) } : l
+          (c) => c.toolCallId === s ? { ...c, arguments: a, summary: J(c.toolName, a) } : c
         );
         this._chatMessages = [
           ...this._chatMessages.slice(0, i),
@@ -914,7 +926,7 @@ let d = class extends M {
       }
       case "tool.end": {
         const s = t.toolCallId, a = this._chatMessages.findLastIndex(
-          (o) => o.role === "agent" && o.toolCalls?.some((l) => l.toolCallId === s)
+          (o) => o.role === "agent" && o.toolCalls?.some((c) => c.toolCallId === s)
         );
         if (a === -1) break;
         const i = this._chatMessages[a], n = i.toolCalls.map(
@@ -929,15 +941,15 @@ let d = class extends M {
       }
       case "tool.result": {
         const s = t.toolCallId, a = t.result, i = typeof a == "string" ? a : JSON.stringify(a), n = typeof i == "string" && i.startsWith("Tool '") && (i.includes("error") || i.includes("failed")), o = this._chatMessages.findLastIndex(
-          (c) => c.role === "agent" && c.toolCalls?.some((p) => p.toolCallId === s)
+          (u) => u.role === "agent" && u.toolCalls?.some((l) => l.toolCallId === s)
         );
         if (o === -1) break;
-        const l = this._chatMessages[o], m = l.toolCalls.map(
-          (c) => c.toolCallId === s ? { ...c, result: i, status: n ? "error" : "complete" } : c
+        const c = this._chatMessages[o], f = c.toolCalls.map(
+          (u) => u.toolCallId === s ? { ...u, result: i, status: n ? "error" : "complete" } : u
         );
         this._chatMessages = [
           ...this._chatMessages.slice(0, o),
-          { ...l, toolCalls: m },
+          { ...c, toolCalls: f },
           ...this._chatMessages.slice(o + 1)
         ];
         break;
@@ -977,6 +989,9 @@ let d = class extends M {
         break;
       case "user.message":
         break;
+      case "input.wait":
+        this._finaliseStreamingMessage(), this._agentResponding = !1;
+        break;
       case "run.error":
         this._finaliseStreamingMessage(), this._instance && (this._instance.status = "Failed", this.requestUpdate()), this._chatMessages = [
           ...this._chatMessages,
@@ -1001,8 +1016,8 @@ let d = class extends M {
       }
     ];
     try {
-      const s = await C(this, y)?.getLatestToken();
-      await W(this._instance.id, t, s);
+      const s = await C(this, w)?.getLatestToken();
+      await P(this._instance.id, t, s);
     } catch {
       this._chatMessages = [
         ...this._chatMessages,
@@ -1014,10 +1029,40 @@ let d = class extends M {
       ];
     }
   }
+  async _onSendAndStream(e) {
+    if (!this._instance) return;
+    const t = e.detail.message;
+    this._chatMessages = [
+      ...this._chatMessages,
+      {
+        role: "user",
+        content: t,
+        timestamp: (/* @__PURE__ */ new Date()).toISOString()
+      }
+    ];
+    try {
+      const s = await C(this, w)?.getLatestToken();
+      await P(this._instance.id, t, s);
+    } catch {
+      this._chatMessages = [
+        ...this._chatMessages,
+        {
+          role: "system",
+          content: "Failed to send message. Try again.",
+          timestamp: (/* @__PURE__ */ new Date()).toISOString()
+        }
+      ];
+      return;
+    }
+    this._stepCompletable = !1, await this._onStartClick();
+  }
+  async _onAdvanceStep() {
+    !this._instance || this._streaming || (this._stepCompletable = !1, this._chatMessages = [], await this._onStartClick());
+  }
   async _onCancelClick() {
     if (!(this._cancelling || !this._instance)) {
       try {
-        await L(this, {
+        await q(this, {
           headline: "Cancel workflow run",
           content: "Cancel this workflow run?",
           color: "danger",
@@ -1028,8 +1073,8 @@ let d = class extends M {
       }
       this._cancelling = !0;
       try {
-        const e = await C(this, y)?.getLatestToken();
-        await F(this._instance.id, e), await this._loadData();
+        const e = await C(this, w)?.getLatestToken();
+        await G(this._instance.id, e), await this._loadData();
       } catch {
         console.warn("Failed to cancel instance");
       } finally {
@@ -1052,26 +1097,26 @@ let d = class extends M {
                   ${e.status === "Error" ? "error" : ""}
                   ${e.status !== "Pending" ? "clickable" : ""}
                   ${this._selectedStepId === e.id ? "selected" : ""}"
-                aria-label="Step ${t + 1}: ${e.name} — ${N(e)}"
-                @click=${e.status !== "Pending" ? () => this._onStepClick(e) : h}
-                aria-current=${e.status === "Active" ? "step" : h}
+                aria-label="Step ${t + 1}: ${e.name} — ${O(e)}"
+                @click=${e.status !== "Pending" ? () => this._onStepClick(e) : d}
+                aria-current=${e.status === "Active" ? "step" : d}
               >
                 <div class="step-icon-wrapper">
                   <uui-icon
-                    class="step-icon"
-                    name=${oe(e.status)}
+                    class="step-icon ${pe(e.status, this._agentResponding) ? "step-icon-spin" : ""}"
+                    name=${ue(e.status)}
                   ></uui-icon>
                 </div>
                 <div class="step-text">
                   <span class="step-name">${e.name}</span>
-                  <span class="step-subtitle">${N(e)}</span>
+                  <span class="step-subtitle">${O(e)}</span>
                 </div>
               </li>
             `
     )}
         </ul>
       </div>
-    ` : h;
+    ` : d;
   }
   render() {
     if (this._loading)
@@ -1083,31 +1128,49 @@ let d = class extends M {
           and try refreshing the page.
         </div>
       `;
-    const e = this._instance, t = e.status === "Pending" && !this._streaming, s = e.steps.some((c) => c.status === "Active"), a = e.status === "Running" && !s && !this._streaming && e.steps.some((c) => c.status === "Pending"), i = (e.status === "Running" || e.status === "Pending") && !this._streaming, n = e.steps.find((c) => c.status === "Active"), o = this._streaming && !this._viewingStepId, l = e.status === "Completed" || e.status === "Failed" ? "Workflow complete" : n ? "Step complete" : "Click 'Start' to begin the workflow.", m = this._providerError ? r`<div class="main-placeholder">Configure an AI provider in Umbraco.AI before workflows can run.</div>` : r`<shallai-chat-panel
-          .messages=${this._viewingStepId ? this._historyMessages : this._chatMessages}
-          ?is-streaming=${this._streaming && !this._viewingStepId}
-          ?input-enabled=${o}
-          input-placeholder=${l}
-          @send-message=${this._onSendMessage}
-        ></shallai-chat-panel>`;
+    const e = this._instance, t = e.workflowMode !== "autonomous", s = e.status === "Completed" || e.status === "Failed" || e.status === "Cancelled", a = e.steps.find((b) => b.status === "Active"), i = !!a, n = e.status === "Pending" && !this._streaming, o = t ? "Start conversation" : "Start", c = !t && e.status === "Running" && !i && !this._streaming && e.steps.some((b) => b.status === "Pending"), f = !t && (e.status === "Running" || e.status === "Pending") && !this._streaming;
+    let u, l;
+    t ? s ? (u = !1, l = "Workflow complete") : this._viewingStepId ? (u = !1, l = "Viewing step history") : this._agentResponding ? (u = !1, l = "Agent is responding...") : this._streaming || a || e.status === "Running" ? (u = !0, l = "Message the agent...") : (u = !1, l = "Click 'Start conversation' to begin.") : (u = this._streaming && !this._viewingStepId, l = s ? "Workflow complete" : a ? "Step complete" : "Click 'Start' to begin the workflow.");
+    const S = t && !this._streaming ? (b) => this._onSendAndStream(b) : (b) => this._onSendMessage(b), M = t && this._stepCompletable && !this._agentResponding, B = e.steps.every((b) => b.status === "Complete"), R = t && s && B, H = this._providerError ? r`<div class="main-placeholder">Configure an AI provider in Umbraco.AI before workflows can run.</div>` : r`
+          <div class="main-panel">
+            ${M ? r`
+                  <div class="completion-banner">
+                    <span>Step complete — review the output, then advance when ready</span>
+                    <uui-button label="Continue to next step" look="primary" @click=${this._onAdvanceStep}>
+                      Continue to next step
+                    </uui-button>
+                  </div>
+                ` : d}
+            ${R ? r`
+                  <div class="completion-banner">
+                    <span>Workflow complete — all steps finished</span>
+                  </div>
+                ` : d}
+            <shallai-chat-panel
+              .messages=${this._viewingStepId ? this._historyMessages : this._chatMessages}
+              ?is-streaming=${this._streaming && !this._viewingStepId}
+              ?input-enabled=${u}
+              input-placeholder=${l}
+              @send-message=${S}
+            ></shallai-chat-panel>
+          </div>`;
     return r`
       <div class="header">
         <uui-button label="Back" look="secondary" compact @click=${this._navigateBack}>
           <uui-icon name="icon-arrow-left"></uui-icon>
         </uui-button>
         <h2>${e.workflowName || e.workflowAlias} — Run #${this._runNumber}</h2>
-        ${t ? r`
-              <uui-button label="Start" look="primary" @click=${this._onStartClick}>
-                Start
+        ${n ? r`
+              <uui-button label=${o} look="primary" @click=${this._onStartClick}>
+                ${o}
               </uui-button>
-            ` : h}
-        ${a ? r`
+            ` : d}
+        ${c ? r`
               <uui-button label="Continue" look="primary" @click=${this._onStartClick}>
                 Continue
               </uui-button>
-            ` : h}
-        ${h}
-        ${i ? r`
+            ` : d}
+        ${f ? r`
               <uui-button
                 label="Cancel"
                 look="secondary"
@@ -1117,18 +1180,18 @@ let d = class extends M {
               >
                 Cancel
               </uui-button>
-            ` : h}
+            ` : d}
       </div>
 
       <div class="detail-grid">
         ${this._renderStepProgress()}
-        ${m}
+        ${H}
       </div>
     `;
   }
 };
-y = /* @__PURE__ */ new WeakMap();
-d.styles = I`
+w = /* @__PURE__ */ new WeakMap();
+h.styles = T`
     :host {
       display: block;
       padding: var(--uui-size-layout-1);
@@ -1302,49 +1365,78 @@ d.styles = I`
       color: var(--uui-color-text);
       text-align: center;
     }
+
+    .main-panel {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .completion-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--uui-size-space-3);
+      padding: var(--uui-size-space-3) var(--uui-size-space-4);
+      background: var(--uui-color-positive-standalone);
+      color: var(--uui-color-surface);
+      border-radius: var(--uui-border-radius);
+      margin-bottom: var(--uui-size-space-3);
+      font-size: var(--uui-type-small-size);
+    }
+
+    .completion-banner uui-button {
+      flex-shrink: 0;
+    }
   `;
-f([
-  u()
-], d.prototype, "_instance", 2);
-f([
-  u()
-], d.prototype, "_loading", 2);
-f([
-  u()
-], d.prototype, "_error", 2);
-f([
-  u()
-], d.prototype, "_selectedStepId", 2);
-f([
-  u()
-], d.prototype, "_cancelling", 2);
-f([
-  u()
-], d.prototype, "_runNumber", 2);
-f([
-  u()
-], d.prototype, "_streaming", 2);
-f([
-  u()
-], d.prototype, "_providerError", 2);
-f([
-  u()
-], d.prototype, "_chatMessages", 2);
-f([
-  u()
-], d.prototype, "_streamingText", 2);
-f([
-  u()
-], d.prototype, "_viewingStepId", 2);
-f([
-  u()
-], d.prototype, "_historyMessages", 2);
-d = f([
-  z("shallai-instance-detail")
-], d);
-const _e = d;
+m([
+  p()
+], h.prototype, "_instance", 2);
+m([
+  p()
+], h.prototype, "_loading", 2);
+m([
+  p()
+], h.prototype, "_error", 2);
+m([
+  p()
+], h.prototype, "_selectedStepId", 2);
+m([
+  p()
+], h.prototype, "_cancelling", 2);
+m([
+  p()
+], h.prototype, "_runNumber", 2);
+m([
+  p()
+], h.prototype, "_streaming", 2);
+m([
+  p()
+], h.prototype, "_providerError", 2);
+m([
+  p()
+], h.prototype, "_chatMessages", 2);
+m([
+  p()
+], h.prototype, "_streamingText", 2);
+m([
+  p()
+], h.prototype, "_viewingStepId", 2);
+m([
+  p()
+], h.prototype, "_historyMessages", 2);
+m([
+  p()
+], h.prototype, "_stepCompletable", 2);
+m([
+  p()
+], h.prototype, "_agentResponding", 2);
+h = m([
+  E("shallai-instance-detail")
+], h);
+const Se = h;
 export {
-  d as ShallaiInstanceDetailElement,
-  _e as default
+  h as ShallaiInstanceDetailElement,
+  Se as default
 };
-//# sourceMappingURL=shallai-instance-detail.element-BoicTJ-W.js.map
+//# sourceMappingURL=shallai-instance-detail.element-CmS_udwg.js.map

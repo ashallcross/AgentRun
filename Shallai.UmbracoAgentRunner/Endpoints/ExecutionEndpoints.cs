@@ -67,14 +67,19 @@ public class ExecutionEndpoints : ControllerBase
             });
         }
 
-        // Reject already running (concurrent execution guard)
+        // Reject already running (concurrent execution guard) — but allow restart
+        // for interactive mode between steps when not actively executing
         if (instance.Status == InstanceStatus.Running)
         {
-            return Conflict(new ErrorResponse
+            if (_activeInstanceRegistry.GetMessageWriter(id) is not null)
             {
-                Error = "already_running",
-                Message = $"Instance '{id}' is already running. Concurrent execution is not permitted."
-            });
+                return Conflict(new ErrorResponse
+                {
+                    Error = "already_running",
+                    Message = $"Instance '{id}' is already running. Concurrent execution is not permitted."
+                });
+            }
+            // Not actively executing — allow restart (interactive mode between steps)
         }
 
         // Provider prerequisite check — resolve workflow definition for profile fallback
@@ -88,9 +93,12 @@ public class ExecutionEndpoints : ControllerBase
             });
         }
 
-        // Set instance to Running
-        await _instanceManager.SetInstanceStatusAsync(
-            instance.WorkflowAlias, instance.InstanceId, InstanceStatus.Running, cancellationToken);
+        // Set instance to Running (skip if already Running — interactive mode between steps)
+        if (instance.Status != InstanceStatus.Running)
+        {
+            await _instanceManager.SetInstanceStatusAsync(
+                instance.WorkflowAlias, instance.InstanceId, InstanceStatus.Running, cancellationToken);
+        }
 
         // Configure SSE response
         SseHelper.ConfigureSseResponse(Response);

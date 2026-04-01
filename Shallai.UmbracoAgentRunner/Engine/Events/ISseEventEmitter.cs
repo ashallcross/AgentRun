@@ -25,4 +25,6 @@ public interface ISseEventEmitter
     Task EmitSystemMessageAsync(string message, CancellationToken cancellationToken);
 
     Task EmitUserMessageAsync(string content, CancellationToken cancellationToken);
+
+    Task EmitInputWaitAsync(string stepId, CancellationToken cancellationToken);
 }

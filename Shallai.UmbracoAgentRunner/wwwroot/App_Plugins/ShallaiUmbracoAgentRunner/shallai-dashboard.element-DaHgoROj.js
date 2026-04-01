@@ -22,7 +22,7 @@ let e = class extends u {
       },
       {
         path: "instances/:id",
-        component: () => import("./shallai-instance-detail.element-BoicTJ-W.js"),
+        component: () => import("./shallai-instance-detail.element-CmS_udwg.js"),
         setup: () => {
         }
       },
@@ -53,4 +53,4 @@ export {
   e as ShallaiDashboardElement,
   f as default
 };
-//# sourceMappingURL=shallai-dashboard.element-Cl7lIvHK.js.map
+//# sourceMappingURL=shallai-dashboard.element-DaHgoROj.js.map

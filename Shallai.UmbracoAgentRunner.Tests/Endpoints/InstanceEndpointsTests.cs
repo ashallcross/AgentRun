@@ -189,6 +189,7 @@ public class InstanceEndpointsTests
         Assert.That(detail!.Id, Is.EqualTo("abc123"));
         Assert.That(detail.CreatedBy, Is.EqualTo("admin"));
         Assert.That(detail.WorkflowName, Is.EqualTo("Content Audit"));
+        Assert.That(detail.WorkflowMode, Is.EqualTo("interactive"));
         Assert.That(detail.Steps, Has.Length.EqualTo(2));
         Assert.That(detail.Steps[0].Id, Is.EqualTo("step-1"));
         Assert.That(detail.Steps[0].Name, Is.EqualTo("Analyse"));
@@ -220,6 +221,7 @@ public class InstanceEndpointsTests
         var detail = okResult!.Value as InstanceDetailResponse;
         Assert.That(detail, Is.Not.Null);
         Assert.That(detail!.WorkflowName, Is.EqualTo(string.Empty));
+        Assert.That(detail.WorkflowMode, Is.EqualTo("interactive"));
         Assert.That(detail.Steps[0].Name, Is.EqualTo("step-1"));
         Assert.That(detail.Steps[0].WritesTo, Is.Null);
         Assert.That(detail.Steps[1].Name, Is.EqualTo("step-2"));

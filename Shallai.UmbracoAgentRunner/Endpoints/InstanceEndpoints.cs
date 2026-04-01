@@ -163,6 +163,7 @@ public class InstanceEndpoints : ControllerBase
             Id = state.InstanceId,
             WorkflowAlias = state.WorkflowAlias,
             WorkflowName = definition?.Name ?? string.Empty,
+            WorkflowMode = definition?.Mode ?? "interactive",
             Status = state.Status,
             CurrentStepIndex = state.CurrentStepIndex,
             CreatedAt = state.CreatedAt,

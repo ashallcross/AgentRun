@@ -21,7 +21,8 @@ public static class ToolLoop
         CancellationToken cancellationToken,
         ChannelReader<string>? userMessageReader = null,
         ISseEventEmitter? emitter = null,
-        IConversationRecorder? recorder = null)
+        IConversationRecorder? recorder = null,
+        Func<CancellationToken, Task<bool>>? completionCheck = null)
     {
         var iteration = 0;
         while (true)
@@ -106,6 +107,22 @@ public static class ToolLoop
 
                 if (drained > 0)
                     continue;
+
+                // Check if the step's completion criteria are met — exit early if so
+                if (completionCheck is not null && await completionCheck(cancellationToken))
+                {
+                    logger.LogInformation(
+                        "Completion check passed during input wait for step {StepId} in workflow {WorkflowAlias} instance {InstanceId}",
+                        context.StepId, context.WorkflowAlias, context.InstanceId);
+                    return new ChatResponse(messages.Where(m => m.Role == ChatRole.Assistant).LastOrDefault()
+                        ?? new ChatMessage(ChatRole.Assistant, accumulatedText));
+                }
+
+                // Signal frontend that we're waiting for user input
+                if (emitter is not null)
+                {
+                    await emitter.EmitInputWaitAsync(context.StepId, cancellationToken);
+                }
 
                 // Nothing waiting — block with timeout
                 using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

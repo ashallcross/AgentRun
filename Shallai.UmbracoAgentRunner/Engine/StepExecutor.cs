@@ -136,10 +136,16 @@ public class StepExecutor : IStepExecutor
 
             var chatOptions = new ChatOptions { Tools = aiTools };
 
+            // Build completion check delegate for interactive mode early exit
+            Func<CancellationToken, Task<bool>>? completionCheck = step.CompletionCheck is not null
+                ? async ct => (await _completionChecker.CheckAsync(step.CompletionCheck, context.InstanceFolderPath, ct)).Passed
+                : null;
+
             // Run the tool loop
             await ToolLoop.RunAsync(
                 client, messages, chatOptions, toolDict, toolExecutionContext, _logger, cancellationToken,
-                context.UserMessageReader, context.EventEmitter, context.ConversationRecorder);
+                context.UserMessageReader, context.EventEmitter, context.ConversationRecorder,
+                completionCheck);
 
             _logger.LogInformation(
                 "Tool loop complete for step {StepId} in workflow {WorkflowAlias} instance {InstanceId}",

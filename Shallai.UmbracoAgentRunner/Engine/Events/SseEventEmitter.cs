@@ -49,6 +49,9 @@ public sealed class SseEventEmitter : ISseEventEmitter
     public Task EmitUserMessageAsync(string content, CancellationToken cancellationToken)
         => EmitAsync(SseEventTypes.UserMessage, new UserMessagePayload(content), cancellationToken);
 
+    public Task EmitInputWaitAsync(string stepId, CancellationToken cancellationToken)
+        => EmitAsync(SseEventTypes.InputWait, new InputWaitPayload(stepId), cancellationToken);
+
     private async Task EmitAsync(string eventType, object payload, CancellationToken cancellationToken)
     {
         var json = JsonSerializer.Serialize(payload, JsonSerializerOptions.Web);

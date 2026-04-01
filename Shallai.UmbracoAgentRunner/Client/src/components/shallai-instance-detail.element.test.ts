@@ -6,6 +6,7 @@ import {
   stepSubtitle,
   stepIconName,
   stepIconColor,
+  shouldAnimateStepIcon,
 } from "../utils/instance-detail-helpers.js";
 import { numberAndSortInstances } from "../utils/instance-list-helpers.js";
 
@@ -177,8 +178,8 @@ describe("shallai-instance-detail", () => {
       expect(stepSubtitle(mockStep({ status: "Pending" }))).to.equal("Pending");
     });
 
-    it("stepSubtitle returns 'Running...' for Active status", () => {
-      expect(stepSubtitle(mockStep({ status: "Active" }))).to.equal("Running...");
+    it("stepSubtitle returns 'In progress' for Active status", () => {
+      expect(stepSubtitle(mockStep({ status: "Active" }))).to.equal("In progress");
     });
 
     it("stepSubtitle returns first writesTo filename for Complete status", () => {
@@ -236,6 +237,15 @@ describe("shallai-instance-detail", () => {
     it("stepIconColor returns 'danger' for Error", () => {
       expect(stepIconColor("Error")).to.equal("danger");
     });
+
+    // shouldAnimateStepIcon
+    it("shouldAnimateStepIcon returns true only when Active and streaming", () => {
+      expect(shouldAnimateStepIcon("Active", true)).to.be.true;
+      expect(shouldAnimateStepIcon("Active", false)).to.be.false;
+      expect(shouldAnimateStepIcon("Pending", true)).to.be.false;
+      expect(shouldAnimateStepIcon("Complete", true)).to.be.false;
+      expect(shouldAnimateStepIcon("Error", true)).to.be.false;
+    });
   });
 
   describe("component behaviour logic", () => {
@@ -291,28 +301,26 @@ describe("shallai-instance-detail", () => {
       expect(shouldShowStart("Cancelled", false)).to.be.false;
     });
 
-    // Continue button logic for interactive mode
-    it("Continue button shows when Running, no active step, and pending steps remain", () => {
+    // Continue button (header) logic — autonomous mode only
+    it("Continue header button shows only for autonomous mode", () => {
       const shouldShowContinue = (
         status: string,
         hasActiveStep: boolean,
         hasPendingSteps: boolean,
         streaming: boolean,
+        workflowMode: string,
       ) =>
-        status === "Running" && !hasActiveStep && !streaming && hasPendingSteps;
+        workflowMode === "autonomous"
+        && status === "Running" && !hasActiveStep && !streaming && hasPendingSteps;
 
-      // Running with completed current step and remaining steps
-      expect(shouldShowContinue("Running", false, true, false)).to.be.true;
-      // Running but step is active (in progress)
-      expect(shouldShowContinue("Running", true, true, false)).to.be.false;
-      // Running but streaming (button hidden during SSE)
-      expect(shouldShowContinue("Running", false, true, true)).to.be.false;
-      // Pending — not Continue, that's Start
-      expect(shouldShowContinue("Pending", false, true, false)).to.be.false;
-      // Completed — no buttons
-      expect(shouldShowContinue("Completed", false, false, false)).to.be.false;
-      // Running but no pending steps (all done)
-      expect(shouldShowContinue("Running", false, false, false)).to.be.false;
+      // Autonomous: Running with completed current step and remaining steps
+      expect(shouldShowContinue("Running", false, true, false, "autonomous")).to.be.true;
+      // Autonomous: Running but step is active (in progress)
+      expect(shouldShowContinue("Running", true, true, false, "autonomous")).to.be.false;
+      // Autonomous: Running but streaming (button hidden during SSE)
+      expect(shouldShowContinue("Running", false, true, true, "autonomous")).to.be.false;
+      // Interactive: never shows header Continue
+      expect(shouldShowContinue("Running", false, true, false, "interactive")).to.be.false;
     });
 
     // Action buttons hidden for terminal states
@@ -325,16 +333,21 @@ describe("shallai-instance-detail", () => {
       }
     });
 
-    // 8.11: Cancel button only renders for Running or Pending status
-    it("Cancel button renders only for Running or Pending instance status", () => {
-      const shouldShowCancel = (status: string) =>
-        status === "Running" || status === "Pending";
+    // 8.11: Cancel button only renders for Running or Pending status in autonomous mode
+    it("Cancel button renders only for autonomous mode Running or Pending", () => {
+      const shouldShowCancel = (status: string, workflowMode: string, streaming: boolean) =>
+        workflowMode === "autonomous"
+        && (status === "Running" || status === "Pending") && !streaming;
 
-      expect(shouldShowCancel("Pending")).to.be.true;
-      expect(shouldShowCancel("Running")).to.be.true;
-      expect(shouldShowCancel("Completed")).to.be.false;
-      expect(shouldShowCancel("Failed")).to.be.false;
-      expect(shouldShowCancel("Cancelled")).to.be.false;
+      // Autonomous mode
+      expect(shouldShowCancel("Pending", "autonomous", false)).to.be.true;
+      expect(shouldShowCancel("Running", "autonomous", false)).to.be.true;
+      expect(shouldShowCancel("Completed", "autonomous", false)).to.be.false;
+      expect(shouldShowCancel("Failed", "autonomous", false)).to.be.false;
+      expect(shouldShowCancel("Cancelled", "autonomous", false)).to.be.false;
+      // Interactive mode — never show cancel
+      expect(shouldShowCancel("Pending", "interactive", false)).to.be.false;
+      expect(shouldShowCancel("Running", "interactive", false)).to.be.false;
     });
 
     // 8.12: run number computation
@@ -376,6 +389,71 @@ describe("shallai-instance-detail", () => {
       expect(instA?.runNumber).to.equal(1);
       expect(instB?.runNumber).to.equal(2);
       expect(instC?.runNumber).to.equal(3);
+    });
+  });
+
+  describe("interactive mode logic", () => {
+    it("input enabled between turns when active step exists and not streaming", () => {
+      const inputEnabled = (
+        isTerminal: boolean,
+        viewingStepId: string | null,
+        streaming: boolean,
+        hasActiveStep: boolean,
+        status: string,
+      ) => {
+        if (isTerminal) return false;
+        if (viewingStepId) return false;
+        if (streaming) return false;
+        if (hasActiveStep || status === "Running") return true;
+        return false;
+      };
+
+      expect(inputEnabled(false, null, false, true, "Running")).to.be.true;
+      expect(inputEnabled(false, null, false, false, "Running")).to.be.true;
+      expect(inputEnabled(false, null, true, true, "Running")).to.be.false;
+      expect(inputEnabled(true, null, false, true, "Completed")).to.be.false;
+      expect(inputEnabled(false, "step-1", false, true, "Running")).to.be.false;
+      expect(inputEnabled(false, null, false, false, "Pending")).to.be.false;
+    });
+
+    it("completion banner shows when step completable and not streaming", () => {
+      const showBanner = (completable: boolean, streaming: boolean, isInteractive: boolean) =>
+        isInteractive && completable && !streaming;
+
+      expect(showBanner(true, false, true)).to.be.true;
+      expect(showBanner(true, true, true)).to.be.false;
+      expect(showBanner(false, false, true)).to.be.false;
+      expect(showBanner(true, false, false)).to.be.false;
+    });
+
+    it("step completable when no active step, has complete and pending steps", () => {
+      const isCompletable = (steps: Array<{ status: string }>) => {
+        const hasActive = steps.some(s => s.status === "Active");
+        const hasComplete = steps.some(s => s.status === "Complete");
+        const hasPending = steps.some(s => s.status === "Pending");
+        return !hasActive && hasComplete && hasPending;
+      };
+
+      expect(isCompletable([
+        { status: "Complete" },
+        { status: "Pending" },
+      ])).to.be.true;
+      expect(isCompletable([
+        { status: "Active" },
+        { status: "Pending" },
+      ])).to.be.false;
+      expect(isCompletable([
+        { status: "Complete" },
+        { status: "Complete" },
+      ])).to.be.false;
+    });
+
+    it("Start button label is 'Start conversation' for interactive mode", () => {
+      const startLabel = (workflowMode: string) =>
+        workflowMode !== "autonomous" ? "Start conversation" : "Start";
+
+      expect(startLabel("interactive")).to.equal("Start conversation");
+      expect(startLabel("autonomous")).to.equal("Start");
     });
   });
 

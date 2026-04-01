@@ -21,7 +21,7 @@ export function stepSubtitle(step: StepDetailResponse): string {
     case "Pending":
       return "Pending";
     case "Active":
-      return "Running...";
+      return "In progress";
     case "Complete":
       return step.writesTo?.[0] ?? "Complete";
     case "Error":
@@ -44,6 +44,10 @@ export function stepIconName(status: string): string {
     default:
       return "icon-circle-dotted";
   }
+}
+
+export function shouldAnimateStepIcon(status: string, isStreaming: boolean): boolean {
+  return status === "Active" && isStreaming;
 }
 
 export function stepIconColor(status: string): string | undefined {

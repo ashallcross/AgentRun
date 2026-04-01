@@ -809,6 +809,33 @@ So that I can guide, clarify, or provide additional context to the agent while i
 **Then** the content is sanitised before rendering to prevent XSS — no raw HTML, script tags, or event handler attributes (FR57, NFR9)
 **And** sanitisation uses a whitelist approach permitting only standard markdown-generated HTML elements
 
+### Story 6.5: Interactive Mode UX Correction
+
+As a developer or editor using an interactive workflow,
+I want the UI to reflect that I am in control of step progression — not watching an automated process,
+So that the experience matches the human-driven interactive model (PRD: "Human-in-the-loop is the safe, impressive default").
+
+**Acceptance Criteria:**
+
+**Given** an interactive workflow instance is loaded and no SSE stream is active
+**When** the user views the instance detail
+**Then** the active step shows "In progress" (not "Running...") with a static icon (no spin animation)
+**And** no Cancel button or Running/Failed status badges are shown
+**And** the chat input is enabled for the user to send a message
+
+**Given** the user sends a message between turns (no active SSE stream)
+**When** the message is submitted
+**Then** the message is queued via POST /message and a new SSE stream opens automatically
+**And** the step icon animates during streaming and returns to static when the response completes
+**And** the chat input re-enables after the stream ends
+
+**Given** the step's completion check passes after an agent response
+**When** the user views the chat panel
+**Then** a "Continue to next step" banner appears above the chat input
+**And** clicking it advances to the next step, clears the chat, and activates the next step
+
+**Note:** Frontend-only corrective story. No backend execution changes. Autonomous mode unchanged.
+
 ## Epic 7: Error Handling & Recovery
 
 When something goes wrong, users see clear plain-language errors and can retry failed steps or cancel workflows — never stuck in an unrecoverable state.

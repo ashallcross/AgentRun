@@ -21,6 +21,7 @@ import {
   buildInstanceListPath,
   stepSubtitle,
   stepIconName,
+  shouldAnimateStepIcon,
 } from "../utils/instance-detail-helpers.js";
 import { extractToolSummary } from "../utils/tool-helpers.js";
 import { numberAndSortInstances } from "../utils/instance-list-helpers.js";
@@ -64,6 +65,12 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
 
   @state()
   private _historyMessages: ChatMessage[] = [];
+
+  @state()
+  private _stepCompletable = false;
+
+  @state()
+  private _agentResponding = false;
 
   private _toolBatchOpen = false;
 
@@ -241,6 +248,29 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
       color: var(--uui-color-text);
       text-align: center;
     }
+
+    .main-panel {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .completion-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--uui-size-space-3);
+      padding: var(--uui-size-space-3) var(--uui-size-space-4);
+      background: var(--uui-color-positive-standalone);
+      color: var(--uui-color-surface);
+      border-radius: var(--uui-border-radius);
+      margin-bottom: var(--uui-size-space-3);
+      font-size: var(--uui-type-small-size);
+    }
+
+    .completion-banner uui-button {
+      flex-shrink: 0;
+    }
   `;
 
   constructor() {
@@ -318,6 +348,7 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
   disconnectedCallback(): void {
     super.disconnectedCallback();
     this._streaming = false;
+    this._agentResponding = false;
   }
 
   private async _onStartClick(): Promise<void> {
@@ -377,8 +408,23 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
       ];
     } finally {
       this._streaming = false;
+      this._agentResponding = false;
       await this._loadData();
+      this._checkStepCompletable();
     }
+  }
+
+  private _checkStepCompletable(): void {
+    if (!this._instance) return;
+    const isInteractive = this._instance.workflowMode !== "autonomous";
+    if (!isInteractive) {
+      this._stepCompletable = false;
+      return;
+    }
+    const activeStep = this._instance.steps.find(s => s.status === "Active");
+    const hasCompletedCurrent = !activeStep && this._instance.steps.some(s => s.status === "Complete");
+    const hasPendingSteps = this._instance.steps.some(s => s.status === "Pending");
+    this._stepCompletable = hasCompletedCurrent && hasPendingSteps;
   }
 
   private _finaliseStreamingMessage(): void {
@@ -395,6 +441,11 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
   }
 
   private _handleSseEvent(eventType: string, data: Record<string, unknown>): void {
+    // Track agent activity — set responding on agent events, cleared by input.wait
+    if (["text.delta", "tool.start"].includes(eventType)) {
+      this._agentResponding = true;
+    }
+
     switch (eventType) {
       case "text.delta": {
         const content = data.content as string;
@@ -573,6 +624,11 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
       case "user.message":
         // Server confirms user message was injected — already added optimistically, ignore echo
         break;
+      case "input.wait":
+        // Agent is idle, waiting for user input — enable the chat input
+        this._finaliseStreamingMessage();
+        this._agentResponding = false;
+        break;
       case "run.error":
         this._finaliseStreamingMessage();
         if (this._instance) {
@@ -619,6 +675,47 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
         },
       ];
     }
+  }
+
+  private async _onSendAndStream(e: CustomEvent<{ message: string }>): Promise<void> {
+    if (!this._instance) return;
+    const message = e.detail.message;
+
+    // Optimistically add user message to chat
+    this._chatMessages = [
+      ...this._chatMessages,
+      {
+        role: "user" as const,
+        content: message,
+        timestamp: new Date().toISOString(),
+      },
+    ];
+
+    try {
+      const token = await this.#authContext?.getLatestToken();
+      await sendMessage(this._instance.id, message, token);
+    } catch {
+      this._chatMessages = [
+        ...this._chatMessages,
+        {
+          role: "system",
+          content: "Failed to send message. Try again.",
+          timestamp: new Date().toISOString(),
+        },
+      ];
+      return;
+    }
+
+    // Start SSE stream to get the agent's response
+    this._stepCompletable = false;
+    await this._onStartClick();
+  }
+
+  private async _onAdvanceStep(): Promise<void> {
+    if (!this._instance || this._streaming) return;
+    this._stepCompletable = false;
+    this._chatMessages = [];
+    await this._onStartClick();
   }
 
   private async _onCancelClick(): Promise<void> {
@@ -671,7 +768,7 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
               >
                 <div class="step-icon-wrapper">
                   <uui-icon
-                    class="step-icon"
+                    class="step-icon ${shouldAnimateStepIcon(step.status, this._agentResponding) ? "step-icon-spin" : ""}"
                     name=${stepIconName(step.status)}
                   ></uui-icon>
                 </div>
@@ -702,27 +799,94 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
     }
 
     const inst = this._instance;
-    const showStart = inst.status === "Pending" && !this._streaming;
-    const hasActiveStep = inst.steps.some((s) => s.status === "Active");
-    const showContinue = inst.status === "Running" && !hasActiveStep && !this._streaming
-      && inst.steps.some((s) => s.status === "Pending");
-    const showCancel = (inst.status === "Running" || inst.status === "Pending") && !this._streaming;
-
+    const isInteractive = inst.workflowMode !== "autonomous";
+    const isTerminal = inst.status === "Completed" || inst.status === "Failed" || inst.status === "Cancelled";
     const activeStep = inst.steps.find(s => s.status === "Active");
-    const inputEnabled = this._streaming && !this._viewingStepId;
-    const inputPlaceholder = inst.status === "Completed" || inst.status === "Failed"
-      ? "Workflow complete"
-      : activeStep ? "Step complete" : "Click 'Start' to begin the workflow.";
+    const hasActiveStep = !!activeStep;
+
+    // Start button: shows for Pending instances
+    const showStart = inst.status === "Pending" && !this._streaming;
+    const startLabel = isInteractive ? "Start conversation" : "Start";
+
+    // Continue button (header): autonomous mode only — step advancement between steps
+    const showContinue = !isInteractive
+      && inst.status === "Running" && !hasActiveStep && !this._streaming
+      && inst.steps.some((s) => s.status === "Pending");
+
+    // Cancel button: autonomous mode only
+    const showCancel = !isInteractive
+      && (inst.status === "Running" || inst.status === "Pending") && !this._streaming;
+
+    // Input enablement: interactive vs autonomous
+    let inputEnabled: boolean;
+    let inputPlaceholder: string;
+    if (isInteractive) {
+      if (isTerminal) {
+        inputEnabled = false;
+        inputPlaceholder = "Workflow complete";
+      } else if (this._viewingStepId) {
+        inputEnabled = false;
+        inputPlaceholder = "Viewing step history";
+      } else if (this._agentResponding) {
+        inputEnabled = false;
+        inputPlaceholder = "Agent is responding...";
+      } else if (this._streaming || activeStep || inst.status === "Running") {
+        // Streaming but agent idle (waiting for input), or active step exists
+        inputEnabled = true;
+        inputPlaceholder = "Message the agent...";
+      } else {
+        inputEnabled = false;
+        inputPlaceholder = "Click 'Start conversation' to begin.";
+      }
+    } else {
+      inputEnabled = this._streaming && !this._viewingStepId;
+      inputPlaceholder = isTerminal
+        ? "Workflow complete"
+        : activeStep ? "Step complete" : "Click 'Start' to begin the workflow.";
+    }
+
+    // Send handler: interactive mode uses send-and-stream when no SSE connection,
+    // otherwise sends to Channel via _onSendMessage (agent picks it up from ToolLoop)
+    const sendHandler = isInteractive && !this._streaming
+      ? (e: CustomEvent<{ message: string }>) => this._onSendAndStream(e)
+      : (e: CustomEvent<{ message: string }>) => this._onSendMessage(e);
+
+    // Completion banner: interactive mode, step finished, agent not actively responding
+    const showCompletionBanner = isInteractive && this._stepCompletable && !this._agentResponding;
+
+    // Workflow complete banner: all steps done
+    const allStepsComplete = inst.steps.every(s => s.status === "Complete");
+    const showWorkflowComplete = isInteractive && isTerminal && allStepsComplete;
 
     const mainContent = this._providerError
       ? html`<div class="main-placeholder">Configure an AI provider in Umbraco.AI before workflows can run.</div>`
-      : html`<shallai-chat-panel
-          .messages=${this._viewingStepId ? this._historyMessages : this._chatMessages}
-          ?is-streaming=${this._streaming && !this._viewingStepId}
-          ?input-enabled=${inputEnabled}
-          input-placeholder=${inputPlaceholder}
-          @send-message=${this._onSendMessage}
-        ></shallai-chat-panel>`;
+      : html`
+          <div class="main-panel">
+            ${showCompletionBanner
+              ? html`
+                  <div class="completion-banner">
+                    <span>Step complete — review the output, then advance when ready</span>
+                    <uui-button label="Continue to next step" look="primary" @click=${this._onAdvanceStep}>
+                      Continue to next step
+                    </uui-button>
+                  </div>
+                `
+              : nothing}
+            ${showWorkflowComplete
+              ? html`
+                  <div class="completion-banner">
+                    <span>Workflow complete — all steps finished</span>
+                  </div>
+                `
+              : nothing}
+            <shallai-chat-panel
+              .messages=${this._viewingStepId ? this._historyMessages : this._chatMessages}
+              ?is-streaming=${this._streaming && !this._viewingStepId}
+              ?input-enabled=${inputEnabled}
+              input-placeholder=${inputPlaceholder}
+              @send-message=${sendHandler}
+            ></shallai-chat-panel>
+          </div>`;
 
     return html`
       <div class="header">
@@ -732,8 +896,8 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
         <h2>${inst.workflowName || inst.workflowAlias} — Run #${this._runNumber}</h2>
         ${showStart
           ? html`
-              <uui-button label="Start" look="primary" @click=${this._onStartClick}>
-                Start
+              <uui-button label=${startLabel} look="primary" @click=${this._onStartClick}>
+                ${startLabel}
               </uui-button>
             `
           : nothing}
@@ -744,7 +908,6 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
               </uui-button>
             `
           : nothing}
-        ${nothing}
         ${showCancel
           ? html`
               <uui-button
