@@ -29,6 +29,29 @@ public class ToolExtensibilityTests
 
     private IChatClient _chatClient = null!;
 
+    private static async IAsyncEnumerable<ChatResponseUpdate> StreamToolCalls(params (string callId, string name, IDictionary<string, object?>? args)[] calls)
+    {
+        foreach (var (callId, name, args) in calls)
+        {
+            yield return new ChatResponseUpdate
+            {
+                Role = ChatRole.Assistant,
+                Contents = [new FunctionCallContent(callId, name, args)]
+            };
+        }
+        await Task.CompletedTask;
+    }
+
+    private static async IAsyncEnumerable<ChatResponseUpdate> StreamText(string text)
+    {
+        yield return new ChatResponseUpdate
+        {
+            Role = ChatRole.Assistant,
+            Contents = [new TextContent(text)]
+        };
+        await Task.CompletedTask;
+    }
+
     [SetUp]
     public void SetUp()
     {
@@ -55,20 +78,15 @@ public class ToolExtensibilityTests
         var context = new ToolExecutionContext("/tmp/instance", "inst-001", "step-1", "test-workflow");
 
         var callSequence = 0;
-        _chatClient.GetResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+        _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
                 callSequence++;
                 if (callSequence == 1)
                 {
-                    var args = new Dictionary<string, object?> { ["name"] = "Adam" };
-                    var contents = new List<AIContent>
-                    {
-                        new FunctionCallContent("call-1", "custom_tool", args)
-                    };
-                    return new ChatResponse(new ChatMessage(ChatRole.Assistant, contents));
+                    return StreamToolCalls(("call-1", "custom_tool", new Dictionary<string, object?> { ["name"] = "Adam" }));
                 }
-                return new ChatResponse(new ChatMessage(ChatRole.Assistant, "Done"));
+                return StreamText("Done");
             });
 
         var messages = new List<ChatMessage> { new(ChatRole.System, "test") };

@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-30
-last_updated: 2026-04-01 (story 6-1 done)
+last_updated: 2026-04-01 (story 6-2 done)
 project: Shallai.UmbracoAgentRunner
 project_key: NOKEY
 tracking_system: file-system
@@ -84,7 +84,7 @@ development_status:
   # Epic 6: Real-Time Chat Experience
   epic-6: in-progress
   6-1-conversation-persistence: done
-  6-2-chat-panel-and-message-streaming: backlog
+  6-2-chat-panel-and-message-streaming: done
   6-3-tool-call-display: backlog
   6-4-user-messaging-and-multi-turn-conversation: backlog
   epic-6-retrospective: optional

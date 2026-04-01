@@ -35,3 +35,20 @@ export interface InstanceDetailResponse {
   createdBy: string;
   steps: StepDetailResponse[];
 }
+
+export interface ConversationEntryResponse {
+  role: string;
+  content: string | null;
+  timestamp: string;
+  toolCallId?: string;
+  toolName?: string;
+  toolArguments?: string;
+  toolResult?: string;
+}
+
+export interface ChatMessage {
+  role: "agent" | "system";
+  content: string;
+  timestamp: string;
+  isStreaming?: boolean;
+}

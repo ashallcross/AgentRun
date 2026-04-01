@@ -44,9 +44,9 @@ public class StepExecutorTests
         _instanceManager.UpdateStepStatusAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<StepStatus>(), Arg.Any<CancellationToken>())
             .Returns(callInfo => MakeInstance());
 
-        // Default: chat client returns no tool calls
-        _chatClient.GetResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
-            .Returns(new ChatResponse(new ChatMessage(ChatRole.Assistant, "done")));
+        // Default: streaming chat client returns no tool calls (text only)
+        _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+            .Returns(StreamText("done"));
 
         // Default: artifact validation passes
         _artifactValidator.ValidateInputArtifactsAsync(Arg.Any<StepDefinition>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -88,6 +88,16 @@ public class StepExecutorTests
             InstanceId = instanceId,
             Steps = [new StepState { Id = "step-1", Status = StepStatus.Pending }]
         };
+
+    private static async IAsyncEnumerable<ChatResponseUpdate> StreamText(string text)
+    {
+        yield return new ChatResponseUpdate
+        {
+            Role = ChatRole.Assistant,
+            Contents = [new TextContent(text)]
+        };
+        await Task.CompletedTask;
+    }
 
     private static StepExecutionContext MakeExecutionContext(
         WorkflowDefinition? workflow = null,
@@ -155,7 +165,7 @@ public class StepExecutorTests
         await executor.ExecuteStepAsync(context, CancellationToken.None);
 
         // ChatOptions.Tools should only contain read_file
-        await _chatClient.Received().GetResponseAsync(
+        _chatClient.Received().GetStreamingResponseAsync(
             Arg.Any<IEnumerable<ChatMessage>>(),
             Arg.Is<ChatOptions>(o => o!.Tools!.Count == 1),
             Arg.Any<CancellationToken>());
@@ -174,7 +184,7 @@ public class StepExecutorTests
         {
             _profileResolver.ResolveAndGetClientAsync(Arg.Any<StepDefinition>(), Arg.Any<WorkflowDefinition>(), Arg.Any<CancellationToken>());
             _promptAssembler.AssemblePromptAsync(Arg.Any<PromptAssemblyContext>(), Arg.Any<CancellationToken>());
-            _chatClient.GetResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>());
+            _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>());
         });
     }
 
@@ -230,7 +240,7 @@ public class StepExecutorTests
 
         await _instanceManager.Received(1).UpdateStepStatusAsync(
             "test-workflow", "inst-001", 0, StepStatus.Error, Arg.Any<CancellationToken>());
-        await _chatClient.DidNotReceive().GetResponseAsync(
+        _chatClient.DidNotReceive().GetStreamingResponseAsync(
             Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>());
     }
 

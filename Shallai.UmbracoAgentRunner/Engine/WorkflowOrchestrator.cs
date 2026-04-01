@@ -1,5 +1,6 @@
 using Shallai.UmbracoAgentRunner.Engine.Events;
 using Shallai.UmbracoAgentRunner.Instances;
+using Shallai.UmbracoAgentRunner.Services;
 using Shallai.UmbracoAgentRunner.Workflows;
 
 namespace Shallai.UmbracoAgentRunner.Engine;
@@ -9,17 +10,23 @@ public class WorkflowOrchestrator : IWorkflowOrchestrator
     private readonly IInstanceManager _instanceManager;
     private readonly IWorkflowRegistry _workflowRegistry;
     private readonly IStepExecutor _stepExecutor;
+    private readonly IConversationStore _conversationStore;
+    private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<WorkflowOrchestrator> _logger;
 
     public WorkflowOrchestrator(
         IInstanceManager instanceManager,
         IWorkflowRegistry workflowRegistry,
         IStepExecutor stepExecutor,
+        IConversationStore conversationStore,
+        ILoggerFactory loggerFactory,
         ILogger<WorkflowOrchestrator> logger)
     {
         _instanceManager = instanceManager;
         _workflowRegistry = workflowRegistry;
         _stepExecutor = stepExecutor;
+        _conversationStore = conversationStore;
+        _loggerFactory = loggerFactory;
         _logger = logger;
     }
 
@@ -64,6 +71,14 @@ public class WorkflowOrchestrator : IWorkflowOrchestrator
             // Emit step.started
             await emitter.EmitStepStartedAsync(step.Id, step.Name, cancellationToken);
 
+            // Create conversation recorder for this step execution
+            var recorder = new ConversationRecorder(
+                _conversationStore, workflowAlias, instanceId, step.Id,
+                _loggerFactory.CreateLogger<ConversationRecorder>());
+
+            // Record step.started system message
+            await recorder.RecordSystemMessageAsync($"Starting {step.Name}...", cancellationToken);
+
             // Build StepExecutionContext
             var instanceFolderPath = _instanceManager.GetInstanceFolderPath(workflowAlias, instanceId);
             var context = new StepExecutionContext(
@@ -72,7 +87,8 @@ public class WorkflowOrchestrator : IWorkflowOrchestrator
                 Instance: instance,
                 InstanceFolderPath: instanceFolderPath,
                 WorkflowFolderPath: registered.FolderPath,
-                EventEmitter: emitter);
+                EventEmitter: emitter,
+                ConversationRecorder: recorder);
 
             // Execute the step
             await _stepExecutor.ExecuteStepAsync(context, cancellationToken);
@@ -85,6 +101,9 @@ public class WorkflowOrchestrator : IWorkflowOrchestrator
 
             if (stepState.Status == StepStatus.Error)
             {
+                // Record step.finished system message
+                await recorder.RecordSystemMessageAsync($"{step.Name} failed", CancellationToken.None);
+
                 // Step failed — emit step.finished and run.error
                 await emitter.EmitStepFinishedAsync(step.Id, "Error", CancellationToken.None);
 
@@ -104,6 +123,9 @@ public class WorkflowOrchestrator : IWorkflowOrchestrator
                     $"Step '{step.Name}' failed", CancellationToken.None);
                 return;
             }
+
+            // Record step.finished system message
+            await recorder.RecordSystemMessageAsync($"{step.Name} completed", cancellationToken);
 
             // Step completed successfully
             await emitter.EmitStepFinishedAsync(step.Id, "Complete", cancellationToken);

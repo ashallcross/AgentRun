@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.Extensions.AI;
 using Shallai.UmbracoAgentRunner.Engine.Events;
 using Shallai.UmbracoAgentRunner.Tools;
@@ -16,7 +17,8 @@ public static class ToolLoop
         ToolExecutionContext context,
         ILogger logger,
         CancellationToken cancellationToken,
-        ISseEventEmitter? emitter = null)
+        ISseEventEmitter? emitter = null,
+        IConversationRecorder? recorder = null)
     {
         var iteration = 0;
         while (true)
@@ -30,36 +32,63 @@ public static class ToolLoop
                     $"Tool loop exceeded maximum of {MaxIterations} iterations for step '{context.StepId}'");
             }
 
-            var response = await client.GetResponseAsync(messages, options, cancellationToken);
+            // Stream the LLM response, emitting text.delta events for each chunk
+            var textBuilder = new StringBuilder();
+            var updates = new List<ChatResponseUpdate>();
 
-            // Emit text.delta for any text content in the response
-            if (emitter is not null)
+            try
             {
-                foreach (var message in response.Messages)
+                await foreach (var update in client.GetStreamingResponseAsync(messages, options, cancellationToken))
                 {
-                    foreach (var content in message.Contents.OfType<TextContent>())
+                    updates.Add(update);
+
+                    if (!string.IsNullOrEmpty(update.Text))
                     {
-                        if (!string.IsNullOrEmpty(content.Text))
+                        textBuilder.Append(update.Text);
+
+                        if (emitter is not null)
                         {
-                            await emitter.EmitTextDeltaAsync(content.Text, cancellationToken);
+                            await emitter.EmitTextDeltaAsync(update.Text, cancellationToken);
                         }
                     }
                 }
             }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception)
+            {
+                // Flush any partial text accumulated before the error
+                var partialText = textBuilder.ToString();
+                if (!string.IsNullOrEmpty(partialText))
+                {
+                    await (recorder?.RecordAssistantTextAsync(partialText, CancellationToken.None) ?? Task.CompletedTask);
+                }
 
-            var functionCalls = response.Messages
-                .SelectMany(m => m.Contents.OfType<FunctionCallContent>())
-                .ToList();
+                throw;
+            }
+
+            // Record accumulated assistant text (if any)
+            var accumulatedText = textBuilder.ToString();
+            if (!string.IsNullOrEmpty(accumulatedText))
+            {
+                await (recorder?.RecordAssistantTextAsync(accumulatedText, cancellationToken) ?? Task.CompletedTask);
+            }
+
+            // Assemble streaming updates into messages for conversation context
+            messages.AddMessages(updates);
+
+            // Extract function calls from the last assistant message only (not previously processed ones)
+            var lastAssistantMessage = messages.LastOrDefault(m => m.Role == ChatRole.Assistant);
+            var functionCalls = lastAssistantMessage?.Contents.OfType<FunctionCallContent>().ToList()
+                ?? [];
 
             if (functionCalls.Count == 0)
             {
-                return response;
-            }
-
-            // Add assistant message(s) containing the tool calls to conversation
-            foreach (var message in response.Messages)
-            {
-                messages.Add(message);
+                // No tool calls — return a ChatResponse from the accumulated updates
+                return new ChatResponse(messages.Where(m => m.Role == ChatRole.Assistant).LastOrDefault()
+                    ?? new ChatMessage(ChatRole.Assistant, accumulatedText));
             }
 
             // Process each tool call and collect results
@@ -85,8 +114,12 @@ public static class ToolLoop
                     await emitter.EmitToolStartAsync(functionCall.CallId, tool.Name, cancellationToken);
                 }
 
-                // Emit tool.args
+                // Record tool call
                 var arguments = functionCall.Arguments ?? new Dictionary<string, object?>();
+                var argsJson = JsonSerializer.Serialize(arguments);
+                await (recorder?.RecordToolCallAsync(functionCall.CallId, tool.Name, argsJson, cancellationToken) ?? Task.CompletedTask);
+
+                // Emit tool.args
                 if (emitter is not null)
                 {
                     await emitter.EmitToolArgsAsync(functionCall.CallId, arguments, cancellationToken);
@@ -107,6 +140,10 @@ public static class ToolLoop
                         await emitter.EmitToolResultAsync(functionCall.CallId, result, cancellationToken);
                     }
 
+                    // Record tool result
+                    var resultStr = result?.ToString() ?? string.Empty;
+                    await (recorder?.RecordToolResultAsync(functionCall.CallId, resultStr, cancellationToken) ?? Task.CompletedTask);
+
                     resultContents.Add(new FunctionResultContent(functionCall.CallId, result));
                 }
                 catch (OperationCanceledException)
@@ -124,9 +161,11 @@ public static class ToolLoop
                         await emitter.EmitToolEndAsync(functionCall.CallId, cancellationToken);
                     }
 
+                    var errorResult = $"Tool '{tool.Name}' execution error: {tex.Message}";
+                    await (recorder?.RecordToolResultAsync(functionCall.CallId, errorResult, cancellationToken) ?? Task.CompletedTask);
+
                     resultContents.Add(new FunctionResultContent(
-                        functionCall.CallId,
-                        $"Tool '{tool.Name}' execution error: {tex.Message}"));
+                        functionCall.CallId, errorResult));
                 }
                 catch (Exception ex)
                 {
@@ -140,9 +179,11 @@ public static class ToolLoop
                         await emitter.EmitToolEndAsync(functionCall.CallId, cancellationToken);
                     }
 
+                    var errorResult = $"Tool '{tool.Name}' failed: {ex.Message}";
+                    await (recorder?.RecordToolResultAsync(functionCall.CallId, errorResult, cancellationToken) ?? Task.CompletedTask);
+
                     resultContents.Add(new FunctionResultContent(
-                        functionCall.CallId,
-                        $"Tool '{tool.Name}' failed: {ex.Message}"));
+                        functionCall.CallId, errorResult));
                 }
             }
 

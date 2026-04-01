@@ -10,4 +10,5 @@ public sealed record StepExecutionContext(
     InstanceState Instance,
     string InstanceFolderPath,
     string WorkflowFolderPath,
-    ISseEventEmitter? EventEmitter = null);
+    ISseEventEmitter? EventEmitter = null,
+    IConversationRecorder? ConversationRecorder = null);

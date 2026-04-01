@@ -29,21 +29,30 @@ public class ToolLoopTests
         _chatClient?.Dispose();
     }
 
-    private static ChatResponse MakeResponseWithToolCalls(params (string callId, string name, IDictionary<string, object?>? args)[] calls)
+    private static async IAsyncEnumerable<ChatResponseUpdate> MakeStreamingToolCalls(params (string callId, string name, IDictionary<string, object?>? args)[] calls)
     {
-        var contents = new List<AIContent>();
         foreach (var (callId, name, args) in calls)
         {
-            contents.Add(new FunctionCallContent(callId, name, args));
+            var update = new ChatResponseUpdate
+            {
+                Role = ChatRole.Assistant,
+                Contents = [new FunctionCallContent(callId, name, args)]
+            };
+            yield return update;
         }
 
-        var message = new ChatMessage(ChatRole.Assistant, contents);
-        return new ChatResponse(message);
+        await Task.CompletedTask;
     }
 
-    private static ChatResponse MakeTextResponse(string text)
+    private static async IAsyncEnumerable<ChatResponseUpdate> MakeStreamingTextResponse(string text)
     {
-        return new ChatResponse(new ChatMessage(ChatRole.Assistant, text));
+        yield return new ChatResponseUpdate
+        {
+            Role = ChatRole.Assistant,
+            Contents = [new TextContent(text)]
+        };
+
+        await Task.CompletedTask;
     }
 
     [Test]
@@ -63,13 +72,13 @@ public class ToolLoopTests
 
         var args = new Dictionary<string, object?> { ["path"] = "test.txt" };
         var callSequence = 0;
-        _chatClient.GetResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+        _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
                 callSequence++;
                 if (callSequence == 1)
-                    return MakeResponseWithToolCalls(("call-1", "read_file", args));
-                return MakeTextResponse("Done");
+                    return MakeStreamingToolCalls(("call-1", "read_file", args));
+                return MakeStreamingTextResponse("Done");
             });
 
         var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
@@ -90,13 +99,13 @@ public class ToolLoopTests
         var declaredTools = new Dictionary<string, IWorkflowTool>(StringComparer.OrdinalIgnoreCase);
 
         var callSequence = 0;
-        _chatClient.GetResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+        _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
                 callSequence++;
                 if (callSequence == 1)
-                    return MakeResponseWithToolCalls(("call-1", "unknown_tool", null));
-                return MakeTextResponse("OK");
+                    return MakeStreamingToolCalls(("call-1", "unknown_tool", null));
+                return MakeStreamingTextResponse("OK");
             });
 
         var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
@@ -127,13 +136,13 @@ public class ToolLoopTests
         };
 
         var callSequence = 0;
-        _chatClient.GetResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+        _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
                 callSequence++;
                 if (callSequence == 1)
-                    return MakeResponseWithToolCalls(("call-1", "failing_tool", null));
-                return MakeTextResponse("handled");
+                    return MakeStreamingToolCalls(("call-1", "failing_tool", null));
+                return MakeStreamingTextResponse("handled");
             });
 
         var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
@@ -163,13 +172,13 @@ public class ToolLoopTests
         };
 
         var callSequence = 0;
-        _chatClient.GetResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+        _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
                 callSequence++;
                 if (callSequence <= 3)
-                    return MakeResponseWithToolCalls(($"call-{callSequence}", "step_tool", null));
-                return MakeTextResponse("Final answer");
+                    return MakeStreamingToolCalls(($"call-{callSequence}", "step_tool", null));
+                return MakeStreamingTextResponse("Final answer");
             });
 
         var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
@@ -177,7 +186,7 @@ public class ToolLoopTests
         var response = await ToolLoop.RunAsync(_chatClient, messages, new ChatOptions(), declaredTools, _context, _logger, CancellationToken.None);
 
         // 4 calls total: 3 with tool calls + 1 final
-        await _chatClient.Received(4).GetResponseAsync(
+        _chatClient.Received(4).GetStreamingResponseAsync(
             Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>());
         await tool.Received(3).ExecuteAsync(
             Arg.Any<IDictionary<string, object?>>(), Arg.Any<ToolExecutionContext>(), Arg.Any<CancellationToken>());
@@ -206,15 +215,15 @@ public class ToolLoopTests
         };
 
         var callSequence = 0;
-        _chatClient.GetResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+        _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
                 callSequence++;
                 if (callSequence == 1)
-                    return MakeResponseWithToolCalls(
+                    return MakeStreamingToolCalls(
                         ("call-1", "read_file", null),
                         ("call-2", "write_file", null));
-                return MakeTextResponse("Done");
+                return MakeStreamingTextResponse("Done");
             });
 
         var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
@@ -242,8 +251,8 @@ public class ToolLoopTests
             ["cancelling_tool"] = tool
         };
 
-        _chatClient.GetResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
-            .Returns(MakeResponseWithToolCalls(("call-1", "cancelling_tool", null)));
+        _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+            .Returns(MakeStreamingToolCalls(("call-1", "cancelling_tool", null)));
 
         var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
 
@@ -266,8 +275,8 @@ public class ToolLoopTests
         };
 
         // Always return a tool call — triggers infinite loop
-        _chatClient.GetResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
-            .Returns(callInfo => MakeResponseWithToolCalls(($"call-{Guid.NewGuid()}", "looping_tool", null)));
+        _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => MakeStreamingToolCalls(($"call-{Guid.NewGuid()}", "looping_tool", null)));
 
         var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
 
@@ -292,13 +301,13 @@ public class ToolLoopTests
         };
 
         var callSequence = 0;
-        _chatClient.GetResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+        _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
                 callSequence++;
                 if (callSequence == 1)
-                    return MakeResponseWithToolCalls(("call-1", "read_file", null));
-                return MakeTextResponse("handled");
+                    return MakeStreamingToolCalls(("call-1", "read_file", null));
+                return MakeStreamingTextResponse("handled");
             });
 
         var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
@@ -328,13 +337,13 @@ public class ToolLoopTests
         };
 
         var callSequence = 0;
-        _chatClient.GetResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+        _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
                 callSequence++;
                 if (callSequence == 1)
-                    return MakeResponseWithToolCalls(("call-1", "failing_tool", null));
-                return MakeTextResponse("handled");
+                    return MakeStreamingToolCalls(("call-1", "failing_tool", null));
+                return MakeStreamingTextResponse("handled");
             });
 
         var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
@@ -347,5 +356,68 @@ public class ToolLoopTests
         // Generic catch uses "failed:" not "execution error:"
         Assert.That(resultContent!.Result?.ToString(), Does.Contain("failed:"));
         Assert.That(resultContent.Result?.ToString(), Does.Contain("unexpected error"));
+    }
+
+    [Test]
+    public async Task WithRecorder_CallsRecordAssistantTextAsync_AfterLlmTextResponse()
+    {
+        var recorder = Substitute.For<IConversationRecorder>();
+        var declaredTools = new Dictionary<string, IWorkflowTool>(StringComparer.OrdinalIgnoreCase);
+
+        _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+            .Returns(MakeStreamingTextResponse("Hello world"));
+
+        var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
+
+        await ToolLoop.RunAsync(_chatClient, messages, new ChatOptions(), declaredTools, _context, _logger, CancellationToken.None, recorder: recorder);
+
+        await recorder.Received(1).RecordAssistantTextAsync("Hello world", Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task WithRecorder_CallsRecordToolCallAndResult_AroundToolExecution()
+    {
+        var recorder = Substitute.For<IConversationRecorder>();
+        var tool = Substitute.For<IWorkflowTool>();
+        tool.Name.Returns("read_file");
+        tool.Description.Returns("Reads a file");
+        tool.ExecuteAsync(Arg.Any<IDictionary<string, object?>>(), Arg.Any<ToolExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns("file contents");
+
+        var declaredTools = new Dictionary<string, IWorkflowTool>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["read_file"] = tool
+        };
+
+        var callSequence = 0;
+        _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                callSequence++;
+                if (callSequence == 1)
+                    return MakeStreamingToolCalls(("call-1", "read_file", null));
+                return MakeStreamingTextResponse("Done");
+            });
+
+        var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
+
+        await ToolLoop.RunAsync(_chatClient, messages, new ChatOptions(), declaredTools, _context, _logger, CancellationToken.None, recorder: recorder);
+
+        await recorder.Received(1).RecordToolCallAsync("call-1", "read_file", Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await recorder.Received(1).RecordToolResultAsync("call-1", "file contents", Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task NullRecorder_DoesNotThrow()
+    {
+        var declaredTools = new Dictionary<string, IWorkflowTool>(StringComparer.OrdinalIgnoreCase);
+
+        _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+            .Returns(MakeStreamingTextResponse("Hello"));
+
+        var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
+
+        // Should not throw — recorder is null by default
+        await ToolLoop.RunAsync(_chatClient, messages, new ChatOptions(), declaredTools, _context, _logger, CancellationToken.None);
     }
 }

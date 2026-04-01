@@ -8,11 +8,13 @@ import {
 } from "@umbraco-cms/backoffice/external/lit";
 import { UMB_AUTH_CONTEXT } from "@umbraco-cms/backoffice/auth";
 import { umbConfirmModal } from "@umbraco-cms/backoffice/modal";
-import { getInstance, getInstances, cancelInstance, startInstance } from "../api/api-client.js";
+import { getInstance, getInstances, cancelInstance, startInstance, getConversation, mapConversationToChat } from "../api/api-client.js";
 import type {
   InstanceDetailResponse,
   StepDetailResponse,
+  ChatMessage,
 } from "../api/types.js";
+import "./shallai-chat-panel.element.js";
 import {
   extractInstanceId,
   buildInstanceListPath,
@@ -48,6 +50,18 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
 
   @state()
   private _providerError = false;
+
+  @state()
+  private _chatMessages: ChatMessage[] = [];
+
+  @state()
+  private _streamingText = "";
+
+  @state()
+  private _viewingStepId: string | null = null;
+
+  @state()
+  private _historyMessages: ChatMessage[] = [];
 
   static styles = css`
     :host {
@@ -263,7 +277,7 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
     window.history.pushState({}, "", path);
   }
 
-  private _onStepClick(step: StepDetailResponse): void {
+  private async _onStepClick(step: StepDetailResponse): Promise<void> {
     if (step.status === "Pending") return;
     this._selectedStepId = step.id;
     this.dispatchEvent(
@@ -273,6 +287,28 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
         composed: true,
       }),
     );
+
+    // If clicking the active step during streaming, show live messages
+    if (step.status === "Active") {
+      this._viewingStepId = null;
+      return;
+    }
+
+    // Load conversation history for completed/error steps
+    this._viewingStepId = step.id;
+    try {
+      const token = await this.#authContext?.getLatestToken();
+      const instanceId = this._instance!.id;
+      const entries = await getConversation(instanceId, step.id, token);
+      this._historyMessages = mapConversationToChat(entries);
+    } catch {
+      this._historyMessages = [];
+    }
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this._streaming = false;
   }
 
   private async _onStartClick(): Promise<void> {
@@ -280,6 +316,8 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
 
     this._streaming = true;
     this._providerError = false;
+    this._viewingStepId = null;
+    this._streamingText = "";
 
     try {
       const token = await this.#authContext?.getLatestToken();
@@ -319,40 +357,119 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
         }
       }
     } catch {
-      console.warn("Streaming failed");
+      this._finaliseStreamingMessage();
+      this._chatMessages = [
+        ...this._chatMessages,
+        {
+          role: "system",
+          content: "Connection lost.",
+          timestamp: new Date().toISOString(),
+        },
+      ];
     } finally {
       this._streaming = false;
       await this._loadData();
     }
   }
 
+  private _finaliseStreamingMessage(): void {
+    if (!this._streamingText) return;
+    const lastIndex = this._chatMessages.length - 1;
+    const last = this._chatMessages[lastIndex];
+    if (last && last.role === "agent" && last.isStreaming) {
+      this._chatMessages = [
+        ...this._chatMessages.slice(0, lastIndex),
+        { ...last, content: this._streamingText, isStreaming: false },
+      ];
+    }
+    this._streamingText = "";
+  }
+
   private _handleSseEvent(eventType: string, data: Record<string, unknown>): void {
     switch (eventType) {
+      case "text.delta": {
+        const content = data.content as string;
+        if (!content) break;
+        this._streamingText += content;
+        const lastIndex = this._chatMessages.length - 1;
+        const last = this._chatMessages[lastIndex];
+        if (last && last.role === "agent" && last.isStreaming) {
+          this._chatMessages = [
+            ...this._chatMessages.slice(0, lastIndex),
+            { ...last, content: this._streamingText },
+          ];
+        } else {
+          this._chatMessages = [
+            ...this._chatMessages,
+            {
+              role: "agent",
+              content: this._streamingText,
+              timestamp: new Date().toISOString(),
+              isStreaming: true,
+            },
+          ];
+        }
+        break;
+      }
+      case "tool.start":
+        this._finaliseStreamingMessage();
+        break;
       case "step.started":
+        this._finaliseStreamingMessage();
         if (this._instance) {
           const step = this._instance.steps.find((s) => s.id === data.stepId);
           if (step) step.status = "Active";
           this.requestUpdate();
         }
+        this._chatMessages = [
+          ...this._chatMessages,
+          {
+            role: "system",
+            content: `Starting ${(data.stepName as string) || (data.stepId as string)}...`,
+            timestamp: new Date().toISOString(),
+          },
+        ];
         break;
-      case "step.finished":
+      case "step.finished": {
+        this._finaliseStreamingMessage();
         if (this._instance) {
           const step = this._instance.steps.find((s) => s.id === data.stepId);
           if (step) step.status = data.status as string;
           this.requestUpdate();
         }
+        const stepLabel = (data.stepName as string) || (data.stepId as string);
+        const outcome = (data.status as string) === "Error" ? "failed" : "completed";
+        this._chatMessages = [
+          ...this._chatMessages,
+          {
+            role: "system",
+            content: `${stepLabel} ${outcome}`,
+            timestamp: new Date().toISOString(),
+          },
+        ];
         break;
+      }
       case "run.finished":
+        this._finaliseStreamingMessage();
         if (this._instance) {
           this._instance.status = "Completed";
           this.requestUpdate();
         }
         break;
       case "run.error":
+        this._finaliseStreamingMessage();
         if (this._instance) {
           this._instance.status = "Failed";
           this.requestUpdate();
         }
+        this._chatMessages = [
+          ...this._chatMessages,
+          {
+            role: "system",
+            content: `Error: ${(data.message as string) || "Workflow failed"}`,
+            timestamp: new Date().toISOString(),
+          },
+        ];
         break;
     }
   }
@@ -446,15 +563,10 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
 
     const mainContent = this._providerError
       ? html`<div class="main-placeholder">Configure an AI provider in Umbraco.AI before workflows can run.</div>`
-      : this._streaming || (inst.status === "Running" && hasActiveStep)
-        ? html`<div class="main-placeholder">Step in progress...</div>`
-        : inst.status === "Completed"
-          ? html`<div class="main-placeholder">Workflow completed.</div>`
-          : inst.status === "Failed"
-            ? html`<div class="main-placeholder">Workflow failed.</div>`
-            : showContinue
-              ? html`<div class="main-placeholder">Step complete. Click 'Continue' to proceed.</div>`
-              : html`<div class="main-placeholder">Click 'Start' to begin the workflow.</div>`;
+      : html`<shallai-chat-panel
+          .messages=${this._viewingStepId ? this._historyMessages : this._chatMessages}
+          ?is-streaming=${this._streaming && !this._viewingStepId}
+        ></shallai-chat-panel>`;
 
     return html`
       <div class="header">

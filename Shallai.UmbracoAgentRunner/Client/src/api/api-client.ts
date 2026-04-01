@@ -1,4 +1,4 @@
-import type { WorkflowSummary, InstanceResponse, InstanceDetailResponse } from "./types.js";
+import type { WorkflowSummary, InstanceResponse, InstanceDetailResponse, ConversationEntryResponse, ChatMessage } from "./types.js";
 
 const API_BASE = "/umbraco/api/shallai";
 
@@ -74,4 +74,31 @@ export async function startInstance(id: string, token?: string): Promise<Respons
     method: "POST",
     headers,
   });
+}
+
+export function getConversation(instanceId: string, stepId: string, token?: string): Promise<ConversationEntryResponse[]> {
+  return fetchJson<ConversationEntryResponse[]>(
+    `/instances/${encodeURIComponent(instanceId)}/conversation/${encodeURIComponent(stepId)}`,
+    token,
+  );
+}
+
+export function mapConversationToChat(entries: ConversationEntryResponse[]): ChatMessage[] {
+  const messages: ChatMessage[] = [];
+  for (const entry of entries) {
+    if (entry.role === "assistant" && entry.content != null && !entry.toolCallId) {
+      messages.push({
+        role: "agent",
+        content: entry.content,
+        timestamp: entry.timestamp,
+      });
+    } else if (entry.role === "system" && entry.content != null) {
+      messages.push({
+        role: "system",
+        content: entry.content,
+        timestamp: entry.timestamp,
+      });
+    }
+  }
+  return messages;
 }
