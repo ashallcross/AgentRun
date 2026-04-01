@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using NSubstitute;
+using Shallai.UmbracoAgentRunner.Tools;
 using Shallai.UmbracoAgentRunner.Workflows;
 
 namespace Shallai.UmbracoAgentRunner.Tests.Workflows;
@@ -22,7 +23,7 @@ public class WorkflowRegistryTests
         _parser = Substitute.For<IWorkflowParser>();
         _validator = Substitute.For<IWorkflowValidator>();
         _logger = Substitute.For<ILogger<WorkflowRegistry>>();
-        _registry = new WorkflowRegistry(_parser, _validator, _logger);
+        _registry = new WorkflowRegistry(_parser, _validator, Enumerable.Empty<IWorkflowTool>(), _logger);
     }
 
     [TearDown]
@@ -273,6 +274,342 @@ public class WorkflowRegistryTests
         Assert.That(workflow, Is.Not.Null);
         Assert.That(workflow!.Definition, Is.SameAs(definition));
         Assert.That(workflow.FolderPath, Is.EqualTo(Path.Combine(_tempRoot, "my-wf")));
+    }
+
+    // --- Tool Validation Tests ---
+
+    [Test]
+    public async Task LoadWorkflowsAsync_ValidToolReferences_WorkflowLoads()
+    {
+        var yaml = "name: Test";
+        CreateWorkflowFolder("test-wf", yaml);
+
+        var definition = new WorkflowDefinition
+        {
+            Name = "Test",
+            Steps =
+            [
+                new StepDefinition { Id = "step1", Name = "Step 1", Tools = ["read_file", "write_file"] }
+            ]
+        };
+
+        _validator.Validate(yaml).Returns(WorkflowValidationResult.Success());
+        _parser.Parse(yaml).Returns(definition);
+
+        var registry = CreateRegistryWithTools("read_file", "write_file");
+        await registry.LoadWorkflowsAsync(_tempRoot);
+
+        Assert.That(registry.GetWorkflow("test-wf"), Is.Not.Null);
+    }
+
+    [Test]
+    public async Task LoadWorkflowsAsync_UnknownToolReference_WorkflowRejected()
+    {
+        var yaml = "name: Test";
+        CreateWorkflowFolder("test-wf", yaml);
+
+        var definition = new WorkflowDefinition
+        {
+            Name = "Test",
+            Steps =
+            [
+                new StepDefinition { Id = "step1", Name = "Step 1", Tools = ["nonexistent_tool"] }
+            ]
+        };
+
+        _validator.Validate(yaml).Returns(WorkflowValidationResult.Success());
+        _parser.Parse(yaml).Returns(definition);
+
+        var registry = CreateRegistryWithTools("read_file");
+        await registry.LoadWorkflowsAsync(_tempRoot);
+
+        Assert.That(registry.GetWorkflow("test-wf"), Is.Null);
+    }
+
+    [Test]
+    public async Task LoadWorkflowsAsync_UnknownToolReference_ErrorMessageContainsDetails()
+    {
+        var yaml = "name: Test";
+        CreateWorkflowFolder("test-wf", yaml);
+
+        var definition = new WorkflowDefinition
+        {
+            Name = "Test",
+            Steps =
+            [
+                new StepDefinition { Id = "analyse", Name = "Analyse", Tools = ["bad_tool"] }
+            ]
+        };
+
+        _validator.Validate(yaml).Returns(WorkflowValidationResult.Success());
+        _parser.Parse(yaml).Returns(definition);
+
+        var registry = CreateRegistryWithTools("read_file", "write_file");
+        await registry.LoadWorkflowsAsync(_tempRoot);
+
+        _logger.Received().Log(
+            LogLevel.Error,
+            Arg.Any<EventId>(),
+            Arg.Is<object>(o =>
+                o.ToString()!.Contains("analyse") &&
+                o.ToString()!.Contains("bad_tool") &&
+                o.ToString()!.Contains("read_file, write_file")),
+            Arg.Any<Exception?>(),
+            Arg.Any<Func<object, Exception?, string>>());
+    }
+
+    [Test]
+    public async Task LoadWorkflowsAsync_MixOfValidAndInvalidTools_WorkflowRejected()
+    {
+        var yaml = "name: Test";
+        CreateWorkflowFolder("test-wf", yaml);
+
+        var definition = new WorkflowDefinition
+        {
+            Name = "Test",
+            Steps =
+            [
+                new StepDefinition { Id = "step1", Name = "Step 1", Tools = ["read_file", "nonexistent_tool"] }
+            ]
+        };
+
+        _validator.Validate(yaml).Returns(WorkflowValidationResult.Success());
+        _parser.Parse(yaml).Returns(definition);
+
+        var registry = CreateRegistryWithTools("read_file", "write_file");
+        await registry.LoadWorkflowsAsync(_tempRoot);
+
+        Assert.That(registry.GetWorkflow("test-wf"), Is.Null);
+    }
+
+    [Test]
+    public async Task LoadWorkflowsAsync_InvalidToolWorkflow_ValidWorkflowStillLoads()
+    {
+        CreateWorkflowFolder("invalid-wf", "name: Invalid");
+        CreateWorkflowFolder("valid-wf", "name: Valid");
+
+        var invalidDef = new WorkflowDefinition
+        {
+            Name = "Invalid",
+            Steps =
+            [
+                new StepDefinition { Id = "step1", Name = "Step 1", Tools = ["nonexistent_tool"] }
+            ]
+        };
+        var validDef = new WorkflowDefinition
+        {
+            Name = "Valid",
+            Steps =
+            [
+                new StepDefinition { Id = "step1", Name = "Step 1", Tools = ["read_file"] }
+            ]
+        };
+
+        _validator.Validate("name: Invalid").Returns(WorkflowValidationResult.Success());
+        _parser.Parse("name: Invalid").Returns(invalidDef);
+        _validator.Validate("name: Valid").Returns(WorkflowValidationResult.Success());
+        _parser.Parse("name: Valid").Returns(validDef);
+
+        var registry = CreateRegistryWithTools("read_file");
+        await registry.LoadWorkflowsAsync(_tempRoot);
+
+        Assert.That(registry.GetWorkflow("invalid-wf"), Is.Null);
+        Assert.That(registry.GetWorkflow("valid-wf"), Is.Not.Null);
+    }
+
+    [Test]
+    public async Task LoadWorkflowsAsync_NullToolsList_PassesValidation()
+    {
+        var yaml = "name: Test";
+        CreateWorkflowFolder("test-wf", yaml);
+
+        var definition = new WorkflowDefinition
+        {
+            Name = "Test",
+            Steps =
+            [
+                new StepDefinition { Id = "step1", Name = "Step 1", Tools = null }
+            ]
+        };
+
+        _validator.Validate(yaml).Returns(WorkflowValidationResult.Success());
+        _parser.Parse(yaml).Returns(definition);
+
+        var registry = CreateRegistryWithTools("read_file");
+        await registry.LoadWorkflowsAsync(_tempRoot);
+
+        Assert.That(registry.GetWorkflow("test-wf"), Is.Not.Null);
+    }
+
+    [Test]
+    public async Task LoadWorkflowsAsync_EmptyToolsList_PassesValidation()
+    {
+        var yaml = "name: Test";
+        CreateWorkflowFolder("test-wf", yaml);
+
+        var definition = new WorkflowDefinition
+        {
+            Name = "Test",
+            Steps =
+            [
+                new StepDefinition { Id = "step1", Name = "Step 1", Tools = [] }
+            ]
+        };
+
+        _validator.Validate(yaml).Returns(WorkflowValidationResult.Success());
+        _parser.Parse(yaml).Returns(definition);
+
+        var registry = CreateRegistryWithTools("read_file");
+        await registry.LoadWorkflowsAsync(_tempRoot);
+
+        Assert.That(registry.GetWorkflow("test-wf"), Is.Not.Null);
+    }
+
+    [Test]
+    public async Task LoadWorkflowsAsync_ToolNameMatchingIsCaseInsensitive()
+    {
+        var yaml = "name: Test";
+        CreateWorkflowFolder("test-wf", yaml);
+
+        var definition = new WorkflowDefinition
+        {
+            Name = "Test",
+            Steps =
+            [
+                new StepDefinition { Id = "step1", Name = "Step 1", Tools = ["Read_File", "WRITE_FILE"] }
+            ]
+        };
+
+        _validator.Validate(yaml).Returns(WorkflowValidationResult.Success());
+        _parser.Parse(yaml).Returns(definition);
+
+        var registry = CreateRegistryWithTools("read_file", "write_file");
+        await registry.LoadWorkflowsAsync(_tempRoot);
+
+        Assert.That(registry.GetWorkflow("test-wf"), Is.Not.Null);
+    }
+
+    [Test]
+    public async Task LoadWorkflowsAsync_AllToolsFromRegisteredSet_PassesValidation()
+    {
+        var yaml = "name: Test";
+        CreateWorkflowFolder("test-wf", yaml);
+
+        var definition = new WorkflowDefinition
+        {
+            Name = "Test",
+            Steps =
+            [
+                new StepDefinition { Id = "step1", Name = "Step 1", Tools = ["fetch_url", "list_files", "read_file", "write_file"] }
+            ]
+        };
+
+        _validator.Validate(yaml).Returns(WorkflowValidationResult.Success());
+        _parser.Parse(yaml).Returns(definition);
+
+        var registry = CreateRegistryWithTools("fetch_url", "list_files", "read_file", "write_file");
+        await registry.LoadWorkflowsAsync(_tempRoot);
+
+        Assert.That(registry.GetWorkflow("test-wf"), Is.Not.Null);
+    }
+
+    [Test]
+    public async Task LoadWorkflowsAsync_MultipleStepsWithDifferentInvalidTools_AllErrorsLogged()
+    {
+        var yaml = "name: Test";
+        CreateWorkflowFolder("test-wf", yaml);
+
+        var definition = new WorkflowDefinition
+        {
+            Name = "Test",
+            Steps =
+            [
+                new StepDefinition { Id = "step1", Name = "Step 1", Tools = ["bad_tool_a"] },
+                new StepDefinition { Id = "step2", Name = "Step 2", Tools = ["bad_tool_b"] }
+            ]
+        };
+
+        _validator.Validate(yaml).Returns(WorkflowValidationResult.Success());
+        _parser.Parse(yaml).Returns(definition);
+
+        var registry = CreateRegistryWithTools("read_file");
+        await registry.LoadWorkflowsAsync(_tempRoot);
+
+        Assert.That(registry.GetWorkflow("test-wf"), Is.Null);
+
+        _logger.Received().Log(
+            LogLevel.Error,
+            Arg.Any<EventId>(),
+            Arg.Is<object>(o => o.ToString()!.Contains("bad_tool_a")),
+            Arg.Any<Exception?>(),
+            Arg.Any<Func<object, Exception?, string>>());
+
+        _logger.Received().Log(
+            LogLevel.Error,
+            Arg.Any<EventId>(),
+            Arg.Is<object>(o => o.ToString()!.Contains("bad_tool_b")),
+            Arg.Any<Exception?>(),
+            Arg.Any<Func<object, Exception?, string>>());
+    }
+
+    [Test]
+    public async Task LoadWorkflowsAsync_NoStepsDeclaringTools_PassesValidation()
+    {
+        var yaml = "name: Test";
+        CreateWorkflowFolder("test-wf", yaml);
+
+        var definition = new WorkflowDefinition
+        {
+            Name = "Test",
+            Steps =
+            [
+                new StepDefinition { Id = "step1", Name = "Step 1" },
+                new StepDefinition { Id = "step2", Name = "Step 2" }
+            ]
+        };
+
+        _validator.Validate(yaml).Returns(WorkflowValidationResult.Success());
+        _parser.Parse(yaml).Returns(definition);
+
+        var registry = CreateRegistryWithTools("read_file");
+        await registry.LoadWorkflowsAsync(_tempRoot);
+
+        Assert.That(registry.GetWorkflow("test-wf"), Is.Not.Null);
+    }
+
+    [Test]
+    public async Task LoadWorkflowsAsync_NullToolNameInList_WorkflowRejected()
+    {
+        var yaml = "name: Test";
+        CreateWorkflowFolder("test-wf", yaml);
+
+        var definition = new WorkflowDefinition
+        {
+            Name = "Test",
+            Steps =
+            [
+                new StepDefinition { Id = "step1", Name = "Step 1", Tools = ["read_file", null!] }
+            ]
+        };
+
+        _validator.Validate(yaml).Returns(WorkflowValidationResult.Success());
+        _parser.Parse(yaml).Returns(definition);
+
+        var registry = CreateRegistryWithTools("read_file");
+        await registry.LoadWorkflowsAsync(_tempRoot);
+
+        Assert.That(registry.GetWorkflow("test-wf"), Is.Null);
+    }
+
+    private WorkflowRegistry CreateRegistryWithTools(params string[] toolNames)
+    {
+        var tools = toolNames.Select(name =>
+        {
+            var tool = Substitute.For<IWorkflowTool>();
+            tool.Name.Returns(name);
+            return tool;
+        });
+        return new WorkflowRegistry(_parser, _validator, tools, _logger);
     }
 
     private string CreateWorkflowFolder(string folderName, string yamlContent)

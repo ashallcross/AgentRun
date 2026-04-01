@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Shallai.UmbracoAgentRunner.Tools;
 
 namespace Shallai.UmbracoAgentRunner.Workflows;
 
@@ -10,15 +11,20 @@ public sealed class WorkflowRegistry : IWorkflowRegistry
     private readonly IWorkflowValidator _validator;
     private readonly ILogger<WorkflowRegistry> _logger;
     private readonly Dictionary<string, RegisteredWorkflow> _workflows = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _registeredToolNames;
 
     public WorkflowRegistry(
         IWorkflowParser parser,
         IWorkflowValidator validator,
+        IEnumerable<IWorkflowTool> registeredTools,
         ILogger<WorkflowRegistry> logger)
     {
         _parser = parser;
         _validator = validator;
         _logger = logger;
+        _registeredToolNames = new HashSet<string>(
+            registeredTools.Select(t => t.Name),
+            StringComparer.OrdinalIgnoreCase);
     }
 
     public IReadOnlyList<RegisteredWorkflow> GetAllWorkflows()
@@ -114,7 +120,33 @@ public sealed class WorkflowRegistry : IWorkflowRegistry
 
         VerifyAgentFiles(alias, folderPath, definition);
 
+        if (!VerifyToolReferences(alias, definition))
+        {
+            return;
+        }
+
         _workflows[alias] = new RegisteredWorkflow(alias, folderPath, definition);
+    }
+
+    private bool VerifyToolReferences(string alias, WorkflowDefinition definition)
+    {
+        var valid = true;
+        foreach (var step in definition.Steps)
+        {
+            if (step.Tools is null or { Count: 0 }) continue;
+
+            foreach (var toolName in step.Tools)
+            {
+                if (string.IsNullOrWhiteSpace(toolName) || !_registeredToolNames.Contains(toolName))
+                {
+                    _logger.LogError(
+                        "Workflow '{WorkflowAlias}': step '{StepId}' references unknown tool '{ToolName}'. Available tools: {AvailableTools}",
+                        alias, step.Id, toolName, string.Join(", ", _registeredToolNames.Order()));
+                    valid = false;
+                }
+            }
+        }
+        return valid;
     }
 
     private void VerifyAgentFiles(string alias, string folderPath, WorkflowDefinition definition)
