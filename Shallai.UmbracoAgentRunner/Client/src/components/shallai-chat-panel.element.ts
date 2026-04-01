@@ -136,6 +136,7 @@ export class ShallaiChatPanelElement extends UmbLitElement {
                 .role=${msg.role}
                 .content=${msg.content}
                 .timestamp=${msg.timestamp}
+                .toolCalls=${msg.toolCalls ?? []}
                 ?is-streaming=${i === lastIndex &&
                 msg.role === "agent" &&
                 this.isStreaming}

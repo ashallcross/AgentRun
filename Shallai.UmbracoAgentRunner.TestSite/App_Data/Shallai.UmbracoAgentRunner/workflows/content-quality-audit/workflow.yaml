@@ -4,7 +4,7 @@ mode: autonomous
 default_profile: anthropic-sonnet-4-6
 steps:
   - id: check_external
-    name: Check External Reference
+    name: Check External References
     agent: agents/external-checker.md
     tools:
       - fetch_url
@@ -15,11 +15,12 @@ steps:
       files_exist:
         - artifacts/external-check.md
   - id: gather_content
-    name: Gather Content
+    name: Gather Content Inventory
     agent: agents/content-gatherer.md
     tools:
       - read_file
       - list_files
+      - write_file
     writes_to:
       - artifacts/content-inventory.json
     completion_check:
@@ -28,11 +29,12 @@ steps:
   - id: analyse_quality
     name: Analyse Quality
     agent: agents/quality-analyser.md
-    profile: openai-gpt4
     tools:
       - read_file
+      - write_file
     reads_from:
       - artifacts/content-inventory.json
+      - artifacts/external-check.md
     writes_to:
       - artifacts/quality-report.md
     completion_check:

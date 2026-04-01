@@ -13,6 +13,7 @@ import type {
   InstanceDetailResponse,
   StepDetailResponse,
   ChatMessage,
+  ToolCallData,
 } from "../api/types.js";
 import "./shallai-chat-panel.element.js";
 import {
@@ -21,6 +22,7 @@ import {
   stepSubtitle,
   stepIconName,
 } from "../utils/instance-detail-helpers.js";
+import { extractToolSummary } from "../utils/tool-helpers.js";
 import { numberAndSortInstances } from "../utils/instance-list-helpers.js";
 
 @customElement("shallai-instance-detail")
@@ -62,6 +64,8 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
 
   @state()
   private _historyMessages: ChatMessage[] = [];
+
+  private _toolBatchOpen = false;
 
   static styles = css`
     :host {
@@ -390,6 +394,7 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
       case "text.delta": {
         const content = data.content as string;
         if (!content) break;
+        this._toolBatchOpen = false;
         this._streamingText += content;
         const lastIndex = this._chatMessages.length - 1;
         const last = this._chatMessages[lastIndex];
@@ -411,11 +416,115 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
         }
         break;
       }
-      case "tool.start":
+      case "tool.start": {
         this._finaliseStreamingMessage();
+        const toolCallId = data.toolCallId as string;
+        const toolName = data.toolName as string;
+        const newToolCall: ToolCallData = {
+          toolCallId,
+          toolName,
+          summary: toolName,
+          arguments: null,
+          result: null,
+          status: "running",
+        };
+        const lastMsg = this._chatMessages[this._chatMessages.length - 1];
+        if (this._toolBatchOpen && lastMsg && lastMsg.role === "agent") {
+          // Same LLM turn — attach to existing agent message
+          const idx = this._chatMessages.length - 1;
+          this._chatMessages = [
+            ...this._chatMessages.slice(0, idx),
+            { ...lastMsg, toolCalls: [...(lastMsg.toolCalls ?? []), newToolCall] },
+            ...this._chatMessages.slice(idx + 1),
+          ];
+        } else if (lastMsg && lastMsg.role === "agent" && !lastMsg.toolCalls?.length) {
+          // Agent message with text only — attach first tool call to it
+          const idx = this._chatMessages.length - 1;
+          this._chatMessages = [
+            ...this._chatMessages.slice(0, idx),
+            { ...lastMsg, toolCalls: [newToolCall] },
+            ...this._chatMessages.slice(idx + 1),
+          ];
+        } else {
+          // New LLM turn starting with tool calls, or no agent message — create new message
+          this._chatMessages = [
+            ...this._chatMessages,
+            {
+              role: "agent",
+              content: "",
+              timestamp: new Date().toISOString(),
+              toolCalls: [newToolCall],
+            },
+          ];
+        }
+        this._toolBatchOpen = true;
         break;
+      }
+      case "tool.args": {
+        const tcId = data.toolCallId as string;
+        const args = data.arguments as Record<string, unknown>;
+        const msgIndex = this._chatMessages.findLastIndex(
+          m => m.role === "agent" && m.toolCalls?.some(tc => tc.toolCallId === tcId)
+        );
+        if (msgIndex === -1) break;
+        const msg = this._chatMessages[msgIndex];
+        const updatedToolCalls = msg.toolCalls!.map(tc =>
+          tc.toolCallId === tcId
+            ? { ...tc, arguments: args, summary: extractToolSummary(tc.toolName, args) }
+            : tc
+        );
+        this._chatMessages = [
+          ...this._chatMessages.slice(0, msgIndex),
+          { ...msg, toolCalls: updatedToolCalls },
+          ...this._chatMessages.slice(msgIndex + 1),
+        ];
+        break;
+      }
+      case "tool.end": {
+        const tcId = data.toolCallId as string;
+        const msgIndex = this._chatMessages.findLastIndex(
+          m => m.role === "agent" && m.toolCalls?.some(tc => tc.toolCallId === tcId)
+        );
+        if (msgIndex === -1) break;
+        const msg = this._chatMessages[msgIndex];
+        const updatedToolCalls = msg.toolCalls!.map(tc =>
+          tc.toolCallId === tcId && tc.status === "running"
+            ? { ...tc, status: "complete" as const }
+            : tc
+        );
+        this._chatMessages = [
+          ...this._chatMessages.slice(0, msgIndex),
+          { ...msg, toolCalls: updatedToolCalls },
+          ...this._chatMessages.slice(msgIndex + 1),
+        ];
+        break;
+      }
+      case "tool.result": {
+        const tcId = data.toolCallId as string;
+        const rawResult = data.result;
+        const resultStr = typeof rawResult === "string" ? rawResult : JSON.stringify(rawResult);
+        const isError = typeof resultStr === "string"
+          && resultStr.startsWith("Tool '") && (resultStr.includes("error") || resultStr.includes("failed"));
+        const msgIndex = this._chatMessages.findLastIndex(
+          m => m.role === "agent" && m.toolCalls?.some(tc => tc.toolCallId === tcId)
+        );
+        if (msgIndex === -1) break;
+        const msg = this._chatMessages[msgIndex];
+        const updatedToolCalls = msg.toolCalls!.map(tc =>
+          tc.toolCallId === tcId
+            ? { ...tc, result: resultStr, status: (isError ? "error" : "complete") as ToolCallData["status"] }
+            : tc
+        );
+        this._chatMessages = [
+          ...this._chatMessages.slice(0, msgIndex),
+          { ...msg, toolCalls: updatedToolCalls },
+          ...this._chatMessages.slice(msgIndex + 1),
+        ];
+        break;
+      }
       case "step.started":
         this._finaliseStreamingMessage();
+        this._toolBatchOpen = false;
         if (this._instance) {
           const step = this._instance.steps.find((s) => s.id === data.stepId);
           if (step) step.status = "Active";

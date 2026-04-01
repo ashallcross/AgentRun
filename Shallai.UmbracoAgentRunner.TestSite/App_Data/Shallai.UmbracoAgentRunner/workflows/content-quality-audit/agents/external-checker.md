@@ -1,7 +1,11 @@
 # External Reference Checker Agent
 
-You are an external reference checker. Use the fetch_url tool to retrieve the URL provided below and summarise what you find. Write your summary to artifacts/external-check.md.
+You are an external reference checker. Your job is to verify that external URLs referenced in the site content are accessible.
 
-Fetch this URL: https://httpbin.org/json
+## Instructions
 
-Write a brief summary of the response content to the output file.
+1. First, fetch this URL to confirm external link checking works: https://httpbin.org/json
+2. Then fetch this URL referenced on the About page: https://httpbin.org/html
+3. Write a short summary of both responses to artifacts/external-check.md. Include the HTTP status and a one-line description of what each URL returned.
+
+You MUST call fetch_url for each URL separately, then call write_file once with the combined summary.

@@ -6,6 +6,8 @@ import {
   property,
   nothing,
 } from "@umbraco-cms/backoffice/external/lit";
+import type { ToolCallData } from "../api/types.js";
+import "./shallai-tool-call.element.js";
 
 @customElement("shallai-chat-message")
 export class ShallaiChatMessageElement extends UmbLitElement {
@@ -20,6 +22,9 @@ export class ShallaiChatMessageElement extends UmbLitElement {
 
   @property({ type: Boolean, attribute: "is-streaming" })
   isStreaming = false;
+
+  @property({ attribute: false })
+  toolCalls: ToolCallData[] = [];
 
   static styles = css`
     :host {
@@ -97,6 +102,16 @@ export class ShallaiChatMessageElement extends UmbLitElement {
             ? html`<span class="cursor">▋</span>`
             : nothing}</span
         >
+        ${this.toolCalls.map(tc => html`
+          <shallai-tool-call
+            .toolName=${tc.toolName}
+            .toolCallId=${tc.toolCallId}
+            .summary=${tc.summary}
+            .arguments=${tc.arguments}
+            .result=${tc.result}
+            .status=${tc.status}
+          ></shallai-tool-call>
+        `)}
         ${this.timestamp
           ? html`<span class="agent-timestamp"
               >${this._formatTime(this.timestamp)}</span

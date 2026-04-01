@@ -1,7 +1,7 @@
 import { UmbLitElement as p } from "@umbraco-cms/backoffice/lit-element";
 import { html as i, css as w, state as d, customElement as _ } from "@umbraco-cms/backoffice/external/lit";
 import { UMB_AUTH_CONTEXT as v } from "@umbraco-cms/backoffice/auth";
-import { g as k } from "./api-client-BCa3QQsh.js";
+import { g as k } from "./api-client-C7EyKSQQ.js";
 var m = Object.defineProperty, y = Object.getOwnPropertyDescriptor, h = (e) => {
   throw TypeError(e);
 }, u = (e, t, a, o) => {
@@ -110,4 +110,4 @@ export {
   l as ShallaiWorkflowListElement,
   T as default
 };
-//# sourceMappingURL=shallai-workflow-list.element-DnadBLbp.js.map
+//# sourceMappingURL=shallai-workflow-list.element-3ENrS9Ef.js.map

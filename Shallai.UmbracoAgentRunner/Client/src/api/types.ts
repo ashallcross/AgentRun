@@ -46,9 +46,19 @@ export interface ConversationEntryResponse {
   toolResult?: string;
 }
 
+export interface ToolCallData {
+  toolCallId: string;
+  toolName: string;
+  summary: string;
+  arguments: Record<string, unknown> | null;
+  result: string | null;
+  status: "running" | "complete" | "error";
+}
+
 export interface ChatMessage {
   role: "agent" | "system";
   content: string;
   timestamp: string;
   isStreaming?: boolean;
+  toolCalls?: ToolCallData[];
 }
