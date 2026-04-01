@@ -115,20 +115,17 @@ public class StepExecutor : IStepExecutor
                 "Prompt assembled for step {StepId} in workflow {WorkflowAlias} instance {InstanceId}",
                 step.Id, instance.WorkflowAlias, instance.InstanceId);
 
-            // Build AIFunction wrappers for declared tools
+            // Build declaration-only tool descriptors for the LLM.
+            // Using AsDeclarationOnly() strips the executable delegate so that
+            // FunctionInvokingChatClient in the Umbraco.AI middleware pipeline
+            // won't auto-execute tools — our ToolLoop handles execution via declaredTools.
             var toolExecutionContext = new ToolExecutionContext(
                 context.InstanceFolderPath, instance.InstanceId, step.Id, instance.WorkflowAlias);
 
             var aiTools = new List<AITool>();
             foreach (var tool in toolDict.Values)
             {
-                var capturedTool = tool;
-                var aiFunction = AIFunctionFactory.Create(
-                    async (IDictionary<string, object?> arguments) =>
-                        await capturedTool.ExecuteAsync(arguments, toolExecutionContext, cancellationToken),
-                    capturedTool.Name,
-                    capturedTool.Description);
-                aiTools.Add(aiFunction);
+                aiTools.Add(new ToolDeclaration(tool.Name, tool.Description, tool.ParameterSchema));
             }
 
             // Build initial messages
@@ -203,6 +200,27 @@ public class StepExecutor : IStepExecutor
                     "Failed to update step status to Error for step {StepId} in workflow {WorkflowAlias} instance {InstanceId}",
                     step.Id, instance.WorkflowAlias, instance.InstanceId);
             }
+        }
+    }
+
+    /// <summary>
+    /// Non-executable tool declaration that carries only metadata for the LLM.
+    /// FunctionInvokingChatClient in the Umbraco.AI middleware pipeline cannot auto-execute
+    /// this — our ToolLoop handles execution via the declaredTools dictionary.
+    /// </summary>
+    private sealed class ToolDeclaration : AIFunctionDeclaration
+    {
+        private static readonly JsonElement EmptySchema = JsonDocument.Parse("""{"type":"object","properties":{}}""").RootElement;
+
+        public override string Name { get; }
+        public override string Description { get; }
+        public override JsonElement JsonSchema { get; }
+
+        public ToolDeclaration(string name, string description, JsonElement? parameterSchema)
+        {
+            Name = name;
+            Description = description;
+            JsonSchema = parameterSchema ?? EmptySchema;
         }
     }
 }

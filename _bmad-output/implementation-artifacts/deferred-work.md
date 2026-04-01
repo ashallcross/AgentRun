@@ -62,7 +62,7 @@
 
 ## Deferred from: code review of 4-3-step-executor-and-tool-loop (2026-03-31)
 
-- ~~AIFunction lambdas in StepExecutor contain actual execution logic (delegates passed to `AIFunctionFactory.Create`) — if the Umbraco.AI middleware pipeline ever includes `FunctionInvokingChatClient`, tools would execute twice (once by middleware, once by ToolLoop). Current architecture explicitly uses manual tool loop so this is latent only. Revisit if provider pipeline changes.~~ **CONFIRMED in Story 5.2 E2E** — `FunctionInvokingChatClient` IS active in the Umbraco.AI pipeline and double-executes tool calls. After multiple ToolLoop iterations, the conversation history becomes malformed (`unexpected tool_use_id` in `tool_result` blocks), causing `AnthropicBadRequestException`. Fix required: either disable `FunctionInvokingChatClient` in the pipeline when getting the chat client, or remove our ToolLoop dispatch and let the middleware handle execution (but we need custom tool filtering). **Blocking real E2E execution.**
+- ~~AIFunction lambdas in StepExecutor contain actual execution logic (delegates passed to `AIFunctionFactory.Create`) — if the Umbraco.AI middleware pipeline ever includes `FunctionInvokingChatClient`, tools would execute twice (once by middleware, once by ToolLoop). Current architecture explicitly uses manual tool loop so this is latent only. Revisit if provider pipeline changes.~~ **CONFIRMED in Story 5.2 E2E** — `FunctionInvokingChatClient` IS active in the Umbraco.AI pipeline and double-executes tool calls. After multiple ToolLoop iterations, the conversation history becomes malformed (`unexpected tool_use_id` in `tool_result` blocks), causing `AnthropicBadRequestException`. ~~Fix required: either disable `FunctionInvokingChatClient` in the pipeline when getting the chat client, or remove our ToolLoop dispatch and let the middleware handle execution (but we need custom tool filtering). **Blocking real E2E execution.**~~ **RESOLVED in Story 5.3** — replaced executable `AIFunction` with declaration-only `ToolDeclaration` (subclass of `AIFunctionDeclaration`) in `StepExecutor.cs`. The middleware sees no callable delegate and passes through. Also added `IWorkflowTool.ParameterSchema` to provide correct tool parameter schemas to the LLM — without this, tools received empty arguments because the factory generated zero-parameter schemas.
 
 ## Deferred from: code review of 4-4-artifact-handoff-and-completion-checking (2026-03-31)
 
@@ -86,3 +86,7 @@
 - No test for CancellationToken propagation to `client.GetResponseAsync` [Engine/ToolLoop.cs:33]
 - No test coverage for SSE emitter interactions — all ToolLoop tests pass null emitter
 - `ExecuteAsync` returns `Task<object>` — null return value untested, may produce null `FunctionResultContent.Result`
+
+## Deferred from: code review of 5-3-fetch-url-tool-with-ssrf-protection (2026-04-01)
+
+- SsrfProtection depends on Tools namespace (ToolExecutionException) — Security/ importing from Tools/ is an inverted dependency direction. Could be fixed by moving ToolExecutionException to a shared namespace or introducing a security-specific exception type. Pre-existing architectural pattern.

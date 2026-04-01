@@ -159,7 +159,7 @@ So that agents can interact with files safely without risking path traversal or 
   - [x] `list_files` correctly returned "Directory not found" for non-existent directories in empty instance folder
   - [x] `read_file` correctly returned "Missing required argument" when LLM omitted path
   - [x] Tool errors returned to LLM as tool results (ToolExecutionException path working)
-  - [x] **Blocked by pre-existing ToolLoop/middleware conflict** — `FunctionInvokingChatClient` in Umbraco.AI pipeline double-executes tool calls alongside our ToolLoop, causing malformed message history (`unexpected tool_use_id`). Logged as deferred item.
+  - [x] **Blocked by pre-existing ToolLoop/middleware conflict** — `FunctionInvokingChatClient` in Umbraco.AI pipeline double-executes tool calls alongside our ToolLoop, causing malformed message history (`unexpected tool_use_id`). Logged as deferred item. **RESOLVED in Story 5.3** — replaced executable AIFunction with declaration-only ToolDeclaration in StepExecutor.
 
 ## Dev Notes
 

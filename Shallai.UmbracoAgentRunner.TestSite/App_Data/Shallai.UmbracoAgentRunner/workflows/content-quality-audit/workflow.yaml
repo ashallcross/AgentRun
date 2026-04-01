@@ -3,6 +3,17 @@ description: Audits content for quality and consistency
 mode: autonomous
 default_profile: anthropic-sonnet-4-6
 steps:
+  - id: check_external
+    name: Check External Reference
+    agent: agents/external-checker.md
+    tools:
+      - fetch_url
+      - write_file
+    writes_to:
+      - artifacts/external-check.md
+    completion_check:
+      files_exist:
+        - artifacts/external-check.md
   - id: gather_content
     name: Gather Content
     agent: agents/content-gatherer.md

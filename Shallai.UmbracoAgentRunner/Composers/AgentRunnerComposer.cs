@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Shallai.UmbracoAgentRunner.Engine;
 using Shallai.UmbracoAgentRunner.Instances;
+using Shallai.UmbracoAgentRunner.Security;
 using Shallai.UmbracoAgentRunner.Tools;
 using Shallai.UmbracoAgentRunner.Workflows;
 using Umbraco.Cms.Core.Composing;
@@ -44,6 +45,14 @@ public class AgentRunnerComposer : IComposer
         builder.Services.AddSingleton<IWorkflowTool, ReadFileTool>();
         builder.Services.AddSingleton<IWorkflowTool, WriteFileTool>();
         builder.Services.AddSingleton<IWorkflowTool, ListFilesTool>();
-        // builder.Services.AddSingleton<IWorkflowTool, FetchUrlTool>(); // Story 5.3
+
+        // SSRF protection + fetch_url tool (Story 5.3)
+        builder.Services.AddSingleton<INetworkAccessPolicy, DefaultNetworkAccessPolicy>();
+        builder.Services.AddSingleton<SsrfProtection>();
+        builder.Services.AddHttpClient("FetchUrl", client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(15);
+        });
+        builder.Services.AddSingleton<IWorkflowTool, FetchUrlTool>();
     }
 }

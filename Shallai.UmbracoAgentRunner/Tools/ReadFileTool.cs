@@ -1,12 +1,25 @@
+using System.Text.Json;
 using Shallai.UmbracoAgentRunner.Security;
 
 namespace Shallai.UmbracoAgentRunner.Tools;
 
 public class ReadFileTool : IWorkflowTool
 {
+    private static readonly JsonElement Schema = JsonDocument.Parse("""
+        {
+            "type": "object",
+            "properties": {
+                "path": { "type": "string", "description": "Relative path to the file within the instance folder" }
+            },
+            "required": ["path"]
+        }
+        """).RootElement;
+
     public string Name => "read_file";
 
     public string Description => "Reads the contents of a file within the instance folder";
+
+    public JsonElement? ParameterSchema => Schema;
 
     public async Task<object> ExecuteAsync(
         IDictionary<string, object?> arguments,

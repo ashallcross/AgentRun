@@ -1,12 +1,26 @@
+using System.Text.Json;
 using Shallai.UmbracoAgentRunner.Security;
 
 namespace Shallai.UmbracoAgentRunner.Tools;
 
 public class WriteFileTool : IWorkflowTool
 {
+    private static readonly JsonElement Schema = JsonDocument.Parse("""
+        {
+            "type": "object",
+            "properties": {
+                "path": { "type": "string", "description": "Relative path to the file within the instance folder" },
+                "content": { "type": "string", "description": "The content to write to the file" }
+            },
+            "required": ["path", "content"]
+        }
+        """).RootElement;
+
     public string Name => "write_file";
 
     public string Description => "Writes content to a file within the instance folder";
+
+    public JsonElement? ParameterSchema => Schema;
 
     public async Task<object> ExecuteAsync(
         IDictionary<string, object?> arguments,

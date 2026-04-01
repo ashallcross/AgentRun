@@ -1,12 +1,24 @@
+using System.Text.Json;
 using Shallai.UmbracoAgentRunner.Security;
 
 namespace Shallai.UmbracoAgentRunner.Tools;
 
 public class ListFilesTool : IWorkflowTool
 {
+    private static readonly JsonElement Schema = JsonDocument.Parse("""
+        {
+            "type": "object",
+            "properties": {
+                "path": { "type": "string", "description": "Relative path to the directory within the instance folder. Omit or leave empty to list from root." }
+            }
+        }
+        """).RootElement;
+
     public string Name => "list_files";
 
     public string Description => "Lists files within a directory in the instance folder";
+
+    public JsonElement? ParameterSchema => Schema;
 
     public Task<object> ExecuteAsync(
         IDictionary<string, object?> arguments,
