@@ -1,0 +1,20 @@
+workflow_alias: content-quality-audit
+current_step_index: 2
+status: Completed
+steps:
+- id: check_external
+  status: Complete
+  started_at: 2026-04-02T15:03:18.5079590Z
+  completed_at: 2026-04-02T15:04:14.6978860Z
+- id: gather_content
+  status: Complete
+  started_at: 2026-04-02T15:04:15.7233170Z
+  completed_at: 2026-04-02T15:04:34.0553940Z
+- id: analyse_quality
+  status: Complete
+  started_at: 2026-04-02T15:04:35.0952540Z
+  completed_at: 2026-04-02T15:04:52.6425860Z
+created_at: 2026-04-02T15:03:14.6337140Z
+updated_at: 2026-04-02T15:04:52.6578260Z
+created_by: adam.shallcross@wearecogworks.com
+instance_id: 3bc78b3cc449468fafb4cb4768093ec2

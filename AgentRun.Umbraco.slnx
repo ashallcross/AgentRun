@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="AgentRun.Umbraco.Tests/AgentRun.Umbraco.Tests.csproj" />
+  <Project Path="AgentRun.Umbraco.TestSite/AgentRun.Umbraco.TestSite.csproj" />
+  <Project Path="AgentRun.Umbraco/AgentRun.Umbraco.csproj" />
+</Solution>

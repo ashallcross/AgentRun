@@ -150,3 +150,6 @@
 I have noticed that if you run a workflow that has 2 steps in. If you run the first step to completion, you get the green bar at the top which allows you to proceed to the next step, which is fine.
 
 But when you go out of the workflow and then back in, the green bar has gone and there is no way to proceed to step 2. This is a bug we need to fix
+## Deferred from: code review of R1-rename-shallai-to-agentrun (2026-04-02)
+
+- `agentrun-tool-call.element.ts` missing `HTMLElementTagNameMap` declaration — all other custom elements have it. Pre-existing gap, not caused by rename. [AgentRun.Umbraco/Client/src/components/agentrun-tool-call.element.ts]

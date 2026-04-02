@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-30
-last_updated: 2026-04-02 (story 8-2 code review complete — done)
+last_updated: 2026-04-02 (R1 rename done)
 project: Shallai.UmbracoAgentRunner
 project_key: NOKEY
 tracking_system: file-system
@@ -98,10 +98,13 @@ development_status:
   epic-7-retrospective: optional
 
   # Epic 8: Artifact Browsing & Review
-  epic-8: in-progress
+  epic-8: done
   8-1-artifact-api-and-markdown-renderer: done
   8-2-artifact-list-and-popover-viewer: done
   epic-8-retrospective: optional
+
+  # Pre-Epic 9: Rename Shallai to AgentRun
+  R1-rename-shallai-to-agentrun: done
 
   # Epic 9: Example Workflow, Documentation & Packaging
   epic-9: backlog
@@ -109,3 +112,26 @@ development_status:
   9-2-json-schema-for-workflow-yaml: backlog
   9-3-documentation-and-nuget-packaging: backlog
   epic-9-retrospective: optional
+
+  # Epic 10: Ship Readiness & Stability
+  epic-10: backlog
+  10-1-instance-concurrency-locking: backlog
+  10-2-context-management-for-long-conversations: backlog
+  10-3-multi-turn-interactive-fix: backlog
+  10-4-open-source-licence-decision: backlog
+  10-5-marketplace-listing-and-community-launch: backlog
+  epic-10-retrospective: optional
+
+  # Epic 11: Adoption Accelerators
+  epic-11: backlog
+  11-1-additional-workflow-templates: backlog
+  11-2-tree-navigation-ux-overhaul: backlog
+  11-3-token-usage-logging: backlog
+  epic-11-retrospective: optional
+
+  # Epic 12: Pro Foundation
+  epic-12: backlog
+  12-1-storage-provider-abstraction: backlog
+  12-2-database-storage-provider: backlog
+  12-3-package-split: backlog
+  epic-12-retrospective: optional

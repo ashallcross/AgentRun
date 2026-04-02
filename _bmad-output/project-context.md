@@ -35,7 +35,7 @@ _This file contains critical rules and patterns that AI agents must follow when 
 ### Version Constraints
 - **DO NOT use Umbraco.AI.Agent runtime** — it stores scope in HttpContext.Items, which is null inside IHostedService. Use IAIChatService.GetChatClientAsync() directly with a manual tool loop.
 - **DO NOT bundle @umbraco imports** — they are externalized in vite.config.ts and provided by the Bellissima host at runtime via import maps. Import lit via `@umbraco-cms/backoffice/external/lit` (covered by the `@umbraco` external pattern).
-- **Umb.Condition.SectionUserPermission requires `match` property** — set to the section alias (e.g. `match: "Shallai.UmbracoAgentRunner.Section"`). Without it, the condition always blocks. New sections also need manual permission grant in Users > User Groups.
+- **Umb.Condition.SectionUserPermission requires `match` property** — set to the section alias (e.g. `match: "AgentRun.Umbraco.Section"`). Without it, the condition always blocks. New sections also need manual permission grant in Users > User Groups.
 
 ## Critical Implementation Rules
 
@@ -48,8 +48,8 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - Use `System.Text.Json` for serialization — never Newtonsoft
 - Tool execution errors: return as error results to the LLM, do not throw exceptions
 - Private fields: `_camelCase` prefix (e.g., `_workflowRegistry`)
-- Namespaces follow folder structure: `Shallai.UmbracoAgentRunner.{Folder}` (e.g., `Shallai.UmbracoAgentRunner.Configuration`)
-- All DI registration goes through `AgentRunnerComposer : IComposer` — never Program.cs or extension methods
+- Namespaces follow folder structure: `AgentRun.Umbraco.{Folder}` (e.g., `AgentRun.Umbraco.Configuration`)
+- All DI registration goes through `AgentRunComposer : IComposer` — never Program.cs or extension methods
 - Use `string.Empty` for empty string defaults, not `""`
 - YAML deserialization: workflow files use snake_case — configure YamlDotNet naming convention or use `[YamlMember(Alias = "...")]`
 
@@ -66,24 +66,24 @@ _This file contains critical rules and patterns that AI agents must follow when 
 
 #### Testing Conventions
 - Backend: NUnit 4 attributes only — `[TestFixture]`, `[Test]`, `Assert.That()`. Never xUnit or MSTest.
-- Test file paths mirror source paths (e.g., `Configuration/AgentRunnerOptionsTests.cs` mirrors `Configuration/AgentRunnerOptions.cs`)
+- Test file paths mirror source paths (e.g., `Configuration/AgentRunOptionsTests.cs` mirrors `Configuration/AgentRunOptions.cs`)
 
 ### Framework-Specific Rules
 
 #### Umbraco Backend (RCL Package)
 - Register services via `IComposer`, not startup extension methods — the package has no access to Program.cs
 - Minimal API endpoints: use `[Authorize(Policy = AuthorizationPolicies.BackOfficeAccess)]` for all routes
-- API route prefix: `/umbraco/api/shallai/` — all endpoints must sit under this path
+- API route prefix: `/umbraco/api/agentrun/` — all endpoints must sit under this path
 - JSON API responses use `camelCase` property naming (System.Text.Json default)
 - Background execution uses `IHostedService` — no HttpContext available, no request-scoped services
-- Configuration binding: `builder.Config.GetSection("Shallai:AgentRunner")` maps to `AgentRunnerOptions`
+- Configuration binding: `builder.Config.GetSection("AgentRun")` maps to `AgentRunOptions`
 
 #### Umbraco Frontend (Bellissima Extensions)
-- Custom elements use `shallai-` prefix with `Shallai{Name}Element` class naming (e.g., `<shallai-dashboard>` / `ShallaiDashboardElement`)
+- Custom elements use `agentrun-` prefix with `AgentRun{Name}Element` class naming (e.g., `<agentrun-dashboard>` / `AgentRunDashboardElement`)
 - Register extensions via the `manifests` array exported from `manifests.ts` — this is the Bellissima extension entry point
 - State management: use Umbraco Context API with `UmbObjectState` / `UmbArrayState` observables — not Redux, not standalone stores
 - UI components: use UUI (Umbraco UI) component library — do not create custom design system components
-- Bundle ID in umbraco-package.json: `Shallai.UmbracoAgentRunner` — JS output path: `/App_Plugins/ShallaiUmbracoAgentRunner/`
+- Bundle ID in umbraco-package.json: `AgentRun.Umbraco` — JS output path: `/App_Plugins/AgentRunUmbraco/`
 - SSE streaming for real-time chat — not SignalR, not WebSockets directly
 - **Interactive mode is the primary UX model** — the human drives step progression, the agent responds. Autonomous mode is secondary. All UI labels, buttons, status text, and placeholders must reflect the interactive model by default. Autonomous-specific UI (Running badges, Cancel buttons, spinning icons between turns) must be gated on `workflowMode === "autonomous"`. Story specs with UI work must state the UX mode explicitly.
 
@@ -97,7 +97,7 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - Instance metadata: YAML files (`instance.yaml`) — workflow ref, current step, statuses, timestamps
 - Conversation history: JSONL files (`conversation-{stepId}.jsonl`) — append-only, crash-safe
 - Atomic writes everywhere: write to `.tmp` file, then `File.Move(temp, target, overwrite: true)`
-- Default data root: `{ContentRootPath}/App_Data/Shallai.UmbracoAgentRunner/instances/`
+- Default data root: `{ContentRootPath}/App_Data/AgentRun.Umbraco/instances/`
 
 ### Code Quality & Style Rules
 
@@ -110,10 +110,10 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - YAML workflow files: `snake_case` throughout
 - JSON API responses: `camelCase`
 - SSE event names: `dot.notation` (e.g., `text.delta`, `tool.start`, `run.error`)
-- Frontend custom elements: `shallai-{name}` tag, `Shallai{Name}Element` class
+- Frontend custom elements: `agentrun-{name}` tag, `AgentRun{Name}Element` class
 
 #### Error Handling
-- Typed exceptions inheriting from `AgentRunnerException` (base class)
+- Typed exceptions inheriting from `AgentRunException` (base class)
 - Exceptions caught at the API boundary (endpoints), not in internal services
 - Tool errors returned to LLM as error results — never thrown
 - Structured logging via `ILogger<T>` with exact field names: `WorkflowAlias`, `InstanceId`, `StepId`, `ToolName`
@@ -129,8 +129,8 @@ _This file contains critical rules and patterns that AI agents must follow when 
 #### Build & Run
 - Backend: `dotnet run` from TestSite project for local development
 - Frontend: `npm run watch` from `Client/` folder — Vite rebuilds on change
-- **CRITICAL: The repo root contains multiple projects** — always specify the solution file explicitly: `dotnet test Shallai.UmbracoAgentRunner.slnx` (not bare `dotnet test`). Bare `dotnet test` fails with MSB1011.
-- Frontend build output: `wwwroot/App_Plugins/ShallaiUmbracoAgentRunner/` (no dots in folder name)
+- **CRITICAL: The repo root contains multiple projects** — always specify the solution file explicitly: `dotnet test AgentRun.Umbraco.slnx` (not bare `dotnet test`). Bare `dotnet test` fails with MSB1011.
+- Frontend build output: `wwwroot/App_Plugins/AgentRunUmbraco/` (no dots in folder name)
 - Umbraco has a 10-second manifest cache in development — frontend changes may not appear instantly
 - Run `npm run build` in `Client/` before committing to ensure `wwwroot/` output is up to date
 
@@ -141,7 +141,7 @@ _This file contains critical rules and patterns that AI agents must follow when 
 
 #### Project Structure
 - Solution uses `.slnx` format (modern .NET 10) — not `.sln`
-- Three projects: `Shallai.UmbracoAgentRunner` (package), `Shallai.UmbracoAgentRunner.Tests` (tests), `Shallai.UmbracoAgentRunner.TestSite` (dev host)
+- Three projects: `AgentRun.Umbraco` (package), `AgentRun.Umbraco.Tests` (tests), `AgentRun.Umbraco.TestSite` (dev host)
 - TestSite references the main package via project reference — used for manual integration testing
 - NuGet packages added to main .csproj only — TestSite inherits transitively unless test-site-specific
 
@@ -210,4 +210,4 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - Review periodically for outdated rules
 - Remove rules that become obvious over time
 
-Last Updated: 2026-04-02
+Last Updated: 2026-04-02 (renamed from Shallai.UmbracoAgentRunner to AgentRun.Umbraco)

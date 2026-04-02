@@ -283,9 +283,25 @@ When something goes wrong, users see clear plain-language errors and can retry f
 A developer or editor can browse all files produced by a workflow, view rendered markdown artifacts inline in the dashboard, and step through each step's output.
 **FRs covered:** FR35, FR36, FR63, FR64
 
+### Pre-Epic 9: Rename Shallai to AgentRun (Story R1)
+The entire codebase is renamed from Shallai/UmbracoAgentRunner to AgentRun/Umbraco — solution, projects, namespaces, classes, frontend components, config, API routes, and build output. Zero logic changes, one commit.
+**FRs covered:** (Naming — prerequisite for Epic 9 packaging and Marketplace listing)
+
 ### Epic 9: Example Workflow, Documentation & Packaging
 The package ships with a working Content Quality Audit workflow, JSON Schema for IDE support, and documentation — ready to install from NuGet and run out-of-the-box.
 **FRs covered:** FR65, FR66, FR67, FR68, FR69
+
+### Epic 10: Ship Readiness & Stability
+Known bugs and gaps are fixed before community launch — instance concurrency locking, context management for long conversations, multi-turn interactive fix, and open source licence decision.
+**FRs covered:** FR52 (full implementation), plus stability improvements beyond original FR scope
+
+### Epic 11: Adoption Accelerators
+Additional workflow templates, tree navigation UX overhaul, and basic token usage logging drive adoption after launch.
+**FRs covered:** (Post-V1 adoption — extends beyond original FR scope)
+
+### Epic 12: Pro Foundation
+Storage provider abstraction, database storage provider, and package split lay the architectural foundation for the commercial Pro package.
+**FRs covered:** (Commercial foundation — extends beyond original FR scope)
 
 ## Epic 1: Project Foundation & Developer Onboarding
 
@@ -976,6 +992,28 @@ So that I can review what each agent produced without leaving the backoffice.
 **Then** the artifact for that step is displayed, allowing full review of all step outputs (FR63)
 **And** the step progress sidebar shows file browsing capability — each completed step's subtitle shows the artifact filename
 
+## Pre-Epic 9: Rename Shallai to AgentRun
+
+The entire codebase is renamed from Shallai/UmbracoAgentRunner to AgentRun/Umbraco before documentation, packaging, and Marketplace listing begin.
+
+### Story R1: Rename Shallai to AgentRun
+
+As a developer,
+I want the entire codebase renamed from Shallai/UmbracoAgentRunner to AgentRun/Umbraco,
+So that the package ships under its final product name before Epic 9.
+
+**Acceptance Criteria:**
+
+**Given** the rename is applied across all surfaces (solution, projects, namespaces, classes, frontend components, config, API routes, build output)
+**When** `dotnet build AgentRun.Umbraco.slnx` and `npm run build` are run
+**Then** everything builds with zero errors and zero references to old names
+**And** `dotnet test AgentRun.Umbraco.slnx` and `npm test` pass all tests
+**And** `grep -ri "shallai"` (excluding `_bmad-output/`, `.git/`, `node_modules/`) returns zero matches
+**And** the TestSite runs and all existing functionality works under the new names
+**And** `project-context.md` is regenerated with all new naming conventions
+
+Full story spec: `_bmad-output/implementation-artifacts/R1-rename-shallai-to-agentrun.md`
+
 ## Epic 9: Example Workflow, Documentation & Packaging
 
 The package ships with a working Content Quality Audit workflow, JSON Schema for IDE support, and documentation — ready to install from NuGet and run out-of-the-box.
@@ -1040,7 +1078,7 @@ So that I can install, configure, and extend the workflow engine with confidence
 **Acceptance Criteria:**
 
 **Given** the NuGet package is published
-**When** a developer runs `dotnet add package Shallai.UmbracoAgentRunner`
+**When** a developer runs `dotnet add package AgentRun.Umbraco`
 **Then** the package installs cleanly into an Umbraco 17+ site with no manual configuration beyond Umbraco.AI profile setup
 **And** the .csproj is configured with correct NuGet metadata: package ID, version, description, authors, license, project URL, tags
 **And** the package includes compiled frontend assets in wwwroot/App_Plugins/
@@ -1057,3 +1095,115 @@ So that I can install, configure, and extend the workflow engine with confidence
 **When** they read the workflow authoring guide
 **Then** the guide covers: workflow.yaml schema and field reference, writing agent prompt markdown files, artifact handoff (reads_from/writes_to), completion checking, profile configuration (per-step and defaults), available tools, and a walkthrough of creating a simple 2-step workflow (FR69)
 **And** the guide references the JSON Schema for IDE validation setup
+
+## Epic 10: Ship Readiness & Stability
+
+Known bugs and gaps are fixed before community launch — the concurrency and context bugs will be hit by real users immediately.
+
+### Story 10.1: Instance Concurrency Locking
+
+As a developer,
+I want the engine to prevent concurrent step execution on the same instance using SemaphoreSlim per-instance,
+So that simultaneous requests don't corrupt instance state.
+
+_Full story spec to be created by SM before development begins._
+
+### Story 10.2: Context Management for Long Conversations
+
+As a developer,
+I want the engine to manage conversation context size for multi-step workflows,
+So that token waste is reduced and long workflows don't hit context limits.
+
+_Full story spec to be created by SM before development begins._
+
+### Story 10.3: Multi-Turn Interactive Fix
+
+As a developer,
+I want the ToolLoop to continue when the LLM asks a question instead of exiting,
+So that multi-turn interactive conversations work correctly.
+
+_Full story spec to be created by SM before development begins._
+
+### Story 10.4: Open Source Licence Decision
+
+As a product owner,
+I want the open source licence decided (MIT vs Apache 2.0) and applied,
+So that the package can be published with clear licensing.
+
+_Note: This is a product/legal decision, not a code task. Zero code dependency — it's a LICENSE file and PackageProjectUrl in the .csproj._
+
+_Full story spec to be created by SM before development begins._
+
+### Story 10.5: Marketplace Listing & Community Launch
+
+As a product owner,
+I want the package listed on NuGet.org and Umbraco Marketplace with community launch posts,
+So that developers can discover and install AgentRun.
+
+_Full story spec to be created by SM before development begins._
+
+## Epic 11: Adoption Accelerators
+
+Additional workflow templates, tree navigation, and token usage logging drive adoption after launch. Market research found that the skill gap (developers don't know how to design AI workflows) is the #1 adoption barrier. Templates solve this.
+
+### Story 11.1: Additional Workflow Templates
+
+As a developer,
+I want 2-3 additional workflow templates (SEO metadata generator, content translation pipeline, content model auditor),
+So that I have more starting points for building AI workflows.
+
+_Full story spec to be created by SM before development begins._
+
+### Story 11.2: Tree Navigation UX Overhaul
+
+As a developer or editor,
+I want workflows and instances organised in the Umbraco section tree (following Umbraco's native pattern),
+So that navigation feels native and familiar.
+
+_Note: This is a significant UX refactor — V2 scope assessment from the brief is accurate._
+
+_Full story spec to be created by SM before development begins._
+
+### Story 11.3: Token Usage Logging
+
+As a developer,
+I want structured log events emitted per-step with token usage data,
+So that I can monitor LLM costs via existing log infrastructure.
+
+_Note: Not a dashboard — just structured log events. Pro prerequisite without being a Pro feature._
+
+_Full story spec to be created by SM before development begins._
+
+## Epic 12: Pro Foundation
+
+Storage provider abstraction, database storage provider, and package split lay the architectural foundation for the commercial Pro package.
+
+### Story 12.1: Storage Provider Abstraction
+
+As a developer,
+I want instance storage abstracted behind an `IInstanceStorageProvider` interface with the current disk implementation refactored behind it,
+So that alternative storage backends can be plugged in without modifying the engine.
+
+_Note: The `IInstanceManager` and `IConversationStore` interfaces are the natural seam points — the storage provider wraps the I/O beneath them._
+
+_Full story spec to be created by SM before development begins._
+
+### Story 12.2: Database Storage Provider
+
+As a developer,
+I want a `DatabaseInstanceStorageProvider` that stores instances using Umbraco's DB connection,
+So that enterprise deployments can use database storage instead of disk.
+
+_Note: This is the #1 enterprise blocker identified in market research._
+
+_Full story spec to be created by SM before development begins._
+
+### Story 12.3: Package Split
+
+As a developer,
+I want the codebase split into `AgentRun.Umbraco` (free) and `AgentRun.Umbraco.Pro` (paid),
+So that the commercial model can ship as a separate NuGet package.
+
+_Note from architect: The Pro project references the free project (never the other way around). The free project's public API surface must be reviewed before the split to ensure stability. Breaking changes after the split affect two packages._
+
+_Full story spec to be created by SM before development begins._
