@@ -16,6 +16,8 @@ import type {
   ToolCallData,
 } from "../api/types.js";
 import "./shallai-chat-panel.element.js";
+import "./shallai-artifact-list.element.js";
+import "./shallai-artifact-popover.element.js";
 import {
   extractInstanceId,
   buildInstanceListPath,
@@ -74,6 +76,12 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
 
   @state()
   private _retrying = false;
+
+  @state()
+  private _popoverOpen = false;
+
+  @state()
+  private _popoverArtifactPath: string | null = null;
 
   private _toolBatchOpen = false;
 
@@ -235,6 +243,12 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
 
     .step-icon-spin {
       animation: spin 1.5s linear infinite;
+    }
+
+    .sidebar-divider {
+      border: none;
+      border-top: 1px solid var(--uui-color-border);
+      margin: var(--uui-size-space-4) 0;
     }
 
     .main-placeholder {
@@ -668,6 +682,25 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
         if (this._instance) {
           this._instance.status = "Completed";
           this.requestUpdate();
+
+          // Auto-open popover for the final step's last artifact (SSE-only, not on _loadData)
+          const lastCompleteStep = [...this._instance.steps]
+            .reverse()
+            .find(s => s.status === "Complete" && s.writesTo && s.writesTo.length > 0);
+          if (lastCompleteStep && lastCompleteStep.writesTo) {
+            this._popoverArtifactPath = lastCompleteStep.writesTo[lastCompleteStep.writesTo.length - 1];
+            this._popoverOpen = true;
+          }
+
+          // Add "Workflow complete." system message
+          this._chatMessages = [
+            ...this._chatMessages,
+            {
+              role: "system",
+              content: "Workflow complete.",
+              timestamp: new Date().toISOString(),
+            },
+          ];
         }
         break;
       case "user.message":
@@ -829,8 +862,22 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
             `,
           )}
         </ul>
+        <hr class="sidebar-divider" />
+        <shallai-artifact-list
+          .steps=${this._instance.steps}
+          @artifact-selected=${this._onArtifactSelected}
+        ></shallai-artifact-list>
       </div>
     `;
+  }
+
+  private _onArtifactSelected(e: CustomEvent<{ path: string; stepName: string }>): void {
+    this._popoverArtifactPath = e.detail.path;
+    this._popoverOpen = true;
+  }
+
+  private _onPopoverClosed(): void {
+    this._popoverOpen = false;
   }
 
   render() {
@@ -987,6 +1034,12 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
         ${this._renderStepProgress()}
         ${mainContent}
       </div>
+      <shallai-artifact-popover
+        .instanceId=${inst.id}
+        .artifactPath=${this._popoverArtifactPath ?? ""}
+        ?open=${this._popoverOpen}
+        @popover-closed=${this._onPopoverClosed}
+      ></shallai-artifact-popover>
     `;
   }
 }

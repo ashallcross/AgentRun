@@ -311,9 +311,12 @@ shallai-dashboard (umb-router-slot)
   ├── shallai-instance-list      → /workflows/{alias}
   ├── shallai-instance-detail    → /instances/{id}
   │   ├── shallai-step-progress  (step X of Y, status indicators)
-  │   ├── shallai-artifact-viewer (markdown rendering)
-  │   └── shallai-chat-panel     (message stream, input, tool activity)
+  │   ├── shallai-artifact-list  (flat list of all artifacts across all steps)
+  │   ├── shallai-chat-panel     (message stream, input, tool activity — always visible)
+  │   └── shallai-artifact-popover (overlay: rendered markdown, close, download)
 ```
+
+**Artifact listing approach:** Client-side derivation from `StepDetailResponse.writesTo[]` arrays — no dedicated listing endpoint. The `InstanceDetailResponse` already contains `steps[]` with `writesTo: string[] | null` per step. The `shallai-artifact-list` component flatMaps across all steps to produce a unified file list. Content retrieval uses the existing `GET /instances/{id}/artifacts/{filePath}` endpoint (Story 8-1). The chat panel is always visible — no view-switching state.
 
 Components use `this.observe()` from `UmbElementMixin` for reactive re-rendering.
 
@@ -516,7 +519,8 @@ Client/src/
     shallai-instance-detail.element.ts
     shallai-chat-panel.element.ts
     shallai-step-progress.element.ts
-    shallai-artifact-viewer.element.ts
+    shallai-artifact-list.element.ts
+    shallai-artifact-popover.element.ts
   contexts/
     workflow.context.ts
     instance.context.ts
@@ -671,7 +675,8 @@ Shallai.UmbracoAgentRunner/
 │   │   │   ├── shallai-instance-detail.element.ts
 │   │   │   ├── shallai-chat-panel.element.ts
 │   │   │   ├── shallai-step-progress.element.ts
-│   │   │   └── shallai-artifact-viewer.element.ts
+│   │   │   ├── shallai-artifact-list.element.ts
+│   │   │   └── shallai-artifact-popover.element.ts
 │   │   ├── contexts/
 │   │   │   ├── workflow.context.ts
 │   │   │   ├── instance.context.ts
@@ -765,7 +770,7 @@ Workflows/content-quality-audit/          # Example workflow (ships with package
 | FR50-52: Instance Lifecycle | `Instances/` + `Endpoints/` | `InstanceManager.cs`, `InstanceEndpoints.cs` |
 | FR53-55: Provider Prerequisites | `Endpoints/` + `Client/` | Workflow endpoints (profile check), dashboard (guidance UI) |
 | FR56-62: Security | `Security/` + `Tools/` | `PathSandbox.cs`, `SsrfProtection.cs`, tool implementations |
-| FR63-64: Artifact Browsing | `Endpoints/` + `Client/` | `ArtifactEndpoints.cs`, `shallai-artifact-viewer.element.ts` |
+| FR63-64: Artifact Browsing | `Endpoints/` + `Client/` | `ArtifactEndpoints.cs`, `shallai-artifact-list.element.ts`, `shallai-artifact-popover.element.ts`, `shallai-markdown-renderer.element.ts` |
 | FR65-66: Example Workflow | `Workflows/content-quality-audit/` | `workflow.yaml`, agent markdown files |
 | FR67-69: Documentation & Schema | `Schemas/` + repo root | `workflow-schema.json`, markdown docs |
 

@@ -1,5 +1,5 @@
-import { m as a } from "./index-6tkhMXvN.js";
+import { j as e } from "./index-3Z7urFnx.js";
 export {
-  a as manifests
+  e as manifests
 };
 //# sourceMappingURL=shallai-umbraco-agent-runner.js.map

@@ -140,3 +140,13 @@
 - No rollback if status update throws after truncation — truncation modifies conversation file before status updates; if status update throws, conversation is truncated but instance remains Failed. Pre-existing pattern; no transactions across file+state operations.
 - FindIndex returns first Error step not last — if multiple steps somehow have Error status, wrong step gets retried. Only one step can be in Error per orchestrator flow.
 - Consecutive assistant text + tool-call entries produce two adjacent assistant messages in ConvertHistoryToMessages — some LLM providers reject consecutive same-role messages. Theoretical; providers don't mix text and tool calls in same turn.
+
+## Deferred from: code review of 8-2-artifact-viewer-and-step-review (2026-04-02)
+
+- Tests are logic-only stubs — none mount actual components. All 23 new tests test extracted helper logic in isolation. Established project pattern since story 2-3. Actual behavior verified via manual E2E.
+- SSE `run.finished` + `_loadData` failure leaves floating popover — if `_loadData()` fails after `run.finished` sets `_popoverOpen = true`, the error template replaces the parent but the popover overlay floats with no dismiss handler. Unlikely in practice; requires `_loadData` failure after successful SSE stream.
+
+# notes from Adam
+I have noticed that if you run a workflow that has 2 steps in. If you run the first step to completion, you get the green bar at the top which allows you to proceed to the next step, which is fine.
+
+But when you go out of the workflow and then back in, the green bar has gone and there is no way to proceed to step 2. This is a bug we need to fix

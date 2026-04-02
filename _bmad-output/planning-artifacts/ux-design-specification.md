@@ -35,7 +35,7 @@ inputDocuments:
 
 ### Project Vision
 
-Shallai.UmbracoAgentRunner brings multi-agent workflow orchestration to the Umbraco backoffice as a Bellissima dashboard extension. Workflows are defined as YAML + markdown folders — the engine is code, but every capability is configuration. The dashboard surfaces workflow execution through a chat interface with real-time SSE streaming, step-by-step progress tracking, and an artifact viewer for reviewing agent outputs.
+Shallai.UmbracoAgentRunner brings multi-agent workflow orchestration to the Umbraco backoffice as a Bellissima dashboard extension. Workflows are defined as YAML + markdown folders — the engine is code, but every capability is configuration. The dashboard surfaces workflow execution through a chat interface with real-time SSE streaming, step-by-step progress tracking, and an artifact list with popover for reviewing agent outputs.
 
 The UX challenge is singular: make a technically sophisticated orchestration engine feel like a natural part of the Umbraco backoffice. UUI components and Bellissima conventions are not optional styling choices — they are the design system. The best outcome is indistinguishable from a first-party feature.
 
@@ -49,7 +49,7 @@ The UX challenge is singular: make a technically sophisticated orchestration eng
 
 ### Key Design Challenges
 
-**Dual-audience information density.** The chat panel and artifact viewer must serve both developers (who want tool call detail and step IDs) and editors (who want plain language summaries and progress). The solution is layered information — primary content is human-readable, technical detail is present but secondary (collapsible tool call blocks, step metadata in supporting positions).
+**Dual-audience information density.** The chat panel and artifact popover must serve both developers (who want tool call detail and step IDs) and editors (who want plain language summaries and progress). The solution is layered information — primary content is human-readable, technical detail is present but secondary (collapsible tool call blocks, step metadata in supporting positions).
 
 **Real-time trust and orientation.** Streaming agent output creates excitement but also uncertainty. Users must always know: which step they're on, how many steps remain, whether the agent is working or waiting, and what they can do next. The step progress component and chat panel must synchronise to maintain constant spatial orientation.
 
@@ -57,7 +57,7 @@ The UX challenge is singular: make a technically sophisticated orchestration eng
 
 ### Design Opportunities
 
-**Artifact viewer as value proof.** The rendered markdown artifact viewer transforms raw agent output into polished, readable documents. This is where the product's value becomes tangible — a structured audit report that looks like a professional deliverable, not a text dump.
+**Artifact popover as value proof.** The rendered markdown artifact popover transforms raw agent output into polished, readable documents. This is where the product's value becomes tangible — a structured audit report that looks like a professional deliverable, not a text dump.
 
 **Step progress as narrative.** The sequential step model (scan → analyse → report) is inherently story-shaped. Clear step labels, status transitions, and per-step artifact previews turn a technical pipeline into a comprehensible narrative for all audiences.
 
@@ -87,7 +87,7 @@ The primary interaction loop is: **select workflow → start instance → watch 
 
 **Progress must be self-evident.** The step progress bar and chat panel work in concert. At any moment the user can answer: "Which step am I on? How many are left? Is the agent working or waiting for me? What can I do right now?" without reading documentation or interpreting status codes.
 
-**Artifact review must be inline.** Clicking a completed step shows its artifact rendered as markdown directly in the dashboard. No download, no new tab, no raw text. The artifact viewer is the value delivery surface — it must feel like reading a document, not inspecting an output file.
+**Artifact review must be inline.** Clicking an artifact in the artifact list opens a popover with rendered markdown directly in the dashboard. No download required (though available), no new tab, no raw text. The artifact popover is the value delivery surface — it must feel like reading a document, not inspecting an output file. All artifacts across all steps are listed in one place.
 
 **Step advancement must be a single action.** In interactive mode, a prominent "Continue" button advances to the next step. No dropdown menus, no step selection, no confirmation modal. The user has already reviewed the artifact — the next action is obvious and singular.
 
@@ -99,7 +99,7 @@ The primary interaction loop is: **select workflow → start instance → watch 
 
 **Artifact readability (Sarah — the meeting test).** The editor opens the final audit report and sees structured, actionable content — page-by-page findings, prioritised recommendations, clear language. She can take this to a content planning meeting without translation. If the output looks like developer logs or raw markdown source, the editor journey fails.
 
-**Step transition clarity (all users).** The moment between "step complete" and "next step active" must feel crisp and intentional. The step progress indicator updates, the completed step's artifact becomes reviewable, and in interactive mode the "Continue" button appears. In autonomous mode, the transition is automatic with a clear visual signal. Ambiguity during transitions destroys the pipeline narrative.
+**Step transition clarity (all users).** The moment between "step complete" and "next step active" must feel crisp and intentional. The step progress indicator updates, new artifacts appear in the artifact list, and in interactive mode the "Continue" button appears. In autonomous mode, the transition is automatic with a clear visual signal. Ambiguity during transitions destroys the pipeline narrative.
 
 **First chat interaction (Marcus — the collaboration moment).** The developer sends a message to an agent mid-step and receives a contextual response. The agent didn't just acknowledge the message — it incorporated it into its work. This is the moment "batch job with a UI" becomes "interactive AI collaboration." The chat input affordance must make this interaction discoverable without documentation.
 
@@ -151,7 +151,7 @@ The primary interaction loop is: **select workflow → start instance → watch 
 |---------------|-----------------|
 | Fascination during streaming | Chat messages appear character-by-character via SSE `text.delta` events. Tool calls render as compact, readable blocks (tool name + brief result) rather than raw JSON. The panel scrolls automatically to follow new content. |
 | Calm confidence in navigation | Step progress uses `uui-tab-group` or equivalent with clear labels, step numbers, and status icons. Current step is visually distinct. Completed steps show a check. The user's position is never ambiguous. |
-| Competence on completion | Artifact viewer renders markdown with proper heading hierarchy, lists, tables, and emphasis. Content looks like a document, not a code preview. No monospace font for body text. |
+| Competence on completion | Artifact popover renders markdown with proper heading hierarchy, lists, tables, and emphasis. Content looks like a document, not a code preview. No monospace font for body text. |
 | Informed composure on error | Error states use `uui-badge` with "danger" colour and plain-language messages. "Retry" button appears immediately. The error message explains what happened and what the user can do — never just an error code. |
 | Control in interactive mode | "Continue to Next Step" button uses `uui-button` with `look="primary"`. It appears only when the current step is complete. It's the most prominent element on screen at that moment. |
 | Trust through transparency | Tool call blocks show the tool name and a one-line summary of what happened. Expandable for full detail. The user can verify the agent did what it claimed without being forced to read raw data. |
@@ -164,7 +164,7 @@ The primary interaction loop is: **select workflow → start instance → watch 
 
 3. **Errors are conversations, not failures.** When something goes wrong, the UI's tone shifts to helpful and specific. "The AI provider returned a rate limit error. Wait a moment and retry, or check your Umbraco.AI provider configuration." The user is never left wondering what happened or what to do.
 
-4. **The output is the hero, not the tool.** The dashboard never draws attention to itself. The artifact viewer, the final report, the actionable deliverable — that's what the user cares about. The tool's job is to be a reliable, invisible conduit between the user's intent and a valuable output.
+4. **The output is the hero, not the tool.** The dashboard never draws attention to itself. The artifact popover, the final report, the actionable deliverable — that's what the user cares about. The tool's job is to be a reliable, invisible conduit between the user's intent and a valuable output.
 
 ## UX Pattern Analysis & Inspiration
 
@@ -200,7 +200,7 @@ The instance detail workspace header shows the single most relevant action as a 
 
 **Log dump chat panel.** GitHub Actions shows raw ANSI logs. ChatGPT shows polished conversation. The chat panel must be a *conversation*, not a log viewer. Raw tool call JSON, unformatted function parameters, and internal step IDs in the message stream would make this feel like a developer console, not a user tool.
 
-**Tab overload.** Some dashboards try to show everything at once: tabs for chat, tabs for artifacts, tabs for settings, tabs for history. The instance detail view has three components (step progress, artifact viewer, chat panel) — these should be arranged spatially in a single view, not hidden behind tabs. The user should see progress, output, and conversation simultaneously.
+**Tab overload.** Some dashboards try to show everything at once: tabs for chat, tabs for artifacts, tabs for settings, tabs for history. The instance detail view has three components (step progress, artifact list, chat panel) — these should be arranged spatially in a single view, not hidden behind tabs. The user should see progress, available artifacts, and conversation simultaneously. Artifact content is viewed via popover overlay when needed.
 
 **Confirmation dialog on every action.** "Are you sure you want to start this workflow?" "Are you sure you want to advance to the next step?" These add friction without adding safety — starting a workflow has no destructive consequences, and advancing a step is the expected next action. Reserve confirmation dialogs for destructive actions only: cancel a running workflow, delete an instance.
 
@@ -225,7 +225,7 @@ The instance detail workspace header shows the single most relevant action as a 
 **Avoid entirely:**
 - Raw log/console aesthetic in any user-facing component
 - Modal workflows or confirmation dialogs for non-destructive actions
-- Tab-based layout that hides the chat panel or artifact viewer
+- Tab-based layout that hides the chat panel or artifact list
 - Custom navigation chrome that deviates from Bellissima patterns
 - Marketing-style empty states or onboarding wizards
 
@@ -256,7 +256,8 @@ UUI provides 80+ Lit web components built on the same design language as the Umb
 | `shallai-instance-detail` | `umb-body-layout` (nested), `uui-box` for content sections |
 | `shallai-step-progress` | `uui-icon` (status), `uui-badge` (step status), `uui-button` (advance) |
 | `shallai-chat-panel` | `uui-scroll-container`, `uui-icon`, `uui-textarea`, `uui-button` |
-| `shallai-artifact-viewer` | `uui-box`, `uui-scroll-container` |
+| `shallai-artifact-list` | `uui-box`, `uui-button`, `uui-icon` |
+| `shallai-artifact-popover` | `uui-dialog`, `uui-scroll-container`, `uui-button`, `uui-icon` |
 
 **Custom elements (not in UUI, must be built):**
 - Chat message bubbles — no UUI chat component exists. Build using `uui-box` with role-based styling (agent vs user vs system). Use `--uui-color-surface` variants for visual distinction.
@@ -271,7 +272,7 @@ UUI provides 80+ Lit web components built on the same design language as the Umb
 **Layout composition rules:**
 - Use `umb-body-layout` for workspace-level structure (header + content area)
 - Use `uui-box` for content grouping within views
-- Use CSS Grid or Flexbox for spatial arrangement of child components — the instance detail view arranges step progress, artifact viewer, and chat panel using CSS layout, not UUI layout components
+- Use CSS Grid or Flexbox for spatial arrangement of child components — the instance detail view arranges step progress, artifact list, and chat panel using CSS layout, not UUI layout components. Artifact popover uses `uui-dialog` overlay, independent of layout.
 - Use `--uui-size-layout-*` tokens for spacing between sections
 - Use `--uui-size-space-*` tokens for padding within components
 
@@ -330,9 +331,9 @@ The defining moment isn't any single screen or component. It's the *transition*:
 - Markdown document rendering (universal)
 
 **Novel combination (the product's UX innovation):**
-- Chat + pipeline progress + artifact viewer *in a single view*. No existing product combines real-time AI conversation, multi-step pipeline progress, and inline document rendering in one workspace. This is the novel UX — not any single component, but their spatial co-presence. The user watches the chat, glances at the step progress, and clicks to review an artifact — all without navigating away.
+- Chat + pipeline progress + artifact list *in a single view*. No existing product combines real-time AI conversation, multi-step pipeline progress, and inline document rendering in one workspace. This is the novel UX — not any single component, but their spatial co-presence. The user watches the chat, glances at the step progress, and clicks an artifact in the list to review via popover — all without navigating away.
 
-**Teaching strategy:** The interface teaches itself. Step names tell the story ("Content Scanner" → "Quality Analyser" → "Report Generator"). The chat panel shows work happening. The artifact viewer shows results. No onboarding wizard, no tutorial overlay, no "Getting Started" modal. The example workflow *is* the tutorial — running it teaches the user how the product works.
+**Teaching strategy:** The interface teaches itself. Step names tell the story ("Content Scanner" → "Quality Analyser" → "Report Generator"). The chat panel shows work happening. The artifact list shows what's been produced, and the popover shows the content. No onboarding wizard, no tutorial overlay, no "Getting Started" modal. The example workflow *is* the tutorial — running it teaches the user how the product works.
 
 ### Experience Mechanics
 
@@ -340,7 +341,7 @@ The defining moment isn't any single screen or component. It's the *transition*:
 - User is on the workflow list view (`shallai-workflow-list`)
 - Clicks a workflow row → navigates to instance list (`shallai-instance-list`)
 - Clicks "New Run" button (primary, in header) → POST `/instances` creates instance → navigates to instance detail (`shallai-instance-detail`)
-- Instance detail loads showing: step progress (all steps pending), empty chat panel, empty artifact viewer
+- Instance detail loads showing: step progress (all steps pending), empty chat panel, empty artifact list ("No artifacts yet.")
 - Primary action button in header: **"Start"**
 - User clicks Start → POST `/instances/{id}/start` → SSE stream opens → step 1 status changes to "active" → chat panel shows system message "Starting Content Scanner..." → streaming text begins
 
@@ -357,14 +358,14 @@ The defining moment isn't any single screen or component. It's the *transition*:
 - Between tool calls, a subtle streaming indicator (blinking cursor or `uui-loader-bar`) confirms the agent is still processing
 - Step progress updates in real-time: pending → active → complete
 - System messages mark boundaries: "Content Scanner started", "Content Scanner completed — scan-results.md created"
-- When a step completes, the artifact becomes clickable in the step progress or artifact viewer
+- When a step completes, the artifact(s) appear in the artifact list as clickable entries
 
 **4. Completion — Step transition and final output:**
 - `step.finished` SSE event → step status changes to "complete" (green check icon)
 - System message in chat: "Step complete. Output: scan-results.md"
-- **Interactive mode:** "Continue to Next Step" button appears as primary action in header. User clicks to review artifact first (optional) or advances immediately. POST `/instances/{id}/start` begins next step.
+- **Interactive mode:** "Continue" button appears as primary action in header. User can click artifacts in the artifact list to review via popover (optional) or advance immediately. POST `/instances/{id}/start` begins next step.
 - **Autonomous mode:** Engine auto-advances after completion check passes. Brief system message "Auto-advancing to Quality Analyser..." → next step begins streaming. User watches the full pipeline without intervention.
-- **Final step completion:** All steps show complete. Primary action changes to "View Report" or equivalent. Artifact viewer shows the final deliverable rendered as markdown. Chat panel shows "Workflow complete."
+- **Final step completion:** All steps show complete. No primary action button (workflow is done). Artifact popover auto-opens for the final report. Chat panel shows "Workflow complete." User can close popover and browse all artifacts in the artifact list.
 
 ## Visual Design Foundation
 
@@ -378,7 +379,7 @@ The defining moment isn't any single screen or component. It's the *transition*:
 |---|---|---|
 | Body text, labels | `--uui-color-text` | All readable content |
 | Secondary/muted text | `--uui-color-text-alt` | Timestamps, step metadata, secondary labels |
-| Panel backgrounds | `--uui-color-surface` | Chat panel, artifact viewer, card backgrounds |
+| Panel backgrounds | `--uui-color-surface` | Chat panel, artifact list, artifact popover, card backgrounds |
 | Elevated surfaces | `--uui-color-surface-emphasis` | Active message bubble, focused input |
 | Borders and dividers | `--uui-color-border` | Between chat messages, around tool call blocks, section dividers |
 | Interactive/clickable | `--uui-color-interactive` | Clickable step names, artifact links |
@@ -435,26 +436,36 @@ The instance detail view (`shallai-instance-detail`) is the most complex layout.
 │  [← Back]  Content Quality Audit — Run #3  [Action] │
 ├──────────────┬──────────────────────────────────────┤
 │              │                                      │
-│  Step        │  Main content area                   │
+│  Step        │  Chat Panel (always visible)          │
 │  Progress    │                                      │
 │              │  ┌──────────────────────────────────┐ │
-│  ● Scanner   │  │  Chat Panel                     │ │
-│  ○ Analyser  │  │  (or Artifact Viewer)            │ │
+│  ✓ Scanner   │  │  shallai-chat-message items      │ │
+│  ● Analyser  │  │  Messages stream here...          │ │
 │  ○ Reporter  │  │                                  │ │
-│              │  │  Messages stream here...          │ │
 │              │  │                                  │ │
-│              │  │                                  │ │
-│              │  │                                  │ │
-│              │  ├──────────────────────────────────┤ │
+│  ────────    │  │                                  │ │
+│  Artifacts   │  │                                  │ │
+│  scan-res..  │  ├──────────────────────────────────┤ │
 │              │  │  [Message input]         [Send]  │ │
 │              │  └──────────────────────────────────┘ │
 ├──────────────┴──────────────────────────────────────┤
 │  (footer area if needed)                            │
 └─────────────────────────────────────────────────────┘
+
+         ┌─── Artifact Popover (uui-dialog overlay) ───┐
+         │  scan-results.md                    [✕]     │
+         │  ┌─────────────────────────────────────┐    │
+         │  │  Rendered markdown content           │    │
+         │  │  via shallai-markdown-renderer       │    │
+         │  │                                     │    │
+         │  └─────────────────────────────────────┘    │
+         │                          [Download] [Close] │
+         └─────────────────────────────────────────────┘
 ```
 
-- **Left sidebar:** Step progress — narrow column (~200-240px), vertical step list. Uses `uui-box` or simple flex column.
-- **Main content area:** Chat panel during execution, artifact viewer when reviewing completed steps. Fills remaining width. Flex-grow.
+- **Left sidebar:** Step progress + artifact list — narrow column (~200-240px). Step list at top, artifact list below (separated by divider). Uses `uui-box` or simple flex column.
+- **Main content area:** Chat panel — always visible, never replaced. Fills remaining width. Flex-grow.
+- **Artifact popover:** `uui-dialog` overlay, opens on artifact click, renders markdown content. Independent of layout — floats above.
 - **Layout method:** CSS Grid with `grid-template-columns: auto 1fr` or Flexbox row. Gap uses `--uui-size-layout-1`.
 - **Chat panel internal spacing:** Messages spaced with `--uui-size-space-3`. Input area pinned to bottom with `--uui-size-space-4` padding.
 - **Step progress internal spacing:** Steps spaced with `--uui-size-space-4`. Each step is a row: status icon + step name + optional badge.
@@ -477,7 +488,7 @@ The instance detail view (`shallai-instance-detail`) is the most complex layout.
 | Chat input | `aria-label="Message to agent"` on the textarea. Submit via Enter key (with Shift+Enter for newlines) |
 | Tool call blocks | `role="group"`, `aria-label="Tool call: {tool_name}"`. Expand/collapse via keyboard (Enter/Space). `aria-expanded` state |
 | Step progress list | `role="list"` with `role="listitem"` per step. `aria-current="step"` on active step. Status communicated via `aria-label` (e.g. "Step 1: Content Scanner — complete") |
-| Artifact viewer | Rendered markdown inherits semantic HTML (h1-h6, p, ul, table). No additional ARIA needed if semantic structure is correct |
+| Artifact popover | `uui-dialog` provides `role="dialog"`, `aria-modal="true"`, focus trapping, Escape key. Rendered markdown inherits semantic HTML. `aria-labelledby` set to filename. |
 | Streaming indicator | `aria-live="polite"` region that announces "Agent is responding..." during streaming, "Agent response complete" when done |
 
 **Keyboard navigation flow:** Tab through step progress list → tab to chat message area → tab to input field → tab to send button → tab to header actions. Focus must be visible (UUI handles focus ring styling via `--uui-color-focus`).
@@ -486,26 +497,27 @@ The instance detail view (`shallai-instance-detail`) is the most complex layout.
 
 ### Design Directions Explored
 
-Three layout compositions were evaluated for the instance detail view — the only genuinely variable design surface in a UUI-constrained dashboard extension. All three use identical UUI components, tokens, and styling. The differentiator is spatial arrangement of the three custom sub-components (step progress, chat panel, artifact viewer).
+Three layout compositions were evaluated for the instance detail view — the only genuinely variable design surface in a UUI-constrained dashboard extension. All three use identical UUI components, tokens, and styling. The differentiator is spatial arrangement of the custom sub-components (step progress, artifact list, chat panel, and artifact popover).
 
-**Direction A — Sidebar + Main (selected):** Step progress as persistent left sidebar (~200-240px). Main content area switches between chat panel (during execution) and artifact viewer (when reviewing completed step output). Single focal point.
+**Direction A — Sidebar + Main with view switching (rejected):** Step progress as persistent left sidebar (~200-240px). Main content area switches between chat panel (during execution) and artifact viewer (when reviewing completed step output). Rejected after E2E validation — the 1:1 step-to-artifact assumption breaks for multi-artifact steps, and completed instances have no active step to click back to the chat panel.
 
-**Direction B — Sidebar + Split Main:** Three-column layout with step progress, artifact viewer, and chat panel all visible simultaneously. Higher information density but split attention. Deferred to v2 consideration if user feedback indicates need for simultaneous chat + artifact viewing.
+**Direction B — Sidebar + Chat + Artifact List + Popover (selected):** Step progress sidebar, chat panel always visible as the main content area, artifact list panel below the step sidebar or as a secondary panel, popover overlay for viewing individual artifact content. Artifacts are browsable independently of step selection.
 
 **Direction C — Top Progress + Full-Width Main:** Horizontal step progress bar above a full-width main area. More space for chat/artifacts but step progress becomes a compact bar that doesn't accommodate step names well beyond 3-4 steps.
 
 ### Chosen Direction
 
-**Direction A — Sidebar + Main.** Single main content area that switches between chat panel and artifact viewer, with a persistent step progress sidebar.
+**Direction B — Sidebar + Chat + Artifact List + Popover.** Chat panel is always visible as the main content area. Artifacts are listed in a dedicated `shallai-artifact-list` component and viewed via a popover overlay (`shallai-artifact-popover` using `uui-dialog`). No view-switching state.
 
 ### Design Rationale
 
-1. **Simplicity of implementation.** Two-region layout (sidebar + main) is straightforward CSS Grid or Flexbox. Fewer layout regions mean fewer edge cases and less to test.
-2. **Cognitive clarity.** One focal point at a time. During execution, the user watches the chat. After a step completes, they click to review the artifact. They're never split between two active content areas.
-3. **"One action at a time" principle.** The main area always shows the most relevant content for the current state. Active step → chat panel. Completed step review → artifact viewer. This aligns with the experience principle established earlier.
-4. **Scalability.** Vertical step progress sidebar accommodates workflows from 2 to 10+ steps without layout strain. Horizontal bars (Direction C) compress at scale.
-5. **GitHub Actions familiarity.** Developer audience recognises the left sidebar + main content pattern from CI/CD pipeline dashboards.
-6. **v2 expansion path.** Direction B (three columns) can be offered as a "split view" toggle in future versions without rebuilding the core layout. The sidebar + main foundation supports progressive enhancement.
+1. **Multi-artifact support.** Workflow steps can produce multiple artifacts (`writesTo` is `string[]`). A flat artifact list across all steps surfaces every file without the 1:1 step-to-artifact assumption.
+2. **No dead-end states.** Chat panel is always visible — users never get stuck in an artifact view with no way back to the conversation. Completed instances show the full chat history without requiring step clicks.
+3. **Simplicity of implementation.** No `activeView` state management in the instance-detail component. Chat panel renders unconditionally. Artifact popover is an overlay that opens/closes without layout reflow.
+4. **Proven UX.** Flat file list + popover pattern was validated in the original application prototype. Users found artifact browsing intuitive.
+5. **Scalability.** Vertical step progress sidebar accommodates workflows from 2 to 10+ steps without layout strain.
+6. **GitHub Actions familiarity.** Developer audience recognises the left sidebar + main content pattern from CI/CD pipeline dashboards.
+7. **v2 expansion path.** The artifact list can evolve into a tree-based file browser in future versions without disrupting the core layout.
 
 ### Implementation Approach
 
@@ -520,18 +532,30 @@ Three layout compositions were evaluated for the instance detail view — the on
 }
 ```
 
-**Main area content switching:**
-- Managed by component state: `activeView: 'chat' | 'artifact'`
-- Default: `'chat'` when a step is active or no step has been reviewed
-- Switches to `'artifact'` when user clicks a completed step in the sidebar
-- Returns to `'chat'` when user clicks the active step, clicks a "Back to conversation" link, or a new step begins executing
-- Transition is instant (conditional rendering) — no animation, no slide. State swap.
+**Main area — always chat panel:**
+- The chat panel is the permanent main content area — no view switching, no `activeView` state
+- Chat panel shows the active step's streaming output during execution, or the selected step's conversation history when reviewing
+- Artifact viewing happens via popover overlay, independent of the main content area
 
 **Step progress sidebar click behaviour:**
-- Click active step → show chat panel (if not already showing)
-- Click completed step → show that step's artifact in the artifact viewer
+- Click active step → show live chat (if not already showing)
+- Click completed step → load that step's conversation history in the chat panel
 - Click pending step → no action (step hasn't executed yet)
 - Visual feedback: clicked/selected step has `--uui-color-current` indicator
+
+**Artifact list panel:**
+- `shallai-artifact-list` renders a flat list of all artifacts across all steps, derived client-side from `StepDetailResponse.writesTo[]`
+- Each item shows: filename, producing step name
+- Click filename → opens `shallai-artifact-popover` with rendered markdown content
+- Empty state during execution: "No artifacts yet."
+- On `run.finished`, popover auto-opens for the final step's last artifact (closeable)
+
+**Artifact popover (`uui-dialog`):**
+- Overlay with rendered markdown via `shallai-markdown-renderer`
+- Header: artifact filename
+- Actions: "Download" button (fetches raw content as file download), "Close" button
+- Closes on: close button click, Escape key, backdrop click
+- No view-state coupling — opening/closing the popover has no effect on chat panel or step selection
 
 **Workflow list and instance list views** use standard `uui-table` layouts — no direction decision needed. These are straightforward list views following Bellissima conventions.
 
@@ -561,22 +585,22 @@ flowchart TD
     P -->|Error| Q[Error state — see error flow]
     P -->|Yes| R[Step 1 → complete ✓<br/>System msg: 'scan-results.md created'<br/>'Continue' button appears in header]
     R --> S{User reviews artifact?}
-    S -->|Yes| T[Click Step 1 in sidebar<br/>Artifact viewer shows scan-results.md<br/>Rendered markdown]
+    S -->|Yes| T[Click scan-results.md in artifact list<br/>Popover opens with rendered markdown<br/>Close popover to return]
     S -->|No| U[Click 'Continue']
     T --> U
-    U --> V[Step 2 → active<br/>Main area returns to chat<br/>Analyser agent begins streaming]
+    U --> V[Step 2 → active<br/>Chat panel shows new step stream<br/>Analyser agent begins streaming]
     V --> W[Step 2 completes → 'Continue' appears]
     W --> X[Click 'Continue']
     X --> Y[Step 3 → active<br/>Reporter agent begins streaming]
-    Y --> Z[Step 3 completes<br/>All steps ✓<br/>Artifact viewer auto-shows final report]
-    Z --> AA["Wow moment: structured audit report<br/>rendered as a polished document"]
+    Y --> Z[Step 3 completes<br/>All steps ✓<br/>Artifact popover auto-opens final report]
+    Z --> AA["Wow moment: structured audit report<br/>rendered as a polished document<br/>Close popover to review chat history"]
 ```
 
 **Key UX decisions in this flow:**
 - Provider prerequisite check happens on instance creation (POST `/instances`), not on dashboard load — don't block browsing
 - "Start" is a single button, not a form — no parameters for v1
-- Chat panel is the default main area view until the user explicitly clicks a completed step
-- After final step, artifact viewer auto-activates to show the final report — the deliverable is the payoff, present it immediately
+- Chat panel is always the main area — artifacts are viewed via popover overlay, not by replacing the chat
+- After final step, artifact popover auto-opens to show the final report — the deliverable is the payoff, present it immediately. Popover is closeable.
 
 ### Journey 2: Editor Workflow Execution — "Dashboard to Deliverable"
 
@@ -595,14 +619,14 @@ flowchart TD
     I --> J[Chat streams: 'Scanning Homepage...<br/>Scanning About Us...<br/>Scanning Blog section...']
     J --> K[Step 1 complete ✓<br/>'Continue' button appears]
     K --> L{Sarah wants to check output?}
-    L -->|Curious| M[Clicks 'Scanner' step in sidebar<br/>Sees scan summary — pages found,<br/>content catalogued]
+    L -->|Curious| M[Clicks scan-results.md in artifact list<br/>Popover shows scan summary — pages found,<br/>content catalogued. Closes popover.]
     L -->|Trusts it| N[Clicks 'Continue']
     M --> N
     N --> O[Step 2 active<br/>Chat: 'Analysing page quality...<br/>Scoring SEO completeness...<br/>Checking readability...']
     O --> P[Step 2 complete ✓<br/>'Continue' button appears]
     P --> Q[Clicks 'Continue']
     Q --> R[Step 3 active<br/>Chat: 'Generating prioritised<br/>action plan...']
-    R --> S[Step 3 complete ✓<br/>All steps done<br/>Artifact viewer shows final report]
+    R --> S[Step 3 complete ✓<br/>All steps done<br/>Artifact popover auto-opens final report]
     S --> T["Sarah reads: 'Homepage missing<br/>meta description. 12 blog images<br/>lack alt text. About page<br/>readability score: 45/100.'"]
     T --> U["Takes report to content<br/>planning meeting"]
 ```
@@ -651,8 +675,8 @@ flowchart TD
     B --> C[Click 'Content Quality Audit']
     C --> D[Instance list view<br/>Shows all previous runs with status]
     D --> E{Select instance}
-    E -->|Completed run| F[Instance detail loads<br/>All steps complete<br/>Artifact viewer shows final report]
-    F --> G[Click any step in sidebar<br/>to review its artifact]
+    E -->|Completed run| F[Instance detail loads<br/>All steps complete<br/>Artifact list shows all outputs]
+    F --> G[Click any artifact in list<br/>to review in popover]
     E -->|Errored run| H[Instance detail loads<br/>at failed step<br/>'Retry' in header]
     E -->|Running run| I[Instance detail loads<br/>at active step<br/>Chat panel shows live stream]
     D --> J[Delete completed/cancelled run<br/>Click row overflow → 'Delete'<br/>Confirmation → removed from list]
@@ -676,7 +700,7 @@ Starting a workflow, advancing a step, retrying an error, reviewing an artifact,
 
 1. **Minimise clicks to value.** From dashboard to streaming first agent: 4 clicks (sidebar → workflow → New Run → Start). From first visit to reading the final report: 4 clicks + wait time. Every additional click is a potential drop-off in the 30-minute evaluation window.
 
-2. **Auto-present the payoff.** When the final step completes, the artifact viewer automatically shows the final report. The user doesn't need to click "view results" — the value is delivered without asking. For intermediate steps, the user opts in to review by clicking the step.
+2. **Auto-present the payoff.** When the final step completes, the artifact popover automatically opens with the final report. The user doesn't need to click "view results" — the value is delivered without asking. The popover is closeable, so the user can dismiss it to review chat history or browse other artifacts in the list.
 
 3. **Persist everything, lose nothing.** Navigating away from a running workflow doesn't stop it. Closing the browser doesn't lose state. Errors don't corrupt the instance. The user can always come back, always pick up where they left off. This eliminates the anxiety of "if I leave, will I lose my progress?"
 
@@ -696,8 +720,8 @@ Starting a workflow, advancing a step, retrying an error, reviewing an artifact,
 | `uui-button` | All views | Primary and secondary actions |
 | `uui-badge` | Step progress, instance list | Status labels (pending, active, complete, error) |
 | `uui-icon` | Step progress, tool calls | Status icons, tool indicators |
-| `uui-box` | Instance detail, artifact viewer | Content grouping containers |
-| `uui-scroll-container` | Chat panel, artifact viewer | Scrollable content regions |
+| `uui-box` | Instance detail, artifact list | Content grouping containers |
+| `uui-scroll-container` | Chat panel, artifact popover | Scrollable content regions |
 | `uui-textarea` | Chat panel | Message input field |
 | `uui-loader-bar` | Chat panel | Streaming activity indicator |
 | `uui-dialog` | Cancel/delete confirmation | Confirmation for destructive actions |
@@ -800,7 +824,7 @@ Expanded:
 
 #### `shallai-markdown-renderer`
 
-**Purpose:** Renders sanitised markdown as styled HTML within the artifact viewer. Uses UUI typography tokens for all text styling.
+**Purpose:** Renders sanitised markdown as styled HTML within the artifact popover. Uses UUI typography tokens for all text styling.
 
 **Props:**
 - `content: string` — raw markdown string
@@ -852,20 +876,112 @@ Expanded:
 |---|---|
 | Status icon | `uui-icon`: pending=circle-outline, active=sync (animated), complete=check, error=close |
 | Step name | Human-readable name from workflow.yaml |
-| Subtitle | Running: "Running..." / Complete: artifact filename / Error: "Failed" / Pending: "Pending" |
+| Subtitle | Running: "Running..." / Complete: artifact filename(s) comma-separated or "Complete" if no artifacts / Error: "Failed" / Pending: "Pending" |
 
 **States per step:**
 | State | Visual Treatment |
 |---|---|
 | Pending | `--uui-color-disabled` icon + text, not clickable |
 | Active | `--uui-color-current` icon (animated), bold name, not clickable for artifact (shows chat) |
-| Complete | `--uui-color-positive` check icon, clickable to view artifact, shows artifact filename |
+| Complete | `--uui-color-positive` check icon, clickable to load conversation history, shows artifact filename(s) |
 | Error | `--uui-color-danger` cross icon, clickable to view error in chat |
 | Selected | `--uui-color-current` left border or background highlight on the selected step |
 
-**Interaction:** Click completed step → parent switches main area to artifact viewer for that step. Click active step → parent switches to chat panel. Click pending step → no action.
+**Interaction:** Click completed step → parent loads that step's conversation history in the chat panel. Click active step → parent shows live chat. Click pending step → no action. Step clicks do NOT trigger artifact viewing — artifacts are browsed via the `shallai-artifact-list` component.
 
 **Accessibility:** `role="list"`, each step is `role="listitem"`. Active step has `aria-current="step"`. Completed steps are `button` role (clickable). Status announced via `aria-label` (e.g. "Step 1: Content Scanner, complete. Output: scan-results.md").
+
+---
+
+#### `shallai-artifact-list`
+
+**Purpose:** Renders a flat list of all artifacts produced across all workflow steps, derived client-side from `StepDetailResponse.writesTo[]` arrays.
+
+**Anatomy:**
+```
+┌──────────────────────┐
+│ Artifacts            │
+│                      │
+│ 📄 scan-results.md   │
+│    Content Scanner   │
+│                      │
+│ 📄 analysis.md       │
+│    Quality Analyser  │
+│                      │
+│ 📄 report.md         │
+│    Report Generator  │
+└──────────────────────┘
+```
+
+**Props:**
+- `steps: StepDetailResponse[]` — step data including `writesTo` arrays
+
+**Derived data:** Component iterates all steps, flatMaps `writesTo` arrays, producing a list of `{ path: string, stepName: string, stepStatus: string, completedAt: string | null }` entries. Only steps with non-null, non-empty `writesTo` produce entries.
+
+**Per-artifact display:**
+| Element | Content |
+|---|---|
+| File icon | `uui-icon` with document icon |
+| Filename | Extracted from path (last segment), clickable |
+| Step name | Muted text below filename — which step produced this artifact |
+
+**States:**
+| State | Visual Treatment |
+|---|---|
+| Empty (no artifacts) | Muted text: "No artifacts yet." |
+| Has artifacts | List of clickable filenames grouped by appearance order |
+| Artifact from incomplete step | Shown but with `--uui-color-disabled` — step is still running, artifact may be incomplete |
+
+**Interaction:** Click filename → fires `artifact-selected` custom event with the artifact path. Parent opens `shallai-artifact-popover`.
+
+**Accessibility:** `role="list"`, each artifact is `role="listitem"` with `button` role (clickable). `aria-label` includes filename and producing step name (e.g. "scan-results.md from Content Scanner").
+
+---
+
+#### `shallai-artifact-popover`
+
+**Purpose:** Overlay dialog displaying a single artifact's rendered markdown content with download capability. Uses `uui-dialog` as the container.
+
+**Anatomy:**
+```
+┌─────────────────────────────────────────┐
+│  scan-results.md                   [✕]  │
+├─────────────────────────────────────────┤
+│  uui-scroll-container                   │
+│  ┌─────────────────────────────────┐    │
+│  │  shallai-markdown-renderer      │    │
+│  │  (rendered artifact content)    │    │
+│  │                                 │    │
+│  └─────────────────────────────────┘    │
+├─────────────────────────────────────────┤
+│                      [Download] [Close] │
+└─────────────────────────────────────────┘
+```
+
+**Props:**
+- `instanceId: string` — instance ID for API calls
+- `artifactPath: string` — relative path to the artifact file
+- `open: boolean` — controls dialog visibility
+
+**Data fetching:** On open, calls `GET /instances/{instanceId}/artifacts/{encodedPath}` (existing Story 8-1 endpoint) to fetch artifact content. Shows `uui-loader` while loading.
+
+**States:**
+| State | Behaviour |
+|---|---|
+| Loading | `uui-loader` centred in dialog body |
+| Loaded | Rendered markdown via `shallai-markdown-renderer` |
+| Error | Error message: "Could not load artifact." with retry link |
+| Closing | Dialog closes immediately, no animation |
+
+**Interactions:**
+- Close button → fires `popover-closed` event, parent sets `open: false`
+- Escape key → same as close button
+- Backdrop click → same as close button
+- Download button → fetches raw content from same endpoint, triggers browser download with original filename
+
+**Auto-open behaviour:** On `run.finished` SSE event, parent automatically opens this popover for the final step's last artifact. The popover is fully closeable — auto-open is a convenience, not a trap.
+
+**Accessibility:** `uui-dialog` provides focus trapping, Escape key handling, and `role="dialog"` with `aria-modal="true"`. Dialog title (`aria-labelledby`) is the filename. Close and Download buttons have `aria-label` attributes.
 
 ---
 
@@ -924,7 +1040,8 @@ All custom components follow the same implementation pattern:
 6. Accept data via properties, not by fetching their own data
 
 **Event communication pattern:**
-- `shallai-step-progress` fires `step-selected` → `shallai-instance-detail` switches main view
+- `shallai-step-progress` fires `step-selected` → `shallai-instance-detail` loads that step's conversation history in chat panel
+- `shallai-artifact-list` fires `artifact-selected` → `shallai-instance-detail` opens `shallai-artifact-popover` with the selected artifact
 - `shallai-chat-panel` fires `message-sent` → `shallai-instance-detail` triggers POST to API
 - `shallai-instance-detail` manages SSE connection and distributes events to child components
 
@@ -936,7 +1053,7 @@ All custom components follow the same implementation pattern:
 2. `shallai-instance-list` — instance management before execution
 3. `shallai-instance-detail` + `shallai-step-progress` — execution workspace shell
 4. `shallai-chat-panel` + `shallai-chat-message` + `shallai-tool-call` — the core experience
-5. `shallai-artifact-viewer` + `shallai-markdown-renderer` — the value delivery surface
+5. `shallai-artifact-list` + `shallai-artifact-popover` + `shallai-markdown-renderer` — the value delivery surface
 
 ## UX Consistency Patterns
 
@@ -1026,7 +1143,7 @@ All custom components follow the same implementation pattern:
 | No workflows found | "No workflows found. Add a workflow folder to your project's workflows directory." |
 | No instances for workflow | "No runs yet. Click 'New Run' to start." |
 | Chat panel before start | "Click 'Start' to begin the workflow." (as placeholder in input area) |
-| Artifact viewer (no step selected) | "Select a completed step to view its output." |
+| Artifact list (no artifacts yet) | "No artifacts yet." |
 
 ### Loading State Patterns
 
@@ -1153,6 +1270,6 @@ All custom components follow the same implementation pattern:
 
 3. **State changes must be announced.** When step status changes, the `aria-label` on the step item must update. When a new chat message arrives, the `aria-live` region handles announcement. When an error occurs, the error message container must be in a live region.
 
-4. **Focus management on view switches.** When the main area switches from chat to artifact viewer (or vice versa), focus should move to the new content area. Don't leave focus on a now-invisible element.
+4. **Focus management on popover open/close.** When the artifact popover opens, focus moves into the dialog (handled by `uui-dialog`). When it closes, focus returns to the triggering element in the artifact list. Don't leave focus on a now-invisible element.
 
 5. **Never disable and hide simultaneously.** If a button is hidden because the action isn't available, that's fine. If a button is disabled because the action is temporarily unavailable (e.g. Send button while input is empty), it must remain visible with `aria-disabled="true"`.
