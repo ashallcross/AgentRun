@@ -100,11 +100,11 @@ function ee(e) {
 }
 function te(e) {
   const t = document.createElement("template");
-  t.innerHTML = e, A(t.content);
+  t.innerHTML = e, O(t.content);
   const s = document.createElement("div");
   return s.appendChild(t.content.cloneNode(!0)), s.innerHTML;
 }
-function A(e) {
+function O(e) {
   const t = Array.from(e.childNodes);
   for (const s of t)
     if (s.nodeType === Node.ELEMENT_NODE) {
@@ -117,7 +117,7 @@ function A(e) {
           const o = a.getAttribute("href") ?? "";
           /^https?:\/\//i.test(o) || a.removeAttribute("href"), a.setAttribute("target", "_blank"), a.setAttribute("rel", "noopener");
         }
-        A(a);
+        O(a);
       } else {
         const n = document.createTextNode(a.textContent ?? "");
         e.replaceChild(n, s);
@@ -296,7 +296,7 @@ k([
 v = k([
   E("shallai-tool-call")
 ], v);
-var ie = Object.defineProperty, ne = Object.getOwnPropertyDescriptor, C = (e, t, s, a) => {
+var ie = Object.defineProperty, ne = Object.getOwnPropertyDescriptor, $ = (e, t, s, a) => {
   for (var i = a > 1 ? void 0 : a ? ne(t, s) : t, n = e.length - 1, o; n >= 0; n--)
     (o = e[n]) && (i = (a ? o(t, s, i) : o(i)) || i);
   return a && i && ie(t, s, i), i;
@@ -484,22 +484,22 @@ x.styles = T`
       animation: blink 1s step-end infinite;
     }
   `;
-C([
+$([
   g({ type: String })
 ], x.prototype, "role", 2);
-C([
+$([
   g({ type: String })
 ], x.prototype, "content", 2);
-C([
+$([
   g({ type: String })
 ], x.prototype, "timestamp", 2);
-C([
+$([
   g({ type: Boolean, attribute: "is-streaming" })
 ], x.prototype, "isStreaming", 2);
-C([
+$([
   g({ attribute: !1 })
 ], x.prototype, "toolCalls", 2);
-x = C([
+x = $([
   E("shallai-chat-message")
 ], x);
 var oe = Object.defineProperty, re = Object.getOwnPropertyDescriptor, w = (e, t, s, a) => {
@@ -699,7 +699,7 @@ function ce(e, t) {
   const s = e.split("/");
   return s.length >= 2 && s.splice(-2, 2, "workflows", encodeURIComponent(t)), s.join("/");
 }
-function O(e) {
+function A(e) {
   switch (e.status) {
     case "Pending":
       return "Pending";
@@ -736,7 +736,7 @@ var he = Object.defineProperty, de = Object.getOwnPropertyDescriptor, D = (e) =>
   for (var i = a > 1 ? void 0 : a ? de(t, s) : t, n = e.length - 1, o; n >= 0; n--)
     (o = e[n]) && (i = (a ? o(t, s, i) : o(i)) || i);
   return a && i && he(t, s, i), i;
-}, L = (e, t, s) => t.has(e) || D("Cannot " + s), $ = (e, t, s) => (L(e, t, "read from private field"), s ? s.call(e) : t.get(e)), ge = (e, t, s) => t.has(e) ? D("Cannot add the same private member more than once") : t instanceof WeakSet ? t.add(e) : t.set(e, s), me = (e, t, s, a) => (L(e, t, "write to private field"), t.set(e, s), s), y;
+}, L = (e, t, s) => t.has(e) || D("Cannot " + s), C = (e, t, s) => (L(e, t, "read from private field"), s ? s.call(e) : t.get(e)), ge = (e, t, s) => t.has(e) ? D("Cannot add the same private member more than once") : t instanceof WeakSet ? t.add(e) : t.set(e, s), me = (e, t, s, a) => (L(e, t, "write to private field"), t.set(e, s), s), y;
 let h = class extends z {
   constructor() {
     super(), ge(this, y), this._instance = null, this._loading = !0, this._error = !1, this._selectedStepId = null, this._cancelling = !1, this._runNumber = 0, this._streaming = !1, this._providerError = !1, this._chatMessages = [], this._streamingText = "", this._viewingStepId = null, this._historyMessages = [], this._stepCompletable = !1, this._agentResponding = !1, this._toolBatchOpen = !1, this.consumeContext(j, (e) => {
@@ -748,7 +748,7 @@ let h = class extends z {
   }
   async _loadData() {
     try {
-      const e = le(window.location.pathname), t = await $(this, y)?.getLatestToken(), s = await W(e, t);
+      const e = le(window.location.pathname), t = await C(this, y)?.getLatestToken(), s = await W(e, t);
       this._instance = s;
       const a = await U(s.workflowAlias, t), n = X(a).find((o) => o.id === s.id);
       this._runNumber = n?.runNumber ?? 0, this._error = !1;
@@ -780,7 +780,7 @@ let h = class extends z {
       }
       this._viewingStepId = e.id;
       try {
-        const t = await $(this, y)?.getLatestToken(), s = this._instance.id, a = await V(s, e.id, t);
+        const t = await C(this, y)?.getLatestToken(), s = this._instance.id, a = await V(s, e.id, t);
         this._historyMessages = F(a);
       } catch {
         this._historyMessages = [];
@@ -794,7 +794,7 @@ let h = class extends z {
     if (!(this._streaming || !this._instance)) {
       this._streaming = !0, this._providerError = !1, this._viewingStepId = null, this._streamingText = "";
       try {
-        const e = await $(this, y)?.getLatestToken(), t = await K(this._instance.id, e);
+        const e = await C(this, y)?.getLatestToken(), t = await K(this._instance.id, e);
         if (!t.ok) {
           if (t.status === 400) {
             this._providerError = !0;
@@ -997,7 +997,7 @@ let h = class extends z {
           ...this._chatMessages,
           {
             role: "system",
-            content: `Error: ${t.message || "Workflow failed"}`,
+            content: t.message || "An error occurred.",
             timestamp: (/* @__PURE__ */ new Date()).toISOString()
           }
         ];
@@ -1016,7 +1016,7 @@ let h = class extends z {
       }
     ];
     try {
-      const s = await $(this, y)?.getLatestToken();
+      const s = await C(this, y)?.getLatestToken();
       await P(this._instance.id, t, s);
     } catch {
       this._chatMessages = [
@@ -1041,7 +1041,7 @@ let h = class extends z {
       }
     ];
     try {
-      const s = await $(this, y)?.getLatestToken();
+      const s = await C(this, y)?.getLatestToken();
       await P(this._instance.id, t, s);
     } catch {
       this._chatMessages = [
@@ -1073,7 +1073,7 @@ let h = class extends z {
       }
       this._cancelling = !0;
       try {
-        const e = await $(this, y)?.getLatestToken();
+        const e = await C(this, y)?.getLatestToken();
         await G(this._instance.id, e), await this._loadData();
       } catch {
         console.warn("Failed to cancel instance");
@@ -1097,7 +1097,7 @@ let h = class extends z {
                   ${e.status === "Error" ? "error" : ""}
                   ${e.status !== "Pending" ? "clickable" : ""}
                   ${this._selectedStepId === e.id ? "selected" : ""}"
-                aria-label="Step ${t + 1}: ${e.name} — ${O(e)}"
+                aria-label="Step ${t + 1}: ${e.name} — ${A(e)}"
                 @click=${e.status !== "Pending" ? () => this._onStepClick(e) : d}
                 aria-current=${e.status === "Active" ? "step" : d}
               >
@@ -1109,7 +1109,7 @@ let h = class extends z {
                 </div>
                 <div class="step-text">
                   <span class="step-name">${e.name}</span>
-                  <span class="step-subtitle">${O(e)}</span>
+                  <span class="step-subtitle">${A(e)}</span>
                 </div>
               </li>
             `
@@ -1439,4 +1439,4 @@ export {
   h as ShallaiInstanceDetailElement,
   Se as default
 };
-//# sourceMappingURL=shallai-instance-detail.element-v9F9fb_p.js.map
+//# sourceMappingURL=shallai-instance-detail.element-DjjFT_OR.js.map

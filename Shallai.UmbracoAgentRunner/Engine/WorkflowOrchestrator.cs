@@ -109,8 +109,11 @@ public class WorkflowOrchestrator : IWorkflowOrchestrator
 
             if (stepState.Status == StepStatus.Error)
             {
+                var errorCode = context.LlmError?.ErrorCode ?? "step_failed";
+                var errorMessage = context.LlmError?.UserMessage ?? $"Step '{step.Name}' failed";
+
                 // Record step.finished system message
-                await recorder.RecordSystemMessageAsync($"{step.Name} failed", CancellationToken.None);
+                await recorder.RecordSystemMessageAsync(errorMessage, CancellationToken.None);
 
                 // Step failed — emit step.finished and run.error
                 await emitter.EmitStepFinishedAsync(step.Id, "Error", CancellationToken.None);
@@ -127,8 +130,7 @@ public class WorkflowOrchestrator : IWorkflowOrchestrator
                         instanceId, workflowAlias);
                 }
 
-                await emitter.EmitRunErrorAsync("step_failed",
-                    $"Step '{step.Name}' failed", CancellationToken.None);
+                await emitter.EmitRunErrorAsync(errorCode, errorMessage, CancellationToken.None);
                 return;
             }
 

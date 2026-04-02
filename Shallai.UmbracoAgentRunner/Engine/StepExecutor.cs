@@ -185,7 +185,7 @@ public class StepExecutor : IStepExecutor
                 "Step {StepId} completed for workflow {WorkflowAlias} instance {InstanceId}",
                 step.Id, instance.WorkflowAlias, instance.InstanceId);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
         }
@@ -194,6 +194,8 @@ public class StepExecutor : IStepExecutor
             _logger.LogError(ex,
                 "Step {StepId} failed for workflow {WorkflowAlias} instance {InstanceId}",
                 step.Id, instance.WorkflowAlias, instance.InstanceId);
+
+            context.LlmError = LlmErrorClassifier.Classify(ex);
 
             try
             {

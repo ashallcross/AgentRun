@@ -2,6 +2,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using System.Net;
 using NSubstitute.ExceptionExtensions;
 using Shallai.UmbracoAgentRunner.Engine;
 using Shallai.UmbracoAgentRunner.Instances;
@@ -292,5 +293,72 @@ public class StepExecutorTests
 
         await _instanceManager.Received(1).UpdateStepStatusAsync(
             "test-workflow", "inst-001", 0, StepStatus.Complete, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task OperationCanceledException_WithCancelledToken_Rethrows()
+    {
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        _profileResolver.ResolveAndGetClientAsync(Arg.Any<StepDefinition>(), Arg.Any<WorkflowDefinition>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new OperationCanceledException(cts.Token));
+
+        var executor = CreateExecutor();
+        var context = MakeExecutionContext();
+
+        Assert.ThrowsAsync<OperationCanceledException>(
+            () => executor.ExecuteStepAsync(context, cts.Token));
+    }
+
+    [Test]
+    public async Task HttpRequestException429_SetsLlmError_RateLimit()
+    {
+        _profileResolver.ResolveAndGetClientAsync(Arg.Any<StepDefinition>(), Arg.Any<WorkflowDefinition>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new HttpRequestException("Too many requests", null, HttpStatusCode.TooManyRequests));
+
+        var executor = CreateExecutor();
+        var context = MakeExecutionContext();
+
+        await executor.ExecuteStepAsync(context, CancellationToken.None);
+
+        await _instanceManager.Received(1).UpdateStepStatusAsync(
+            "test-workflow", "inst-001", 0, StepStatus.Error, Arg.Any<CancellationToken>());
+        Assert.That(context.LlmError, Is.Not.Null);
+        Assert.That(context.LlmError!.Value.ErrorCode, Is.EqualTo("rate_limit"));
+    }
+
+    [Test]
+    public async Task TaskCanceledException_SetsLlmError_Timeout()
+    {
+        _profileResolver.ResolveAndGetClientAsync(Arg.Any<StepDefinition>(), Arg.Any<WorkflowDefinition>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new TaskCanceledException("The operation timed out"));
+
+        var executor = CreateExecutor();
+        var context = MakeExecutionContext();
+
+        await executor.ExecuteStepAsync(context, CancellationToken.None);
+
+        await _instanceManager.Received(1).UpdateStepStatusAsync(
+            "test-workflow", "inst-001", 0, StepStatus.Error, Arg.Any<CancellationToken>());
+        Assert.That(context.LlmError, Is.Not.Null);
+        Assert.That(context.LlmError!.Value.ErrorCode, Is.EqualTo("timeout"));
+    }
+
+    [Test]
+    public async Task GenericException_SetsLlmError_ProviderError()
+    {
+        _profileResolver.ResolveAndGetClientAsync(Arg.Any<StepDefinition>(), Arg.Any<WorkflowDefinition>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new Exception("Something broke"));
+
+        var executor = CreateExecutor();
+        var context = MakeExecutionContext();
+
+        await executor.ExecuteStepAsync(context, CancellationToken.None);
+
+        await _instanceManager.Received(1).UpdateStepStatusAsync(
+            "test-workflow", "inst-001", 0, StepStatus.Error, Arg.Any<CancellationToken>());
+        Assert.That(context.LlmError, Is.Not.Null);
+        Assert.That(context.LlmError!.Value.ErrorCode, Is.EqualTo("provider_error"));
     }
 }

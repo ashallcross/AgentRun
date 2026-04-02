@@ -122,3 +122,7 @@
 
 - **Failed+interactive: list shows "In progress" but instance-detail shows "Workflow complete"** — `displayStatus("Failed", "interactive")` returns "In progress" (AC #7), but `shallai-instance-detail.element.ts` line 824 treats Failed as `isTerminal = true`, showing "Workflow complete" with input disabled. Story 7.2 (step retry) must make Failed non-terminal in interactive mode — the Retry button can't coexist with "Workflow complete" / disabled input. This resolves naturally when 7.2 is specced.
 - **Cancelled autonomous instance shows "Workflow complete" placeholder** — Instance-detail's `isTerminal` check includes "Cancelled", showing "Workflow complete" which is technically inaccurate for a cancelled run. Minor, cosmetic-only.
+
+## Deferred from: code review of 7-1-llm-error-detection-and-reporting (2026-04-02)
+
+- No inner exception inspection in LlmErrorClassifier — provider SDKs may wrap HttpRequestException in their own exception types. Walking `InnerException` would improve classification accuracy but is a pre-existing gap not introduced by this change. [Engine/LlmErrorClassifier.cs]

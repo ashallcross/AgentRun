@@ -639,7 +639,7 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
           ...this._chatMessages,
           {
             role: "system",
-            content: `Error: ${(data.message as string) || "Workflow failed"}`,
+            content: (data.message as string) || "An error occurred.",
             timestamp: new Date().toISOString(),
           },
         ];

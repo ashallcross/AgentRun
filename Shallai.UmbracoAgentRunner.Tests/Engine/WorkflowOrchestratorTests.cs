@@ -183,6 +183,47 @@ public class WorkflowOrchestratorTests
     }
 
     [Test]
+    public async Task StepFailsWithLlmError_EmitsClassifiedErrorCodeAndMessage()
+    {
+        SetUpWorkflow("interactive");
+        SetUpInstance(0, 2, StepStatus.Error);
+
+        // When step executor runs, set LlmError on the context
+        _stepExecutor.ExecuteStepAsync(Arg.Any<StepExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                var ctx = callInfo.Arg<StepExecutionContext>();
+                ctx.LlmError = ("rate_limit", "The AI provider returned a rate limit error. Wait a moment and retry.");
+                return Task.CompletedTask;
+            });
+
+        await _orchestrator.ExecuteNextStepAsync("test-wf", "inst-001", _emitter, CancellationToken.None);
+
+        await _emitter.Received(1).EmitRunErrorAsync(
+            "rate_limit",
+            "The AI provider returned a rate limit error. Wait a moment and retry.",
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task StepFailsWithoutLlmError_EmitsStepFailedGenericError()
+    {
+        SetUpWorkflow("interactive");
+        SetUpInstance(0, 2, StepStatus.Error);
+
+        // Step executor does NOT set LlmError (non-LLM failure)
+        _stepExecutor.ExecuteStepAsync(Arg.Any<StepExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        await _orchestrator.ExecuteNextStepAsync("test-wf", "inst-001", _emitter, CancellationToken.None);
+
+        await _emitter.Received(1).EmitRunErrorAsync(
+            "step_failed",
+            "Step 'Step 0' failed",
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task SseEventsEmittedInCorrectOrder()
     {
         SetUpWorkflow("interactive", 1);

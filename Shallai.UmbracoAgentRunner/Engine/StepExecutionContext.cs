@@ -13,4 +13,7 @@ public sealed record StepExecutionContext(
     string WorkflowFolderPath,
     ISseEventEmitter? EventEmitter = null,
     IConversationRecorder? ConversationRecorder = null,
-    ChannelReader<string>? UserMessageReader = null);
+    ChannelReader<string>? UserMessageReader = null)
+{
+    public (string ErrorCode, string UserMessage)? LlmError { get; set; }
+}
