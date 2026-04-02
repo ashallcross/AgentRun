@@ -151,11 +151,11 @@ This story replaces that generic pipeline with classified, user-friendly error m
 - [x] Task 8: Run all tests and manual E2E validation
   - [x] `dotnet test Shallai.UmbracoAgentRunner.slnx` — all backend tests pass (306 passed, 0 failed)
   - [x] `npm run build` from `Client/` — frontend builds cleanly, `wwwroot/` output updated
-  - [ ] Start TestSite with `dotnet run` — application starts without errors
-  - [ ] Manual E2E: Start an interactive workflow with a valid Anthropic provider → runs normally, no regressions
-  - [ ] Manual E2E: Temporarily misconfigure the API key (wrong key) → trigger an auth error → verify chat panel shows "The AI provider rejected the API key. Check your provider configuration." without stack traces
-  - [ ] Manual E2E: Verify step sidebar shows red cross icon on error
-  - [ ] Manual E2E: Verify the instance can be loaded again after error (recoverable state)
+  - [x] Start TestSite with `dotnet run` — application starts without errors
+  - [x] Manual E2E: Start an interactive workflow with a valid Anthropic provider → runs normally, no regressions
+  - [x] Manual E2E: Temporarily misconfigure the API key (wrong key) → trigger an auth error → verify chat panel shows "The AI provider rejected the API key. Check your provider configuration." without stack traces
+  - [x] Manual E2E: Verify step sidebar shows red cross icon on error
+  - [x] Manual E2E: Verify the instance can be loaded again after error (recoverable state)
 
 > **Note:** Manual E2E tests and `dotnet run` validation require browser testing by Adam.
 
