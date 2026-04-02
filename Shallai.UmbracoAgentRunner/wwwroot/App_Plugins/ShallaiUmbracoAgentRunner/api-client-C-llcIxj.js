@@ -19,7 +19,7 @@ async function l(e, n) {
     throw new Error(`API error: ${o.status} ${o.statusText}`);
   return o.json();
 }
-async function c(e, n, t) {
+async function i(e, n, t) {
   const o = {
     Accept: "application/json",
     "Content-Type": "application/json"
@@ -40,16 +40,16 @@ function h(e) {
 function d(e, n) {
   return l(`/instances?workflowAlias=${encodeURIComponent(e)}`, n);
 }
-function C(e, n) {
-  return c("/instances", { workflowAlias: e }, n);
+function $(e, n) {
+  return i("/instances", { workflowAlias: e }, n);
 }
-function I(e, n) {
+function C(e, n) {
   return l(`/instances/${encodeURIComponent(e)}`, n);
 }
-function $(e, n) {
-  return c(`/instances/${encodeURIComponent(e)}/cancel`, {}, n);
+function I(e, n) {
+  return i(`/instances/${encodeURIComponent(e)}/cancel`, {}, n);
 }
-async function g(e, n, t) {
+async function y(e, n, t) {
   const o = { "Content-Type": "application/json" };
   t && (o.Authorization = `Bearer ${t}`);
   const s = await fetch(
@@ -59,20 +59,27 @@ async function g(e, n, t) {
   if (!s.ok)
     throw new Error(`API error: ${s.status} ${s.statusText}`);
 }
-async function y(e, n) {
+async function g(e, n) {
   const t = {};
   return n && (t.Authorization = `Bearer ${n}`), fetch(`${a}/instances/${encodeURIComponent(e)}/start`, {
     method: "POST",
     headers: t
   });
 }
-function A(e, n, t) {
+async function A(e, n) {
+  const t = {};
+  return n && (t.Authorization = `Bearer ${n}`), fetch(`${a}/instances/${encodeURIComponent(e)}/retry`, {
+    method: "POST",
+    headers: t
+  });
+}
+function w(e, n, t) {
   return l(
     `/instances/${encodeURIComponent(e)}/conversation/${encodeURIComponent(n)}`,
     t
   );
 }
-function w(e) {
+function T(e) {
   const n = [];
   for (const t of e)
     if (t.role === "assistant" && t.content != null && !t.toolCallId)
@@ -106,9 +113,9 @@ function w(e) {
     } else if (t.role === "tool" && t.toolCallId) {
       const o = t.toolResult ?? null, s = typeof o == "string" && o.startsWith("Tool '") && (o.includes("error") || o.includes("failed"));
       for (let r = n.length - 1; r >= 0; r--) {
-        const i = n[r].toolCalls?.find((u) => u.toolCallId === t.toolCallId);
-        if (i) {
-          i.result = o, s && (i.status = "error");
+        const c = n[r].toolCalls?.find((u) => u.toolCallId === t.toolCallId);
+        if (c) {
+          c.result = o, s && (c.status = "error");
           break;
         }
       }
@@ -130,14 +137,15 @@ function p(e) {
 }
 export {
   d as a,
-  I as b,
-  C as c,
-  A as d,
+  C as b,
+  $ as c,
+  w as d,
   f as e,
-  g as f,
+  y as f,
   h as g,
-  $ as h,
-  w as m,
-  y as s
+  I as h,
+  T as m,
+  A as r,
+  g as s
 };
-//# sourceMappingURL=api-client-NjdX6lGK.js.map
+//# sourceMappingURL=api-client-C-llcIxj.js.map

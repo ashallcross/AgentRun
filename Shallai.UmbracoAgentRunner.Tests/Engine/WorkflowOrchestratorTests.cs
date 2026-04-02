@@ -224,6 +224,54 @@ public class WorkflowOrchestratorTests
     }
 
     [Test]
+    public async Task RetryScenario_PendingStep_ExecutesAndCompletes()
+    {
+        SetUpWorkflow("interactive", 1);
+
+        // Simulate retry: step was reset to Pending after Error
+        var beforeExec = CreateInstance(0, 1);
+        beforeExec.Steps[0].Status = StepStatus.Pending;
+
+        var afterExec = CreateInstance(0, 1);
+        afterExec.Steps[0].Status = StepStatus.Complete;
+
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>())
+            .Returns(beforeExec, afterExec);
+
+        await _orchestrator.ExecuteNextStepAsync("test-wf", "inst-001", _emitter, CancellationToken.None);
+
+        await _stepExecutor.Received(1).ExecuteStepAsync(
+            Arg.Any<StepExecutionContext>(), Arg.Any<CancellationToken>());
+
+        await _instanceManager.Received(1).SetInstanceStatusAsync(
+            "test-wf", "inst-001", InstanceStatus.Completed, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RetryScenario_StepFailsAgain_InstanceGoesBackToFailed()
+    {
+        SetUpWorkflow("interactive", 2);
+
+        // Simulate retry: step 0 reset to Pending
+        var beforeExec = CreateInstance(0, 2);
+        beforeExec.Steps[0].Status = StepStatus.Pending;
+
+        var afterExec = CreateInstance(0, 2);
+        afterExec.Steps[0].Status = StepStatus.Error;
+
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>())
+            .Returns(beforeExec, afterExec);
+
+        await _orchestrator.ExecuteNextStepAsync("test-wf", "inst-001", _emitter, CancellationToken.None);
+
+        await _instanceManager.Received(1).SetInstanceStatusAsync(
+            "test-wf", "inst-001", InstanceStatus.Failed, Arg.Any<CancellationToken>());
+
+        await _emitter.Received(1).EmitRunErrorAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task SseEventsEmittedInCorrectOrder()
     {
         SetUpWorkflow("interactive", 1);

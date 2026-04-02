@@ -10,6 +10,7 @@ public class StepExecutor : IStepExecutor
     private readonly IPromptAssembler _promptAssembler;
     private readonly IEnumerable<IWorkflowTool> _allTools;
     private readonly IInstanceManager _instanceManager;
+    private readonly IConversationStore _conversationStore;
     private readonly IArtifactValidator _artifactValidator;
     private readonly ICompletionChecker _completionChecker;
     private readonly ILogger<StepExecutor> _logger;
@@ -19,6 +20,7 @@ public class StepExecutor : IStepExecutor
         IPromptAssembler promptAssembler,
         IEnumerable<IWorkflowTool> allTools,
         IInstanceManager instanceManager,
+        IConversationStore conversationStore,
         IArtifactValidator artifactValidator,
         ICompletionChecker completionChecker,
         ILogger<StepExecutor> logger)
@@ -27,6 +29,7 @@ public class StepExecutor : IStepExecutor
         _promptAssembler = promptAssembler;
         _allTools = allTools;
         _instanceManager = instanceManager;
+        _conversationStore = conversationStore;
         _artifactValidator = artifactValidator;
         _completionChecker = completionChecker;
         _logger = logger;
@@ -128,11 +131,24 @@ public class StepExecutor : IStepExecutor
                 aiTools.Add(new ToolDeclaration(tool.Name, tool.Description, tool.ParameterSchema));
             }
 
-            // Build initial messages
+            // Build initial messages — start with fresh system prompt
             var messages = new List<ChatMessage>
             {
                 new(ChatRole.System, prompt)
             };
+
+            // Load existing conversation history (retry scenario — prior tool calls and messages)
+            var history = await _conversationStore.GetHistoryAsync(
+                instance.WorkflowAlias, instance.InstanceId, step.Id, cancellationToken);
+
+            if (history.Count > 0)
+            {
+                _logger.LogInformation(
+                    "Loading {EntryCount} conversation history entries for retry of step {StepId} in workflow {WorkflowAlias} instance {InstanceId}",
+                    history.Count, step.Id, instance.WorkflowAlias, instance.InstanceId);
+
+                messages.AddRange(ConvertHistoryToMessages(history));
+            }
 
             var chatOptions = new ChatOptions { Tools = aiTools };
 
@@ -208,6 +224,83 @@ public class StepExecutor : IStepExecutor
                     "Failed to update step status to Error for step {StepId} in workflow {WorkflowAlias} instance {InstanceId}",
                     step.Id, instance.WorkflowAlias, instance.InstanceId);
             }
+        }
+    }
+
+    internal static IEnumerable<ChatMessage> ConvertHistoryToMessages(IReadOnlyList<ConversationEntry> history)
+    {
+        var messages = new List<ChatMessage>();
+
+        foreach (var entry in history)
+        {
+            switch (entry.Role)
+            {
+                case "system":
+                    // Skip — fresh system prompt is already prepended
+                    break;
+
+                case "user":
+                    messages.Add(new ChatMessage(ChatRole.User, entry.Content));
+                    break;
+
+                case "assistant" when entry.ToolCallId is not null:
+                {
+                    // Tool call entry — group consecutive tool calls into one ChatMessage
+                    var last = messages.Count > 0 ? messages[^1] : null;
+                    if (last is not null && last.Role == ChatRole.Assistant
+                        && last.Contents.OfType<FunctionCallContent>().Any())
+                    {
+                        // Append to existing tool-call assistant message
+                        last.Contents.Add(new FunctionCallContent(
+                            entry.ToolCallId,
+                            entry.ToolName ?? string.Empty,
+                            ParseArguments(entry.ToolArguments)));
+                    }
+                    else
+                    {
+                        var msg = new ChatMessage(ChatRole.Assistant,
+                        [
+                            new FunctionCallContent(
+                                entry.ToolCallId,
+                                entry.ToolName ?? string.Empty,
+                                ParseArguments(entry.ToolArguments))
+                        ]);
+                        messages.Add(msg);
+                    }
+
+                    break;
+                }
+
+                case "assistant":
+                    messages.Add(new ChatMessage(ChatRole.Assistant, entry.Content));
+                    break;
+
+                case "tool" when entry.ToolCallId is not null:
+                    messages.Add(new ChatMessage(ChatRole.Tool,
+                    [
+                        new FunctionResultContent(entry.ToolCallId, entry.ToolResult)
+                    ]));
+                    break;
+            }
+        }
+
+        return messages;
+    }
+
+    private static IDictionary<string, object?>? ParseArguments(string? argumentsJson)
+    {
+        if (string.IsNullOrEmpty(argumentsJson))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<Dictionary<string, object?>>(argumentsJson);
+        }
+        catch (JsonException)
+        {
+            return null;
         }
     }
 

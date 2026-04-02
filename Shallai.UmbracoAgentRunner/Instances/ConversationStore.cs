@@ -85,6 +85,61 @@ public sealed class ConversationStore : IConversationStore
         return entries;
     }
 
+    public async Task TruncateLastAssistantEntryAsync(string workflowAlias, string instanceId, string stepId, CancellationToken cancellationToken)
+    {
+        var filePath = GetConversationFilePath(workflowAlias, instanceId, stepId);
+
+        if (!File.Exists(filePath))
+        {
+            _logger.LogDebug("No conversation file to truncate for {WorkflowAlias}/{InstanceId}/{StepId}", workflowAlias, instanceId, stepId);
+            return;
+        }
+
+        var lines = await File.ReadAllLinesAsync(filePath, cancellationToken);
+        var nonEmptyLines = lines.Where(l => !string.IsNullOrWhiteSpace(l)).ToList();
+
+        // Find the last entry with role == "assistant" (text or tool call) and remove it.
+        // Per the story: "remove the final failed assistant message" — the last assistant entry.
+        var lastAssistantIndex = -1;
+        for (var i = nonEmptyLines.Count - 1; i >= 0; i--)
+        {
+            try
+            {
+                var entry = JsonSerializer.Deserialize<ConversationEntry>(nonEmptyLines[i], SerializerOptions);
+                if (entry is not null && string.Equals(entry.Role, "assistant", StringComparison.OrdinalIgnoreCase))
+                {
+                    lastAssistantIndex = i;
+                    break;
+                }
+            }
+            catch (JsonException)
+            {
+                // Skip corrupted lines during search
+            }
+        }
+
+        if (lastAssistantIndex == -1)
+        {
+            _logger.LogDebug("No assistant entry to truncate for {WorkflowAlias}/{InstanceId}/{StepId}", workflowAlias, instanceId, stepId);
+            return;
+        }
+
+        nonEmptyLines.RemoveAt(lastAssistantIndex);
+
+        _logger.LogInformation("Truncating last assistant entry for retry: {WorkflowAlias}/{InstanceId}/{StepId}", workflowAlias, instanceId, stepId);
+
+        // Atomic rewrite: write to .tmp then move
+        var tmpPath = filePath + ".tmp";
+        var content = string.Join(Environment.NewLine, nonEmptyLines);
+        if (nonEmptyLines.Count > 0)
+        {
+            content += Environment.NewLine;
+        }
+
+        await File.WriteAllTextAsync(tmpPath, content, cancellationToken);
+        File.Move(tmpPath, filePath, overwrite: true);
+    }
+
     private string GetConversationFilePath(string workflowAlias, string instanceId, string stepId)
     {
         string instanceFolder;

@@ -18,6 +18,7 @@ public class ExecutionEndpoints : ControllerBase
     private readonly IProfileResolver _profileResolver;
     private readonly IWorkflowOrchestrator _workflowOrchestrator;
     private readonly IWorkflowRegistry _workflowRegistry;
+    private readonly IConversationStore _conversationStore;
     private readonly IActiveInstanceRegistry _activeInstanceRegistry;
     private readonly ILogger<ExecutionEndpoints> _logger;
     private readonly ILoggerFactory _loggerFactory;
@@ -27,6 +28,7 @@ public class ExecutionEndpoints : ControllerBase
         IProfileResolver profileResolver,
         IWorkflowOrchestrator workflowOrchestrator,
         IWorkflowRegistry workflowRegistry,
+        IConversationStore conversationStore,
         IActiveInstanceRegistry activeInstanceRegistry,
         ILogger<ExecutionEndpoints> logger,
         ILoggerFactory loggerFactory)
@@ -35,6 +37,7 @@ public class ExecutionEndpoints : ControllerBase
         _profileResolver = profileResolver;
         _workflowOrchestrator = workflowOrchestrator;
         _workflowRegistry = workflowRegistry;
+        _conversationStore = conversationStore;
         _activeInstanceRegistry = activeInstanceRegistry;
         _logger = logger;
         _loggerFactory = loggerFactory;
@@ -100,7 +103,64 @@ public class ExecutionEndpoints : ControllerBase
                 instance.WorkflowAlias, instance.InstanceId, InstanceStatus.Running, cancellationToken);
         }
 
-        // Configure SSE response
+        return await ExecuteSseAsync(instance, cancellationToken);
+    }
+
+    [HttpPost("instances/{id}/retry")]
+    [ProducesResponseType(200)]
+    [ProducesResponseType<ErrorResponse>(404)]
+    [ProducesResponseType<ErrorResponse>(409)]
+    public async Task<IActionResult> RetryInstance(string id, CancellationToken cancellationToken)
+    {
+        var instance = await _instanceManager.FindInstanceAsync(id, cancellationToken);
+        if (instance is null)
+        {
+            return NotFound(new ErrorResponse
+            {
+                Error = "instance_not_found",
+                Message = $"Instance '{id}' was not found."
+            });
+        }
+
+        if (instance.Status != InstanceStatus.Failed)
+        {
+            return Conflict(new ErrorResponse
+            {
+                Error = "invalid_state",
+                Message = "Instance is not in a failed state"
+            });
+        }
+
+        // Find the step in error
+        var errorStepIndex = instance.Steps.FindIndex(s => s.Status == StepStatus.Error);
+        if (errorStepIndex == -1)
+        {
+            return Conflict(new ErrorResponse
+            {
+                Error = "invalid_state",
+                Message = "No step in error state found"
+            });
+        }
+
+        var errorStep = instance.Steps[errorStepIndex];
+
+        // Truncate the failed assistant message from conversation
+        await _conversationStore.TruncateLastAssistantEntryAsync(
+            instance.WorkflowAlias, instance.InstanceId, errorStep.Id, cancellationToken);
+
+        // Reset step to Pending so the executor handles the Active transition
+        await _instanceManager.UpdateStepStatusAsync(
+            instance.WorkflowAlias, instance.InstanceId, errorStepIndex, StepStatus.Pending, cancellationToken);
+
+        // Set instance back to Running
+        instance = await _instanceManager.SetInstanceStatusAsync(
+            instance.WorkflowAlias, instance.InstanceId, InstanceStatus.Running, cancellationToken);
+
+        return await ExecuteSseAsync(instance, cancellationToken);
+    }
+
+    private async Task<IActionResult> ExecuteSseAsync(InstanceState instance, CancellationToken cancellationToken)
+    {
         SseHelper.ConfigureSseResponse(Response);
 
         var emitter = new SseEventEmitter(
@@ -157,7 +217,6 @@ public class ExecutionEndpoints : ControllerBase
             }
         }
 
-        // SSE stream ends naturally when the method returns
         return new EmptyResult();
     }
 

@@ -17,6 +17,7 @@ public class StepExecutorTests
     private IProfileResolver _profileResolver = null!;
     private IPromptAssembler _promptAssembler = null!;
     private IInstanceManager _instanceManager = null!;
+    private IConversationStore _conversationStore = null!;
     private IArtifactValidator _artifactValidator = null!;
     private ICompletionChecker _completionChecker = null!;
     private IChatClient _chatClient = null!;
@@ -28,6 +29,7 @@ public class StepExecutorTests
         _profileResolver = Substitute.For<IProfileResolver>();
         _promptAssembler = Substitute.For<IPromptAssembler>();
         _instanceManager = Substitute.For<IInstanceManager>();
+        _conversationStore = Substitute.For<IConversationStore>();
         _artifactValidator = Substitute.For<IArtifactValidator>();
         _completionChecker = Substitute.For<ICompletionChecker>();
         _chatClient = Substitute.For<IChatClient>();
@@ -44,6 +46,10 @@ public class StepExecutorTests
         // Default: instance manager returns updated state
         _instanceManager.UpdateStepStatusAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<StepStatus>(), Arg.Any<CancellationToken>())
             .Returns(callInfo => MakeInstance());
+
+        // Default: conversation store returns empty history (first-run scenario)
+        _conversationStore.GetHistoryAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<ConversationEntry>());
 
         // Default: streaming chat client returns no tool calls (text only)
         _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
@@ -71,6 +77,7 @@ public class StepExecutorTests
             _promptAssembler,
             tools ?? [],
             _instanceManager,
+            _conversationStore,
             _artifactValidator,
             _completionChecker,
             _logger);
@@ -194,7 +201,7 @@ public class StepExecutorTests
     {
         // AC #11: structured logging with WorkflowAlias, InstanceId, StepId
         var loggerSub = Substitute.For<ILogger<StepExecutor>>();
-        var executor = new StepExecutor(_profileResolver, _promptAssembler, [], _instanceManager, _artifactValidator, _completionChecker, loggerSub);
+        var executor = new StepExecutor(_profileResolver, _promptAssembler, [], _instanceManager, _conversationStore, _artifactValidator, _completionChecker, loggerSub);
         var context = MakeExecutionContext();
 
         await executor.ExecuteStepAsync(context, CancellationToken.None);
@@ -343,6 +350,107 @@ public class StepExecutorTests
             "test-workflow", "inst-001", 0, StepStatus.Error, Arg.Any<CancellationToken>());
         Assert.That(context.LlmError, Is.Not.Null);
         Assert.That(context.LlmError!.Value.ErrorCode, Is.EqualTo("timeout"));
+    }
+
+    [Test]
+    public async Task WithConversationHistory_ToolLoopReceivesSystemPromptPlusHistory()
+    {
+        var history = new List<ConversationEntry>
+        {
+            new() { Role = "user", Content = "Check the homepage", Timestamp = DateTime.UtcNow },
+            new() { Role = "assistant", Content = "I'll check it now", Timestamp = DateTime.UtcNow }
+        };
+
+        _conversationStore.GetHistoryAsync("test-workflow", "inst-001", "step-1", Arg.Any<CancellationToken>())
+            .Returns(history);
+
+        List<ChatMessage>? snapshot = null;
+        _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                snapshot = callInfo.Arg<IEnumerable<ChatMessage>>().ToList();
+                return StreamText("ok");
+            });
+
+        var executor = CreateExecutor();
+        var context = MakeExecutionContext();
+
+        await executor.ExecuteStepAsync(context, CancellationToken.None);
+
+        Assert.That(snapshot, Is.Not.Null);
+        // System prompt + user message + assistant message = 3
+        Assert.That(snapshot, Has.Count.EqualTo(3));
+        Assert.That(snapshot![0].Role, Is.EqualTo(ChatRole.System));
+        Assert.That(snapshot[1].Role, Is.EqualTo(ChatRole.User));
+        Assert.That(snapshot[1].Text, Is.EqualTo("Check the homepage"));
+        Assert.That(snapshot[2].Role, Is.EqualTo(ChatRole.Assistant));
+        Assert.That(snapshot[2].Text, Is.EqualTo("I'll check it now"));
+    }
+
+    [Test]
+    public async Task WithEmptyHistory_ToolLoopReceivesSystemPromptOnly()
+    {
+        _conversationStore.GetHistoryAsync("test-workflow", "inst-001", "step-1", Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<ConversationEntry>());
+
+        List<ChatMessage>? snapshot = null;
+        _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                snapshot = callInfo.Arg<IEnumerable<ChatMessage>>().ToList();
+                return StreamText("ok");
+            });
+
+        var executor = CreateExecutor();
+        var context = MakeExecutionContext();
+
+        await executor.ExecuteStepAsync(context, CancellationToken.None);
+
+        Assert.That(snapshot, Is.Not.Null);
+        Assert.That(snapshot, Has.Count.EqualTo(1));
+        Assert.That(snapshot![0].Role, Is.EqualTo(ChatRole.System));
+    }
+
+    [Test]
+    public async Task WithToolCallHistory_ConvertsToFunctionCallContent()
+    {
+        var history = new List<ConversationEntry>
+        {
+            new() { Role = "assistant", ToolCallId = "tc_001", ToolName = "read_file", ToolArguments = "{\"path\":\"test.md\"}", Timestamp = DateTime.UtcNow },
+            new() { Role = "tool", ToolCallId = "tc_001", ToolResult = "file contents here", Timestamp = DateTime.UtcNow }
+        };
+
+        _conversationStore.GetHistoryAsync("test-workflow", "inst-001", "step-1", Arg.Any<CancellationToken>())
+            .Returns(history);
+
+        List<ChatMessage>? snapshot = null;
+        _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                snapshot = callInfo.Arg<IEnumerable<ChatMessage>>().ToList();
+                return StreamText("ok");
+            });
+
+        var executor = CreateExecutor();
+        var context = MakeExecutionContext();
+
+        await executor.ExecuteStepAsync(context, CancellationToken.None);
+
+        Assert.That(snapshot, Is.Not.Null);
+        Assert.That(snapshot, Has.Count.EqualTo(3)); // system + assistant(tool call) + tool(result)
+
+        var assistantMsg = snapshot![1];
+        Assert.That(assistantMsg.Role, Is.EqualTo(ChatRole.Assistant));
+        var functionCall = assistantMsg.Contents.OfType<FunctionCallContent>().FirstOrDefault();
+        Assert.That(functionCall, Is.Not.Null);
+        Assert.That(functionCall!.CallId, Is.EqualTo("tc_001"));
+        Assert.That(functionCall.Name, Is.EqualTo("read_file"));
+
+        var toolMsg = snapshot[2];
+        Assert.That(toolMsg.Role, Is.EqualTo(ChatRole.Tool));
+        var functionResult = toolMsg.Contents.OfType<FunctionResultContent>().FirstOrDefault();
+        Assert.That(functionResult, Is.Not.Null);
+        Assert.That(functionResult!.CallId, Is.EqualTo("tc_001"));
     }
 
     [Test]

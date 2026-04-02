@@ -89,6 +89,15 @@ export async function startInstance(id: string, token?: string): Promise<Respons
   });
 }
 
+export async function retryInstance(id: string, token?: string): Promise<Response> {
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return fetch(`${API_BASE}/instances/${encodeURIComponent(id)}/retry`, {
+    method: "POST",
+    headers,
+  });
+}
+
 export function getConversation(instanceId: string, stepId: string, token?: string): Promise<ConversationEntryResponse[]> {
   return fetchJson<ConversationEntryResponse[]>(
     `/instances/${encodeURIComponent(instanceId)}/conversation/${encodeURIComponent(stepId)}`,

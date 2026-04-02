@@ -101,7 +101,7 @@
 - Engine→Services architecture boundary — `WorkflowOrchestrator` (Engine/) directly instantiates `ConversationRecorder` (Services/) via `new ConversationRecorder(...)` with `using Shallai.UmbracoAgentRunner.Services`. Should use a factory or inject `IConversationRecorder` to keep Engine dependency-free. Designed into story spec Task 4; refactor in a future story.
 - step.finished SSE payload lacks stepName — `StepFinishedPayload` only carries `(StepId, Status)`. Frontend falls back to `stepId` when `stepName` is undefined. Pre-existing payload design from Story 4.5.
 - CancellationToken inconsistency between success and error paths in ToolLoop — error path correctly uses `CancellationToken.None` for best-effort recording before rethrow, but success path uses live `cancellationToken`. If cancellation fires between streaming completion and recording, assistant text is lost. Low impact since `ConversationRecorder` swallows exceptions anyway.
-- Navigating away from a running instance and returning shows empty chat panel — the SSE stream was tied to the old component instance and there's no reconnection. On re-mount, the component should load conversation history for the active step so at least prior messages are visible (read-only). Related to NFR5 reconnection but could be partially addressed by loading existing conversation data on mount when instance status is Running.
+- ~~Navigating away from a running instance and returning shows empty chat panel~~ — **RESOLVED in Story 7.2**: `_loadData()` now loads conversation history for the current step (Active/Error/last Complete) on mount when not streaming. Prior messages are visible on return. SSE reconnection (NFR5) still deferred.
 - Chat panel and instance detail grid need fixed viewport height layout — currently the whole page scrolls instead of the chat panel scrolling independently within a viewport-filling region. The UX spec calls for "fixed-height regions" with `uui-scroll-container` and "input area pinned to bottom" (Story 6.4). The `.detail-grid` should fill available viewport height so the chat panel's scroll container works within a constrained area. Address when Story 6.4 adds the input area — the pinned input + fixed-height chat is one layout change.
 
 ## Deferred from: code review of 6-3-tool-call-display (2026-04-01)
@@ -126,3 +126,12 @@
 ## Deferred from: code review of 7-1-llm-error-detection-and-reporting (2026-04-02)
 
 - No inner exception inspection in LlmErrorClassifier — provider SDKs may wrap HttpRequestException in their own exception types. Walking `InnerException` would improve classification accuracy but is a pre-existing gap not introduced by this change. [Engine/LlmErrorClassifier.cs]
+
+## Deferred from: code review of 7-2-step-retry-with-context-management (2026-04-02)
+
+- Test RetryInstance_FailedInstance relies on NullReferenceException catch — test verifies state mutations by catching NullReferenceException from missing HttpResponse. Brittle but doesn't affect production code. Pre-existing test pattern across endpoint tests.
+- File truncation not concurrency-safe — TruncateLastAssistantEntryAsync does read-modify-write without locking. Same pre-existing pattern across all ConversationStore file operations (AppendAsync also has no lock). Per-instance SemaphoreSlim from 3-1 deferred item covers this.
+- Truncation of tool-call assistant entry could leave orphaned tool results — if last assistant entry is a tool-call, removing it leaves orphaned tool-result entries. Theoretical; error always occurs during LLM call, not after tool execution.
+- No rollback if status update throws after truncation — truncation modifies conversation file before status updates; if status update throws, conversation is truncated but instance remains Failed. Pre-existing pattern; no transactions across file+state operations.
+- FindIndex returns first Error step not last — if multiple steps somehow have Error status, wrong step gets retried. Only one step can be in Error per orchestrator flow.
+- Consecutive assistant text + tool-call entries produce two adjacent assistant messages in ConvertHistoryToMessages — some LLM providers reject consecutive same-role messages. Theoretical; providers don't mix text and tool calls in same turn.

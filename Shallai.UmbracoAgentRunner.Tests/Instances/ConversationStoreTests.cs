@@ -232,6 +232,98 @@ public class ConversationStoreTests
     }
 
     [Test]
+    public async Task TruncateLastAssistantEntryAsync_RemovesLastAssistantEntry_PreservesAllPrior()
+    {
+        var instanceDir = Path.Combine(_tempDir, "test-workflow", "inst-001");
+        Directory.CreateDirectory(instanceDir);
+
+        await _store.AppendAsync("test-workflow", "inst-001", "step-one",
+            CreateTestEntry(role: "system", content: "System prompt"), CancellationToken.None);
+        await _store.AppendAsync("test-workflow", "inst-001", "step-one",
+            CreateTestEntry(role: "assistant", content: "First response"), CancellationToken.None);
+        await _store.AppendAsync("test-workflow", "inst-001", "step-one",
+            CreateTestEntry(role: "user", content: "User follow-up"), CancellationToken.None);
+        await _store.AppendAsync("test-workflow", "inst-001", "step-one",
+            CreateTestEntry(role: "assistant", content: "Failed response"), CancellationToken.None);
+
+        await _store.TruncateLastAssistantEntryAsync("test-workflow", "inst-001", "step-one", CancellationToken.None);
+
+        var history = await _store.GetHistoryAsync("test-workflow", "inst-001", "step-one", CancellationToken.None);
+        Assert.That(history, Has.Count.EqualTo(3));
+        Assert.That(history[0].Role, Is.EqualTo("system"));
+        Assert.That(history[1].Role, Is.EqualTo("assistant"));
+        Assert.That(history[1].Content, Is.EqualTo("First response"));
+        Assert.That(history[2].Role, Is.EqualTo("user"));
+    }
+
+    [Test]
+    public async Task TruncateLastAssistantEntryAsync_NoAssistantEntries_IsNoOp()
+    {
+        var instanceDir = Path.Combine(_tempDir, "test-workflow", "inst-001");
+        Directory.CreateDirectory(instanceDir);
+
+        await _store.AppendAsync("test-workflow", "inst-001", "step-one",
+            CreateTestEntry(role: "system", content: "System prompt"), CancellationToken.None);
+        await _store.AppendAsync("test-workflow", "inst-001", "step-one",
+            CreateTestEntry(role: "user", content: "Hello"), CancellationToken.None);
+
+        await _store.TruncateLastAssistantEntryAsync("test-workflow", "inst-001", "step-one", CancellationToken.None);
+
+        var history = await _store.GetHistoryAsync("test-workflow", "inst-001", "step-one", CancellationToken.None);
+        Assert.That(history, Has.Count.EqualTo(2));
+    }
+
+    [Test]
+    public async Task TruncateLastAssistantEntryAsync_NonExistentFile_IsNoOp()
+    {
+        // Should not throw
+        await _store.TruncateLastAssistantEntryAsync("test-workflow", "inst-001", "no-step", CancellationToken.None);
+    }
+
+    [Test]
+    public async Task TruncateLastAssistantEntryAsync_PreservesToolCallAssistantEntries()
+    {
+        var instanceDir = Path.Combine(_tempDir, "test-workflow", "inst-001");
+        Directory.CreateDirectory(instanceDir);
+
+        await _store.AppendAsync("test-workflow", "inst-001", "step-one",
+            CreateTestEntry(role: "assistant", toolCallId: "tc_001", toolName: "read_file", toolArguments: "{\"path\":\"test.md\"}"), CancellationToken.None);
+        await _store.AppendAsync("test-workflow", "inst-001", "step-one",
+            CreateTestEntry(role: "tool", toolCallId: "tc_001", toolResult: "file contents"), CancellationToken.None);
+        await _store.AppendAsync("test-workflow", "inst-001", "step-one",
+            CreateTestEntry(role: "assistant", content: "Failed response"), CancellationToken.None);
+
+        await _store.TruncateLastAssistantEntryAsync("test-workflow", "inst-001", "step-one", CancellationToken.None);
+
+        var history = await _store.GetHistoryAsync("test-workflow", "inst-001", "step-one", CancellationToken.None);
+        Assert.That(history, Has.Count.EqualTo(2));
+        Assert.That(history[0].Role, Is.EqualTo("assistant"));
+        Assert.That(history[0].ToolCallId, Is.EqualTo("tc_001"));
+        Assert.That(history[1].Role, Is.EqualTo("tool"));
+    }
+
+    [Test]
+    public async Task TruncateLastAssistantEntryAsync_MultipleAssistantEntries_RemovesOnlyLast()
+    {
+        var instanceDir = Path.Combine(_tempDir, "test-workflow", "inst-001");
+        Directory.CreateDirectory(instanceDir);
+
+        await _store.AppendAsync("test-workflow", "inst-001", "step-one",
+            CreateTestEntry(role: "assistant", content: "First"), CancellationToken.None);
+        await _store.AppendAsync("test-workflow", "inst-001", "step-one",
+            CreateTestEntry(role: "assistant", content: "Second"), CancellationToken.None);
+        await _store.AppendAsync("test-workflow", "inst-001", "step-one",
+            CreateTestEntry(role: "assistant", content: "Third"), CancellationToken.None);
+
+        await _store.TruncateLastAssistantEntryAsync("test-workflow", "inst-001", "step-one", CancellationToken.None);
+
+        var history = await _store.GetHistoryAsync("test-workflow", "inst-001", "step-one", CancellationToken.None);
+        Assert.That(history, Has.Count.EqualTo(2));
+        Assert.That(history[0].Content, Is.EqualTo("First"));
+        Assert.That(history[1].Content, Is.EqualTo("Second"));
+    }
+
+    [Test]
     public async Task ToolCallEntry_RoundTripsCorrectly()
     {
         var instanceDir = Path.Combine(_tempDir, "test-workflow", "inst-001");

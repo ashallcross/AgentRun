@@ -1,10 +1,10 @@
-import { UmbLitElement as z } from "@umbraco-cms/backoffice/lit-element";
-import { css as T, property as g, state as p, customElement as E, html as r, nothing as d } from "@umbraco-cms/backoffice/external/lit";
-import { UMB_AUTH_CONTEXT as j } from "@umbraco-cms/backoffice/auth";
-import { umbConfirmModal as q } from "@umbraco-cms/backoffice/modal";
-import { b as W, a as U, d as V, m as F, s as K, e as J, f as P, h as G } from "./api-client-NjdX6lGK.js";
-import { n as X } from "./instance-list-helpers-Cp7Qb08Y.js";
-const Y = /* @__PURE__ */ new Set([
+import { UmbLitElement as I } from "@umbraco-cms/backoffice/lit-element";
+import { css as z, property as f, state as u, customElement as T, html as r, nothing as h } from "@umbraco-cms/backoffice/external/lit";
+import { UMB_AUTH_CONTEXT as F } from "@umbraco-cms/backoffice/auth";
+import { umbConfirmModal as U } from "@umbraco-cms/backoffice/modal";
+import { b as V, a as K, d as N, m as P, s as J, r as G, e as X, f as A, h as Y } from "./api-client-C-llcIxj.js";
+import { n as Q } from "./instance-list-helpers-Cp7Qb08Y.js";
+const Z = /* @__PURE__ */ new Set([
   "p",
   "h1",
   "h2",
@@ -30,86 +30,86 @@ const Y = /* @__PURE__ */ new Set([
   "thead",
   "tbody"
 ]);
-function Q(e) {
-  const t = Z(e);
-  return te(t);
+function ee(e) {
+  const t = te(e);
+  return ae(t);
 }
-function Z(e) {
+function te(e) {
   const t = [], a = e.replace(/```[\s\S]*?```/g, (o) => {
-    const c = t.length, f = o.replace(/^```[^\n]*\n?/, "").replace(/\n?```$/, "");
-    return t.push(`<pre><code>${N(f)}</code></pre>`), `\0CB${c}\0`;
+    const l = t.length, _ = o.replace(/^```[^\n]*\n?/, "").replace(/\n?```$/, "");
+    return t.push(`<pre><code>${E(_)}</code></pre>`), `\0CB${l}\0`;
   }).split(`
 `), i = [];
   let n = 0;
   for (; n < a.length; ) {
-    const o = a[n], c = o.match(/^\x00CB(\d+)\x00$/);
-    if (c) {
-      i.push(t[parseInt(c[1], 10)]), n++;
+    const o = a[n], l = o.match(/^\x00CB(\d+)\x00$/);
+    if (l) {
+      i.push(t[parseInt(l[1], 10)]), n++;
       continue;
     }
     if (/^(---+|\*\*\*+|___+)\s*$/.test(o)) {
       i.push("<hr>"), n++;
       continue;
     }
-    const f = o.match(/^(#{1,6})\s+(.+)$/);
-    if (f) {
-      const l = f[1].length;
-      i.push(`<h${l}>${I(f[2])}</h${l}>`), n++;
+    const _ = o.match(/^(#{1,6})\s+(.+)$/);
+    if (_) {
+      const c = _[1].length;
+      i.push(`<h${c}>${M(_[2])}</h${c}>`), n++;
       continue;
     }
     if (o.startsWith("> ")) {
-      const l = [];
+      const c = [];
       for (; n < a.length && a[n].startsWith("> "); )
-        l.push(a[n].slice(2)), n++;
-      i.push(`<blockquote>${I(l.join("<br>"))}</blockquote>`);
+        c.push(a[n].slice(2)), n++;
+      i.push(`<blockquote>${M(c.join("<br>"))}</blockquote>`);
       continue;
     }
     if (/^[-*]\s+/.test(o)) {
-      const l = [];
+      const c = [];
       for (; n < a.length && /^[-*]\s+/.test(a[n]); )
-        l.push(a[n].replace(/^[-*]\s+/, "")), n++;
-      i.push("<ul>" + l.map((S) => `<li>${I(S)}</li>`).join("") + "</ul>");
+        c.push(a[n].replace(/^[-*]\s+/, "")), n++;
+      i.push("<ul>" + c.map((m) => `<li>${M(m)}</li>`).join("") + "</ul>");
       continue;
     }
     if (/^\d+\.\s+/.test(o)) {
-      const l = [];
+      const c = [];
       for (; n < a.length && /^\d+\.\s+/.test(a[n]); )
-        l.push(a[n].replace(/^\d+\.\s+/, "")), n++;
-      i.push("<ol>" + l.map((S) => `<li>${I(S)}</li>`).join("") + "</ol>");
+        c.push(a[n].replace(/^\d+\.\s+/, "")), n++;
+      i.push("<ol>" + c.map((m) => `<li>${M(m)}</li>`).join("") + "</ol>");
       continue;
     }
     if (o.trim() === "") {
       n++;
       continue;
     }
-    const u = [];
+    const g = [];
     for (; n < a.length && a[n].trim() !== "" && !/^(#{1,6}\s|[-*]\s|>\s|\d+\.\s|---+|___+|\*\*\*+|\x00CB)/.test(a[n]); )
-      u.push(a[n]), n++;
-    u.length > 0 && i.push(`<p>${I(u.join("<br>"))}</p>`);
+      g.push(a[n]), n++;
+    g.length > 0 && i.push(`<p>${M(g.join("<br>"))}</p>`);
   }
   return i.join("");
 }
-function I(e) {
-  return e = e.replace(/`([^`]+)`/g, (t, s) => `<code>${N(s)}</code>`), e = e.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>"), e = e.replace(/__(.+?)__/g, "<strong>$1</strong>"), e = e.replace(/\*(.+?)\*/g, "<em>$1</em>"), e = e.replace(/_(.+?)_/g, "<em>$1</em>"), e = e.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (t, s, a) => /^https?:\/\//i.test(a) ? `<a href="${ee(a)}" target="_blank" rel="noopener">${N(s)}</a>` : s), e;
+function M(e) {
+  return e = e.replace(/`([^`]+)`/g, (t, s) => `<code>${E(s)}</code>`), e = e.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>"), e = e.replace(/__(.+?)__/g, "<strong>$1</strong>"), e = e.replace(/\*(.+?)\*/g, "<em>$1</em>"), e = e.replace(/_(.+?)_/g, "<em>$1</em>"), e = e.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (t, s, a) => /^https?:\/\//i.test(a) ? `<a href="${se(a)}" target="_blank" rel="noopener">${E(s)}</a>` : s), e;
 }
-function N(e) {
+function E(e) {
   return e.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
-function ee(e) {
+function se(e) {
   return e.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/'/g, "&#39;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
-function te(e) {
+function ae(e) {
   const t = document.createElement("template");
-  t.innerHTML = e, O(t.content);
+  t.innerHTML = e, D(t.content);
   const s = document.createElement("div");
   return s.appendChild(t.content.cloneNode(!0)), s.innerHTML;
 }
-function O(e) {
+function D(e) {
   const t = Array.from(e.childNodes);
   for (const s of t)
     if (s.nodeType === Node.ELEMENT_NODE) {
       const a = s, i = a.tagName.toLowerCase();
-      if (Y.has(i)) {
+      if (Z.has(i)) {
         const n = Array.from(a.attributes);
         for (const o of n)
           i === "a" && (o.name === "href" || o.name === "target" || o.name === "rel") || a.removeAttribute(o.name);
@@ -117,19 +117,19 @@ function O(e) {
           const o = a.getAttribute("href") ?? "";
           /^https?:\/\//i.test(o) || a.removeAttribute("href"), a.setAttribute("target", "_blank"), a.setAttribute("rel", "noopener");
         }
-        O(a);
+        D(a);
       } else {
         const n = document.createTextNode(a.textContent ?? "");
         e.replaceChild(n, s);
       }
     } else s.nodeType !== Node.TEXT_NODE && e.removeChild(s);
 }
-var se = Object.defineProperty, ae = Object.getOwnPropertyDescriptor, k = (e, t, s, a) => {
-  for (var i = a > 1 ? void 0 : a ? ae(t, s) : t, n = e.length - 1, o; n >= 0; n--)
+var ie = Object.defineProperty, ne = Object.getOwnPropertyDescriptor, x = (e, t, s, a) => {
+  for (var i = a > 1 ? void 0 : a ? ne(t, s) : t, n = e.length - 1, o; n >= 0; n--)
     (o = e[n]) && (i = (a ? o(t, s, i) : o(i)) || i);
-  return a && i && se(t, s, i), i;
+  return a && i && ie(t, s, i), i;
 };
-let v = class extends z {
+let y = class extends I {
   constructor() {
     super(...arguments), this.toolName = "", this.toolCallId = "", this.summary = "", this.arguments = null, this.result = null, this.status = "running", this._expanded = !1;
   }
@@ -148,13 +148,13 @@ let v = class extends z {
         ${this.arguments ? r`
               <div class="section-label">Arguments</div>
               <div class="mono-block">${JSON.stringify(this.arguments, null, 2)}</div>
-            ` : d}
+            ` : h}
         ${this.result != null ? r`
               <div class="section-label">Result</div>
               <div class="mono-block">${this.result}</div>
-            ` : d}
+            ` : h}
       </div>
-    ` : d;
+    ` : h;
   }
   render() {
     const e = this.status !== "running";
@@ -163,8 +163,8 @@ let v = class extends z {
         class="tool-call ${this.status}"
         role="group"
         aria-label="Tool call: ${this.toolName}"
-        aria-expanded=${e ? String(this._expanded) : d}
-        tabindex=${e ? "0" : d}
+        aria-expanded=${e ? String(this._expanded) : h}
+        tabindex=${e ? "0" : h}
         @click=${this._toggle}
         @keydown=${this._onKeydown}
       >
@@ -172,14 +172,14 @@ let v = class extends z {
           ${this._renderStatusIcon()}
           <span class="tool-name">${this.toolName}</span>
           <span class="tool-summary">${this.summary ? `— ${this.summary}` : ""}</span>
-          ${e ? r`<uui-icon class="chevron ${this._expanded ? "open" : ""}" name="icon-navigation-down"></uui-icon>` : d}
+          ${e ? r`<uui-icon class="chevron ${this._expanded ? "open" : ""}" name="icon-navigation-down"></uui-icon>` : h}
         </div>
         ${this._renderBody()}
       </div>
     `;
   }
 };
-v.styles = T`
+y.styles = z`
     :host {
       display: block;
       margin-top: var(--uui-size-space-2);
@@ -272,36 +272,36 @@ v.styles = T`
       max-height: 300px;
     }
   `;
-k([
-  g({ type: String })
-], v.prototype, "toolName", 2);
-k([
-  g({ type: String })
-], v.prototype, "toolCallId", 2);
-k([
-  g({ type: String })
-], v.prototype, "summary", 2);
-k([
-  g({ attribute: !1 })
-], v.prototype, "arguments", 2);
-k([
-  g({ type: String })
-], v.prototype, "result", 2);
-k([
-  g({ type: String })
-], v.prototype, "status", 2);
-k([
-  p()
-], v.prototype, "_expanded", 2);
-v = k([
-  E("shallai-tool-call")
-], v);
-var ie = Object.defineProperty, ne = Object.getOwnPropertyDescriptor, $ = (e, t, s, a) => {
-  for (var i = a > 1 ? void 0 : a ? ne(t, s) : t, n = e.length - 1, o; n >= 0; n--)
+x([
+  f({ type: String })
+], y.prototype, "toolName", 2);
+x([
+  f({ type: String })
+], y.prototype, "toolCallId", 2);
+x([
+  f({ type: String })
+], y.prototype, "summary", 2);
+x([
+  f({ attribute: !1 })
+], y.prototype, "arguments", 2);
+x([
+  f({ type: String })
+], y.prototype, "result", 2);
+x([
+  f({ type: String })
+], y.prototype, "status", 2);
+x([
+  u()
+], y.prototype, "_expanded", 2);
+y = x([
+  T("shallai-tool-call")
+], y);
+var oe = Object.defineProperty, re = Object.getOwnPropertyDescriptor, $ = (e, t, s, a) => {
+  for (var i = a > 1 ? void 0 : a ? re(t, s) : t, n = e.length - 1, o; n >= 0; n--)
     (o = e[n]) && (i = (a ? o(t, s, i) : o(i)) || i);
-  return a && i && ie(t, s, i), i;
+  return a && i && oe(t, s, i), i;
 };
-let x = class extends z {
+let k = class extends I {
   constructor() {
     super(...arguments), this.role = "agent", this.content = "", this.timestamp = "", this.isStreaming = !1, this.toolCalls = [];
   }
@@ -314,7 +314,7 @@ let x = class extends z {
     }
   }
   _renderMarkdown(e) {
-    const t = Q(e), s = document.createElement("div");
+    const t = ee(e), s = document.createElement("div");
     return s.className = "agent-content", s.innerHTML = t, r`${this._templateFromNode(s)}`;
   }
   _templateFromNode(e) {
@@ -336,7 +336,7 @@ let x = class extends z {
       return r`
         <div class="user-message" role="listitem" aria-label="Your message">
           <span class="user-content">${this.content}</span>
-          ${this.timestamp ? r`<span class="user-timestamp">${this._formatTime(this.timestamp)}</span>` : d}
+          ${this.timestamp ? r`<span class="user-timestamp">${this._formatTime(this.timestamp)}</span>` : h}
         </div>
       `;
     const e = this.isStreaming ? r`<span class="agent-content" style="white-space:pre-wrap">${this.content}<span class="cursor">▋</span></span>` : this._renderMarkdown(this.content);
@@ -355,12 +355,12 @@ let x = class extends z {
         `)}
         ${this.timestamp ? r`<span class="agent-timestamp"
               >${this._formatTime(this.timestamp)}</span
-            >` : d}
+            >` : h}
       </div>
     `;
   }
 };
-x.styles = T`
+k.styles = z`
     :host {
       display: block;
     }
@@ -485,29 +485,29 @@ x.styles = T`
     }
   `;
 $([
-  g({ type: String })
-], x.prototype, "role", 2);
+  f({ type: String })
+], k.prototype, "role", 2);
 $([
-  g({ type: String })
-], x.prototype, "content", 2);
+  f({ type: String })
+], k.prototype, "content", 2);
 $([
-  g({ type: String })
-], x.prototype, "timestamp", 2);
+  f({ type: String })
+], k.prototype, "timestamp", 2);
 $([
-  g({ type: Boolean, attribute: "is-streaming" })
-], x.prototype, "isStreaming", 2);
+  f({ type: Boolean, attribute: "is-streaming" })
+], k.prototype, "isStreaming", 2);
 $([
-  g({ attribute: !1 })
-], x.prototype, "toolCalls", 2);
-x = $([
-  E("shallai-chat-message")
-], x);
-var oe = Object.defineProperty, re = Object.getOwnPropertyDescriptor, w = (e, t, s, a) => {
-  for (var i = a > 1 ? void 0 : a ? re(t, s) : t, n = e.length - 1, o; n >= 0; n--)
+  f({ attribute: !1 })
+], k.prototype, "toolCalls", 2);
+k = $([
+  T("shallai-chat-message")
+], k);
+var le = Object.defineProperty, ce = Object.getOwnPropertyDescriptor, S = (e, t, s, a) => {
+  for (var i = a > 1 ? void 0 : a ? ce(t, s) : t, n = e.length - 1, o; n >= 0; n--)
     (o = e[n]) && (i = (a ? o(t, s, i) : o(i)) || i);
-  return a && i && oe(t, s, i), i;
+  return a && i && le(t, s, i), i;
 };
-let _ = class extends z {
+let v = class extends I {
   constructor() {
     super(...arguments), this.messages = [], this.isStreaming = !1, this.inputEnabled = !1, this.inputPlaceholder = "Send a message to start.", this._inputValue = "", this._autoScrollPaused = !1, this._hasNewMessages = !1, this._wasStreaming = !1;
   }
@@ -544,7 +544,7 @@ let _ = class extends z {
   }
   render() {
     if (this.messages.length === 0)
-      return r`<div class="empty-state">Send a message to begin.</div>`;
+      return r`<div class="empty-state">Start this workflow to begin.</div>`;
     const e = this.messages.length - 1;
     return r`
       <uui-scroll-container @scroll=${this._onScroll}>
@@ -574,7 +574,7 @@ let _ = class extends z {
                 New messages ↓
               </uui-button>
             </div>
-          ` : d}
+          ` : h}
 
       <div class="input-area">
         <uui-textarea
@@ -602,7 +602,7 @@ let _ = class extends z {
     `;
   }
 };
-_.styles = T`
+v.styles = z`
     :host {
       display: block;
       position: relative;
@@ -664,42 +664,42 @@ _.styles = T`
       border-width: 0;
     }
   `;
-w([
-  g({ attribute: !1 })
-], _.prototype, "messages", 2);
-w([
-  g({ type: Boolean, attribute: "is-streaming" })
-], _.prototype, "isStreaming", 2);
-w([
-  g({ type: Boolean, attribute: "input-enabled" })
-], _.prototype, "inputEnabled", 2);
-w([
-  g({ type: String, attribute: "input-placeholder" })
-], _.prototype, "inputPlaceholder", 2);
-w([
-  p()
-], _.prototype, "_inputValue", 2);
-w([
-  p()
-], _.prototype, "_autoScrollPaused", 2);
-w([
-  p()
-], _.prototype, "_hasNewMessages", 2);
-w([
-  p()
-], _.prototype, "_wasStreaming", 2);
-_ = w([
-  E("shallai-chat-panel")
-], _);
-function le(e) {
+S([
+  f({ attribute: !1 })
+], v.prototype, "messages", 2);
+S([
+  f({ type: Boolean, attribute: "is-streaming" })
+], v.prototype, "isStreaming", 2);
+S([
+  f({ type: Boolean, attribute: "input-enabled" })
+], v.prototype, "inputEnabled", 2);
+S([
+  f({ type: String, attribute: "input-placeholder" })
+], v.prototype, "inputPlaceholder", 2);
+S([
+  u()
+], v.prototype, "_inputValue", 2);
+S([
+  u()
+], v.prototype, "_autoScrollPaused", 2);
+S([
+  u()
+], v.prototype, "_hasNewMessages", 2);
+S([
+  u()
+], v.prototype, "_wasStreaming", 2);
+v = S([
+  T("shallai-chat-panel")
+], v);
+function ue(e) {
   const t = e.split("/");
   return decodeURIComponent(t[t.length - 1]);
 }
-function ce(e, t) {
+function pe(e, t) {
   const s = e.split("/");
   return s.length >= 2 && s.splice(-2, 2, "workflows", encodeURIComponent(t)), s.join("/");
 }
-function A(e) {
+function O(e) {
   switch (e.status) {
     case "Pending":
       return "Pending";
@@ -713,7 +713,7 @@ function A(e) {
       return e.status;
   }
 }
-function ue(e) {
+function he(e) {
   switch (e) {
     case "Pending":
       return "icon-circle-dotted";
@@ -727,20 +727,20 @@ function ue(e) {
       return "icon-circle-dotted";
   }
 }
-function pe(e, t) {
+function de(e, t) {
   return e === "Active" && t;
 }
-var he = Object.defineProperty, de = Object.getOwnPropertyDescriptor, D = (e) => {
+var ge = Object.defineProperty, me = Object.getOwnPropertyDescriptor, L = (e) => {
   throw TypeError(e);
-}, m = (e, t, s, a) => {
-  for (var i = a > 1 ? void 0 : a ? de(t, s) : t, n = e.length - 1, o; n >= 0; n--)
+}, d = (e, t, s, a) => {
+  for (var i = a > 1 ? void 0 : a ? me(t, s) : t, n = e.length - 1, o; n >= 0; n--)
     (o = e[n]) && (i = (a ? o(t, s, i) : o(i)) || i);
-  return a && i && he(t, s, i), i;
-}, L = (e, t, s) => t.has(e) || D("Cannot " + s), C = (e, t, s) => (L(e, t, "read from private field"), s ? s.call(e) : t.get(e)), ge = (e, t, s) => t.has(e) ? D("Cannot add the same private member more than once") : t instanceof WeakSet ? t.add(e) : t.set(e, s), me = (e, t, s, a) => (L(e, t, "write to private field"), t.set(e, s), s), y;
-let h = class extends z {
+  return a && i && ge(t, s, i), i;
+}, R = (e, t, s) => t.has(e) || L("Cannot " + s), C = (e, t, s) => (R(e, t, "read from private field"), s ? s.call(e) : t.get(e)), fe = (e, t, s) => t.has(e) ? L("Cannot add the same private member more than once") : t instanceof WeakSet ? t.add(e) : t.set(e, s), _e = (e, t, s, a) => (R(e, t, "write to private field"), t.set(e, s), s), b;
+let p = class extends I {
   constructor() {
-    super(), ge(this, y), this._instance = null, this._loading = !0, this._error = !1, this._selectedStepId = null, this._cancelling = !1, this._runNumber = 0, this._streaming = !1, this._providerError = !1, this._chatMessages = [], this._streamingText = "", this._viewingStepId = null, this._historyMessages = [], this._stepCompletable = !1, this._agentResponding = !1, this._toolBatchOpen = !1, this.consumeContext(j, (e) => {
-      me(this, y, e);
+    super(), fe(this, b), this._instance = null, this._loading = !0, this._error = !1, this._selectedStepId = null, this._cancelling = !1, this._runNumber = 0, this._streaming = !1, this._providerError = !1, this._chatMessages = [], this._streamingText = "", this._viewingStepId = null, this._historyMessages = [], this._stepCompletable = !1, this._agentResponding = !1, this._retrying = !1, this._toolBatchOpen = !1, this.consumeContext(F, (e) => {
+      _e(this, b, e);
     });
   }
   connectedCallback() {
@@ -748,10 +748,21 @@ let h = class extends z {
   }
   async _loadData() {
     try {
-      const e = le(window.location.pathname), t = await C(this, y)?.getLatestToken(), s = await W(e, t);
+      const e = ue(window.location.pathname), t = await C(this, b)?.getLatestToken(), s = await V(e, t);
       this._instance = s;
-      const a = await U(s.workflowAlias, t), n = X(a).find((o) => o.id === s.id);
-      this._runNumber = n?.runNumber ?? 0, this._error = !1;
+      const a = await K(s.workflowAlias, t), n = Q(a).find((o) => o.id === s.id);
+      if (this._runNumber = n?.runNumber ?? 0, !this._streaming && this._chatMessages.length === 0) {
+        const o = s.steps.find(
+          (l) => l.status === "Active" || l.status === "Error"
+        ) ?? s.steps.findLast((l) => l.status === "Complete");
+        if (o)
+          try {
+            const l = await N(s.id, o.id, t);
+            this._chatMessages = P(l);
+          } catch {
+          }
+      }
+      this._error = !1;
     } catch {
       this._error = !0;
     } finally {
@@ -760,7 +771,7 @@ let h = class extends z {
   }
   _navigateBack() {
     if (!this._instance) return;
-    const e = ce(
+    const e = pe(
       window.location.pathname,
       this._instance.workflowAlias
     );
@@ -780,8 +791,8 @@ let h = class extends z {
       }
       this._viewingStepId = e.id;
       try {
-        const t = await C(this, y)?.getLatestToken(), s = this._instance.id, a = await V(s, e.id, t);
-        this._historyMessages = F(a);
+        const t = await C(this, b)?.getLatestToken(), s = this._instance.id, a = await N(s, e.id, t);
+        this._historyMessages = P(a);
       } catch {
         this._historyMessages = [];
       }
@@ -791,47 +802,65 @@ let h = class extends z {
     super.disconnectedCallback(), this._streaming = !1, this._agentResponding = !1;
   }
   async _onStartClick() {
-    if (!(this._streaming || !this._instance)) {
-      this._streaming = !0, this._providerError = !1, this._viewingStepId = null, this._streamingText = "";
-      try {
-        const e = await C(this, y)?.getLatestToken(), t = await K(this._instance.id, e);
-        if (!t.ok) {
-          if (t.status === 400) {
-            this._providerError = !0;
-            return;
-          }
-          await this._loadData();
-          return;
+    if (this._streaming || !this._instance) return;
+    const e = await C(this, b)?.getLatestToken(), t = await J(this._instance.id, e);
+    if (!t.ok) {
+      if (t.status === 400) {
+        this._providerError = !0;
+        return;
+      }
+      await this._loadData();
+      return;
+    }
+    await this._streamSseResponse(t);
+  }
+  async _onRetryClick() {
+    if (this._retrying || this._streaming || !this._instance) return;
+    this._retrying = !0, this._chatMessages = [];
+    const e = await C(this, b)?.getLatestToken(), t = await G(this._instance.id, e);
+    if (!t.ok) {
+      this._retrying = !1, t.status === 409 && (this._chatMessages = [
+        {
+          role: "system",
+          content: "Cannot retry — instance is no longer in a failed state.",
+          timestamp: (/* @__PURE__ */ new Date()).toISOString()
         }
-        if (!t.body) return;
-        const s = t.body.getReader(), a = new TextDecoder();
-        let i = "";
-        for (; ; ) {
-          const { done: n, value: o } = await s.read();
-          if (n) break;
-          i += a.decode(o, { stream: !0 });
-          const c = i.split(`
+      ]), await this._loadData();
+      return;
+    }
+    await this._streamSseResponse(t), this._retrying = !1;
+  }
+  async _streamSseResponse(e) {
+    this._streaming = !0, this._providerError = !1, this._viewingStepId = null, this._streamingText = "";
+    try {
+      if (!e.body) return;
+      const t = e.body.getReader(), s = new TextDecoder();
+      let a = "";
+      for (; ; ) {
+        const { done: i, value: n } = await t.read();
+        if (i) break;
+        a += s.decode(n, { stream: !0 });
+        const o = a.split(`
 
 `);
-          i = c.pop();
-          for (const f of c) {
-            const u = f.split(`
-`), l = u.find((M) => M.startsWith("event:"))?.slice(7), S = u.find((M) => M.startsWith("data:"))?.slice(5);
-            l && S && this._handleSseEvent(l, JSON.parse(S));
-          }
+        a = o.pop();
+        for (const l of o) {
+          const _ = l.split(`
+`), g = _.find((m) => m.startsWith("event:"))?.slice(7), c = _.find((m) => m.startsWith("data:"))?.slice(5);
+          g && c && this._handleSseEvent(g, JSON.parse(c));
         }
-      } catch {
-        this._finaliseStreamingMessage(), this._chatMessages = [
-          ...this._chatMessages,
-          {
-            role: "system",
-            content: "Connection lost.",
-            timestamp: (/* @__PURE__ */ new Date()).toISOString()
-          }
-        ];
-      } finally {
-        this._streaming = !1, this._agentResponding = !1, await this._loadData(), this._checkStepCompletable();
       }
+    } catch {
+      this._finaliseStreamingMessage(), this._chatMessages = [
+        ...this._chatMessages,
+        {
+          role: "system",
+          content: "Connection lost.",
+          timestamp: (/* @__PURE__ */ new Date()).toISOString()
+        }
+      ];
+    } finally {
+      this._streaming = !1, this._agentResponding = !1, await this._loadData(), this._checkStepCompletable();
     }
   }
   _checkStepCompletable() {
@@ -911,11 +940,11 @@ let h = class extends z {
       }
       case "tool.args": {
         const s = t.toolCallId, a = t.arguments, i = this._chatMessages.findLastIndex(
-          (c) => c.role === "agent" && c.toolCalls?.some((f) => f.toolCallId === s)
+          (l) => l.role === "agent" && l.toolCalls?.some((_) => _.toolCallId === s)
         );
         if (i === -1) break;
         const n = this._chatMessages[i], o = n.toolCalls.map(
-          (c) => c.toolCallId === s ? { ...c, arguments: a, summary: J(c.toolName, a) } : c
+          (l) => l.toolCallId === s ? { ...l, arguments: a, summary: X(l.toolName, a) } : l
         );
         this._chatMessages = [
           ...this._chatMessages.slice(0, i),
@@ -926,7 +955,7 @@ let h = class extends z {
       }
       case "tool.end": {
         const s = t.toolCallId, a = this._chatMessages.findLastIndex(
-          (o) => o.role === "agent" && o.toolCalls?.some((c) => c.toolCallId === s)
+          (o) => o.role === "agent" && o.toolCalls?.some((l) => l.toolCallId === s)
         );
         if (a === -1) break;
         const i = this._chatMessages[a], n = i.toolCalls.map(
@@ -941,15 +970,15 @@ let h = class extends z {
       }
       case "tool.result": {
         const s = t.toolCallId, a = t.result, i = typeof a == "string" ? a : JSON.stringify(a), n = typeof i == "string" && i.startsWith("Tool '") && (i.includes("error") || i.includes("failed")), o = this._chatMessages.findLastIndex(
-          (u) => u.role === "agent" && u.toolCalls?.some((l) => l.toolCallId === s)
+          (g) => g.role === "agent" && g.toolCalls?.some((c) => c.toolCallId === s)
         );
         if (o === -1) break;
-        const c = this._chatMessages[o], f = c.toolCalls.map(
-          (u) => u.toolCallId === s ? { ...u, result: i, status: n ? "error" : "complete" } : u
+        const l = this._chatMessages[o], _ = l.toolCalls.map(
+          (g) => g.toolCallId === s ? { ...g, result: i, status: n ? "error" : "complete" } : g
         );
         this._chatMessages = [
           ...this._chatMessages.slice(0, o),
-          { ...c, toolCalls: f },
+          { ...l, toolCalls: _ },
           ...this._chatMessages.slice(o + 1)
         ];
         break;
@@ -1016,8 +1045,8 @@ let h = class extends z {
       }
     ];
     try {
-      const s = await C(this, y)?.getLatestToken();
-      await P(this._instance.id, t, s);
+      const s = await C(this, b)?.getLatestToken();
+      await A(this._instance.id, t, s);
     } catch {
       this._chatMessages = [
         ...this._chatMessages,
@@ -1041,8 +1070,8 @@ let h = class extends z {
       }
     ];
     try {
-      const s = await C(this, y)?.getLatestToken();
-      await P(this._instance.id, t, s);
+      const s = await C(this, b)?.getLatestToken();
+      await A(this._instance.id, t, s);
     } catch {
       this._chatMessages = [
         ...this._chatMessages,
@@ -1062,7 +1091,7 @@ let h = class extends z {
   async _onCancelClick() {
     if (!(this._cancelling || !this._instance)) {
       try {
-        await q(this, {
+        await U(this, {
           headline: "Cancel workflow run",
           content: "Cancel this workflow run?",
           color: "danger",
@@ -1073,8 +1102,8 @@ let h = class extends z {
       }
       this._cancelling = !0;
       try {
-        const e = await C(this, y)?.getLatestToken();
-        await G(this._instance.id, e), await this._loadData();
+        const e = await C(this, b)?.getLatestToken();
+        await Y(this._instance.id, e), await this._loadData();
       } catch {
         console.warn("Failed to cancel instance");
       } finally {
@@ -1097,26 +1126,26 @@ let h = class extends z {
                   ${e.status === "Error" ? "error" : ""}
                   ${e.status !== "Pending" ? "clickable" : ""}
                   ${this._selectedStepId === e.id ? "selected" : ""}"
-                aria-label="Step ${t + 1}: ${e.name} — ${A(e)}"
-                @click=${e.status !== "Pending" ? () => this._onStepClick(e) : d}
-                aria-current=${e.status === "Active" ? "step" : d}
+                aria-label="Step ${t + 1}: ${e.name} — ${O(e)}"
+                @click=${e.status !== "Pending" ? () => this._onStepClick(e) : h}
+                aria-current=${e.status === "Active" ? "step" : h}
               >
                 <div class="step-icon-wrapper">
                   <uui-icon
-                    class="step-icon ${pe(e.status, this._agentResponding) ? "step-icon-spin" : ""}"
-                    name=${ue(e.status)}
+                    class="step-icon ${de(e.status, this._agentResponding) ? "step-icon-spin" : ""}"
+                    name=${he(e.status)}
                   ></uui-icon>
                 </div>
                 <div class="step-text">
                   <span class="step-name">${e.name}</span>
-                  <span class="step-subtitle">${A(e)}</span>
+                  <span class="step-subtitle">${O(e)}</span>
                 </div>
               </li>
             `
     )}
         </ul>
       </div>
-    ` : d;
+    ` : h;
   }
   render() {
     if (this._loading)
@@ -1128,30 +1157,30 @@ let h = class extends z {
           and try refreshing the page.
         </div>
       `;
-    const e = this._instance, t = e.workflowMode !== "autonomous", s = e.status === "Completed" || e.status === "Failed" || e.status === "Cancelled", a = e.steps.find((b) => b.status === "Active"), i = !!a, n = e.status === "Pending" && !this._streaming, o = "Start", c = !t && e.status === "Running" && !i && !this._streaming && e.steps.some((b) => b.status === "Pending"), f = !t && (e.status === "Running" || e.status === "Pending") && !this._streaming;
-    let u, l;
-    t ? s ? (u = !1, l = "Workflow complete") : this._viewingStepId ? (u = !1, l = "Viewing step history") : this._agentResponding ? (u = !1, l = "Agent is responding...") : this._streaming || a || e.status === "Running" ? (u = !0, l = "Message the agent...") : (u = !1, l = "Send a message to start.") : (u = this._streaming && !this._viewingStepId, l = s ? "Workflow complete" : a ? "Step complete" : "Click 'Start' to begin the workflow.");
-    const S = t && !this._streaming ? (b) => this._onSendAndStream(b) : (b) => this._onSendMessage(b), M = t && this._stepCompletable && !this._agentResponding, B = e.steps.every((b) => b.status === "Complete"), R = t && s && B, H = this._providerError ? r`<div class="main-placeholder">Configure an AI provider in Umbraco.AI before workflows can run.</div>` : r`
+    const e = this._instance, t = e.workflowMode !== "autonomous", s = e.status === "Completed" || e.status === "Failed" || e.status === "Cancelled", a = e.steps.find((w) => w.status === "Active"), i = !!a, n = e.status === "Pending" && !this._streaming, o = "Start", l = e.status === "Failed" && !this._streaming, _ = !t && e.status === "Running" && !i && !this._streaming && e.steps.some((w) => w.status === "Pending"), g = !t && (e.status === "Running" || e.status === "Pending") && !this._streaming || e.status === "Failed" && !this._streaming;
+    let c, m;
+    t ? s ? (c = !1, m = "Workflow complete") : this._viewingStepId ? (c = !1, m = "Viewing step history") : this._agentResponding ? (c = !1, m = "Agent is responding...") : this._streaming || a || e.status === "Running" ? (c = !0, m = "Message the agent...") : (c = !1, m = "Send a message to start.") : (c = this._streaming && !this._viewingStepId, m = s ? "Workflow complete" : a ? "Step complete" : "Click 'Start' to begin the workflow.");
+    const B = t && !this._streaming ? (w) => this._onSendAndStream(w) : (w) => this._onSendMessage(w), H = t && this._stepCompletable && !this._agentResponding, j = e.steps.every((w) => w.status === "Complete"), q = t && s && j, W = this._providerError ? r`<div class="main-placeholder">Configure an AI provider in Umbraco.AI before workflows can run.</div>` : r`
           <div class="main-panel">
-            ${M ? r`
+            ${H ? r`
                   <div class="completion-banner">
                     <span>Step complete — review the output, then advance when ready</span>
                     <uui-button label="Continue to next step" look="primary" @click=${this._onAdvanceStep}>
                       Continue to next step
                     </uui-button>
                   </div>
-                ` : d}
-            ${R ? r`
+                ` : h}
+            ${q ? r`
                   <div class="completion-banner">
                     <span>Workflow complete — all steps finished</span>
                   </div>
-                ` : d}
+                ` : h}
             <shallai-chat-panel
               .messages=${this._viewingStepId ? this._historyMessages : this._chatMessages}
               ?is-streaming=${this._streaming && !this._viewingStepId}
-              ?input-enabled=${u}
-              input-placeholder=${l}
-              @send-message=${S}
+              ?input-enabled=${c}
+              input-placeholder=${m}
+              @send-message=${B}
             ></shallai-chat-panel>
           </div>`;
     return r`
@@ -1164,13 +1193,18 @@ let h = class extends z {
               <uui-button label=${o} look="primary" @click=${this._onStartClick}>
                 ${o}
               </uui-button>
-            ` : d}
-        ${c ? r`
+            ` : h}
+        ${l ? r`
+              <uui-button label="Retry" look="primary" ?disabled=${this._retrying} @click=${this._onRetryClick}>
+                ${this._retrying ? r`<uui-loader></uui-loader>` : "Retry"}
+              </uui-button>
+            ` : h}
+        ${_ ? r`
               <uui-button label="Continue" look="primary" @click=${this._onStartClick}>
                 Continue
               </uui-button>
-            ` : d}
-        ${f ? r`
+            ` : h}
+        ${g ? r`
               <uui-button
                 label="Cancel"
                 look="secondary"
@@ -1180,18 +1214,18 @@ let h = class extends z {
               >
                 Cancel
               </uui-button>
-            ` : d}
+            ` : h}
       </div>
 
       <div class="detail-grid">
         ${this._renderStepProgress()}
-        ${H}
+        ${W}
       </div>
     `;
   }
 };
-y = /* @__PURE__ */ new WeakMap();
-h.styles = T`
+b = /* @__PURE__ */ new WeakMap();
+p.styles = z`
     :host {
       display: block;
       padding: var(--uui-size-layout-1);
@@ -1389,54 +1423,57 @@ h.styles = T`
       flex-shrink: 0;
     }
   `;
-m([
-  p()
-], h.prototype, "_instance", 2);
-m([
-  p()
-], h.prototype, "_loading", 2);
-m([
-  p()
-], h.prototype, "_error", 2);
-m([
-  p()
-], h.prototype, "_selectedStepId", 2);
-m([
-  p()
-], h.prototype, "_cancelling", 2);
-m([
-  p()
-], h.prototype, "_runNumber", 2);
-m([
-  p()
-], h.prototype, "_streaming", 2);
-m([
-  p()
-], h.prototype, "_providerError", 2);
-m([
-  p()
-], h.prototype, "_chatMessages", 2);
-m([
-  p()
-], h.prototype, "_streamingText", 2);
-m([
-  p()
-], h.prototype, "_viewingStepId", 2);
-m([
-  p()
-], h.prototype, "_historyMessages", 2);
-m([
-  p()
-], h.prototype, "_stepCompletable", 2);
-m([
-  p()
-], h.prototype, "_agentResponding", 2);
-h = m([
-  E("shallai-instance-detail")
-], h);
-const Se = h;
+d([
+  u()
+], p.prototype, "_instance", 2);
+d([
+  u()
+], p.prototype, "_loading", 2);
+d([
+  u()
+], p.prototype, "_error", 2);
+d([
+  u()
+], p.prototype, "_selectedStepId", 2);
+d([
+  u()
+], p.prototype, "_cancelling", 2);
+d([
+  u()
+], p.prototype, "_runNumber", 2);
+d([
+  u()
+], p.prototype, "_streaming", 2);
+d([
+  u()
+], p.prototype, "_providerError", 2);
+d([
+  u()
+], p.prototype, "_chatMessages", 2);
+d([
+  u()
+], p.prototype, "_streamingText", 2);
+d([
+  u()
+], p.prototype, "_viewingStepId", 2);
+d([
+  u()
+], p.prototype, "_historyMessages", 2);
+d([
+  u()
+], p.prototype, "_stepCompletable", 2);
+d([
+  u()
+], p.prototype, "_agentResponding", 2);
+d([
+  u()
+], p.prototype, "_retrying", 2);
+p = d([
+  T("shallai-instance-detail")
+], p);
+const xe = p;
 export {
-  h as ShallaiInstanceDetailElement,
-  Se as default
+  p as ShallaiInstanceDetailElement,
+  xe as default
 };
-//# sourceMappingURL=shallai-instance-detail.element-DjjFT_OR.js.map
+//# sourceMappingURL=shallai-instance-detail.element-CC3aa8P-.js.map

@@ -8,7 +8,7 @@ import {
 } from "@umbraco-cms/backoffice/external/lit";
 import { UMB_AUTH_CONTEXT } from "@umbraco-cms/backoffice/auth";
 import { umbConfirmModal } from "@umbraco-cms/backoffice/modal";
-import { getInstance, getInstances, cancelInstance, startInstance, sendMessage, getConversation, mapConversationToChat } from "../api/api-client.js";
+import { getInstance, getInstances, cancelInstance, startInstance, retryInstance, sendMessage, getConversation, mapConversationToChat } from "../api/api-client.js";
 import type {
   InstanceDetailResponse,
   StepDetailResponse,
@@ -71,6 +71,9 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
 
   @state()
   private _agentResponding = false;
+
+  @state()
+  private _retrying = false;
 
   private _toolBatchOpen = false;
 
@@ -299,6 +302,22 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
       const match = numbered.find((n) => n.id === instance.id);
       this._runNumber = match?.runNumber ?? 0;
 
+      // Load conversation history for the current step when not streaming
+      // (e.g. returning to an in-progress, errored, or completed instance)
+      if (!this._streaming && this._chatMessages.length === 0) {
+        const currentStep = instance.steps.find(
+          (s) => s.status === "Active" || s.status === "Error",
+        ) ?? instance.steps.findLast((s) => s.status === "Complete");
+        if (currentStep) {
+          try {
+            const entries = await getConversation(instance.id, currentStep.id, token);
+            this._chatMessages = mapConversationToChat(entries);
+          } catch {
+            // Non-critical — display empty chat rather than failing
+          }
+        }
+      }
+
       this._error = false;
     } catch {
       this._error = true;
@@ -354,26 +373,56 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
   private async _onStartClick(): Promise<void> {
     if (this._streaming || !this._instance) return;
 
+    const token = await this.#authContext?.getLatestToken();
+    const response = await startInstance(this._instance.id, token);
+
+    if (!response.ok) {
+      if (response.status === 400) {
+        this._providerError = true;
+        return;
+      }
+      await this._loadData();
+      return;
+    }
+
+    await this._streamSseResponse(response);
+  }
+
+  private async _onRetryClick(): Promise<void> {
+    if (this._retrying || this._streaming || !this._instance) return;
+
+    this._retrying = true;
+    this._chatMessages = [];
+
+    const token = await this.#authContext?.getLatestToken();
+    const response = await retryInstance(this._instance.id, token);
+
+    if (!response.ok) {
+      this._retrying = false;
+      if (response.status === 409) {
+        this._chatMessages = [
+          {
+            role: "system",
+            content: "Cannot retry — instance is no longer in a failed state.",
+            timestamp: new Date().toISOString(),
+          },
+        ];
+      }
+      await this._loadData();
+      return;
+    }
+
+    await this._streamSseResponse(response);
+    this._retrying = false;
+  }
+
+  private async _streamSseResponse(response: Response): Promise<void> {
     this._streaming = true;
     this._providerError = false;
     this._viewingStepId = null;
     this._streamingText = "";
 
     try {
-      const token = await this.#authContext?.getLatestToken();
-      const response = await startInstance(this._instance.id, token);
-
-      if (!response.ok) {
-        if (response.status === 400) {
-          // Provider prerequisite error
-          this._providerError = true;
-          return;
-        }
-        // 409 or other error — reload data to get fresh state
-        await this._loadData();
-        return;
-      }
-
       if (!response.body) return;
 
       const reader = response.body.getReader();
@@ -808,14 +857,18 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
     const showStart = inst.status === "Pending" && !this._streaming;
     const startLabel = "Start";
 
+    // Retry button: shows for Failed instances
+    const showRetry = inst.status === "Failed" && !this._streaming;
+
     // Continue button (header): autonomous mode only — step advancement between steps
     const showContinue = !isInteractive
       && inst.status === "Running" && !hasActiveStep && !this._streaming
       && inst.steps.some((s) => s.status === "Pending");
 
-    // Cancel button: autonomous mode only
-    const showCancel = !isInteractive
-      && (inst.status === "Running" || inst.status === "Pending") && !this._streaming;
+    // Cancel button: autonomous mode when running/pending, or any mode when Failed
+    const showCancel = (!isInteractive
+      && (inst.status === "Running" || inst.status === "Pending") && !this._streaming)
+      || (inst.status === "Failed" && !this._streaming);
 
     // Input enablement: interactive vs autonomous
     let inputEnabled: boolean;
@@ -898,6 +951,13 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
           ? html`
               <uui-button label=${startLabel} look="primary" @click=${this._onStartClick}>
                 ${startLabel}
+              </uui-button>
+            `
+          : nothing}
+        ${showRetry
+          ? html`
+              <uui-button label="Retry" look="primary" ?disabled=${this._retrying} @click=${this._onRetryClick}>
+                ${this._retrying ? html`<uui-loader></uui-loader>` : "Retry"}
               </uui-button>
             `
           : nothing}

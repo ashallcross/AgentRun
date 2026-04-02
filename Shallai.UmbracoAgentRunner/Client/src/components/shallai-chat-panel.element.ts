@@ -166,7 +166,7 @@ export class ShallaiChatPanelElement extends UmbLitElement {
 
   render() {
     if (this.messages.length === 0) {
-      return html`<div class="empty-state">Send a message to begin.</div>`;
+      return html`<div class="empty-state">Start this workflow to begin.</div>`;
     }
 
     const lastIndex = this.messages.length - 1;
