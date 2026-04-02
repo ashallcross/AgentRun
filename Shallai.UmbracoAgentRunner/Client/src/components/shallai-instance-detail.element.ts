@@ -806,7 +806,7 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
 
     // Start button: shows for Pending instances
     const showStart = inst.status === "Pending" && !this._streaming;
-    const startLabel = isInteractive ? "Start conversation" : "Start";
+    const startLabel = "Start";
 
     // Continue button (header): autonomous mode only — step advancement between steps
     const showContinue = !isInteractive
@@ -836,7 +836,7 @@ export class ShallaiInstanceDetailElement extends UmbLitElement {
         inputPlaceholder = "Message the agent...";
       } else {
         inputEnabled = false;
-        inputPlaceholder = "Click 'Start conversation' to begin.";
+        inputPlaceholder = "Send a message to start.";
       }
     } else {
       inputEnabled = this._streaming && !this._viewingStepId;

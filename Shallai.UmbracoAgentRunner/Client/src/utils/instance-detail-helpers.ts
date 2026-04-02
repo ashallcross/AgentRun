@@ -25,7 +25,7 @@ export function stepSubtitle(step: StepDetailResponse): string {
     case "Complete":
       return step.writesTo?.[0] ?? "Complete";
     case "Error":
-      return "Failed";
+      return "Error";
     default:
       return step.status;
   }

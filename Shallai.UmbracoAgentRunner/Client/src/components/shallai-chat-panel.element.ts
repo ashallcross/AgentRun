@@ -22,7 +22,7 @@ export class ShallaiChatPanelElement extends UmbLitElement {
   inputEnabled = false;
 
   @property({ type: String, attribute: "input-placeholder" })
-  inputPlaceholder = "Click 'Start' to begin the workflow.";
+  inputPlaceholder = "Send a message to start.";
 
   @state()
   private _inputValue = "";

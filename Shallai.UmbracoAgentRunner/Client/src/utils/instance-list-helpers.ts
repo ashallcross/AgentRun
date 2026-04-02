@@ -43,17 +43,55 @@ export function buildWorkflowListPath(pathname: string): string {
   return pathname;
 }
 
-export function statusColor(status: string): string | undefined {
+export function displayStatus(status: string, mode?: string): string {
+  const isInteractive = mode !== "autonomous";
+  switch (status) {
+    case "Running":
+      return isInteractive ? "In progress" : "Running";
+    case "Failed":
+      return isInteractive ? "In progress" : "Failed";
+    case "Completed":
+      return "Complete";
+    case "Pending":
+      return "Pending";
+    case "Cancelled":
+      return "Cancelled";
+    default:
+      return status;
+  }
+}
+
+export function statusColor(status: string, mode?: string): string | undefined {
+  const isInteractive = mode !== "autonomous";
   switch (status) {
     case "Completed":
       return "positive";
     case "Failed":
-      return "danger";
+      return isInteractive ? undefined : "danger";
     case "Running":
-      return "warning";
+      return isInteractive ? undefined : "warning";
     default:
       return undefined;
   }
+}
+
+export interface InstanceListLabels {
+  newButton: string;
+  emptyState: string;
+}
+
+export function instanceListLabels(mode?: string): InstanceListLabels {
+  const isInteractive = mode !== "autonomous";
+  if (isInteractive) {
+    return {
+      newButton: "New session",
+      emptyState: "No sessions yet. Start one to begin.",
+    };
+  }
+  return {
+    newButton: "New Run",
+    emptyState: "No runs yet. Click 'New Run' to start.",
+  };
 }
 
 export function isTerminalStatus(status: string): boolean {

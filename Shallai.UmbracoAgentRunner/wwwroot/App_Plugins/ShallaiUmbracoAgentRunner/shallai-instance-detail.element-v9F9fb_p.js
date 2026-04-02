@@ -2,8 +2,8 @@ import { UmbLitElement as z } from "@umbraco-cms/backoffice/lit-element";
 import { css as T, property as g, state as p, customElement as E, html as r, nothing as d } from "@umbraco-cms/backoffice/external/lit";
 import { UMB_AUTH_CONTEXT as j } from "@umbraco-cms/backoffice/auth";
 import { umbConfirmModal as q } from "@umbraco-cms/backoffice/modal";
-import { b as W, a as U, e as F, m as V, s as K, f as J, h as P, i as G } from "./api-client-D3kCoM-2.js";
-import { n as X } from "./instance-list-helpers-D6jp37V8.js";
+import { b as W, a as U, d as V, m as F, s as K, e as J, f as P, h as G } from "./api-client-NjdX6lGK.js";
+import { n as X } from "./instance-list-helpers-Cp7Qb08Y.js";
 const Y = /* @__PURE__ */ new Set([
   "p",
   "h1",
@@ -124,7 +124,7 @@ function A(e) {
       }
     } else s.nodeType !== Node.TEXT_NODE && e.removeChild(s);
 }
-var se = Object.defineProperty, ae = Object.getOwnPropertyDescriptor, x = (e, t, s, a) => {
+var se = Object.defineProperty, ae = Object.getOwnPropertyDescriptor, k = (e, t, s, a) => {
   for (var i = a > 1 ? void 0 : a ? ae(t, s) : t, n = e.length - 1, o; n >= 0; n--)
     (o = e[n]) && (i = (a ? o(t, s, i) : o(i)) || i);
   return a && i && se(t, s, i), i;
@@ -272,36 +272,36 @@ v.styles = T`
       max-height: 300px;
     }
   `;
-x([
+k([
   g({ type: String })
 ], v.prototype, "toolName", 2);
-x([
+k([
   g({ type: String })
 ], v.prototype, "toolCallId", 2);
-x([
+k([
   g({ type: String })
 ], v.prototype, "summary", 2);
-x([
+k([
   g({ attribute: !1 })
 ], v.prototype, "arguments", 2);
-x([
+k([
   g({ type: String })
 ], v.prototype, "result", 2);
-x([
+k([
   g({ type: String })
 ], v.prototype, "status", 2);
-x([
+k([
   p()
 ], v.prototype, "_expanded", 2);
-v = x([
+v = k([
   E("shallai-tool-call")
 ], v);
-var ie = Object.defineProperty, ne = Object.getOwnPropertyDescriptor, $ = (e, t, s, a) => {
+var ie = Object.defineProperty, ne = Object.getOwnPropertyDescriptor, C = (e, t, s, a) => {
   for (var i = a > 1 ? void 0 : a ? ne(t, s) : t, n = e.length - 1, o; n >= 0; n--)
     (o = e[n]) && (i = (a ? o(t, s, i) : o(i)) || i);
   return a && i && ie(t, s, i), i;
 };
-let k = class extends z {
+let x = class extends z {
   constructor() {
     super(...arguments), this.role = "agent", this.content = "", this.timestamp = "", this.isStreaming = !1, this.toolCalls = [];
   }
@@ -360,7 +360,7 @@ let k = class extends z {
     `;
   }
 };
-k.styles = T`
+x.styles = T`
     :host {
       display: block;
     }
@@ -484,32 +484,32 @@ k.styles = T`
       animation: blink 1s step-end infinite;
     }
   `;
-$([
+C([
   g({ type: String })
-], k.prototype, "role", 2);
-$([
+], x.prototype, "role", 2);
+C([
   g({ type: String })
-], k.prototype, "content", 2);
-$([
+], x.prototype, "content", 2);
+C([
   g({ type: String })
-], k.prototype, "timestamp", 2);
-$([
+], x.prototype, "timestamp", 2);
+C([
   g({ type: Boolean, attribute: "is-streaming" })
-], k.prototype, "isStreaming", 2);
-$([
+], x.prototype, "isStreaming", 2);
+C([
   g({ attribute: !1 })
-], k.prototype, "toolCalls", 2);
-k = $([
+], x.prototype, "toolCalls", 2);
+x = C([
   E("shallai-chat-message")
-], k);
-var oe = Object.defineProperty, re = Object.getOwnPropertyDescriptor, y = (e, t, s, a) => {
+], x);
+var oe = Object.defineProperty, re = Object.getOwnPropertyDescriptor, w = (e, t, s, a) => {
   for (var i = a > 1 ? void 0 : a ? re(t, s) : t, n = e.length - 1, o; n >= 0; n--)
     (o = e[n]) && (i = (a ? o(t, s, i) : o(i)) || i);
   return a && i && oe(t, s, i), i;
 };
 let _ = class extends z {
   constructor() {
-    super(...arguments), this.messages = [], this.isStreaming = !1, this.inputEnabled = !1, this.inputPlaceholder = "Click 'Start' to begin the workflow.", this._inputValue = "", this._autoScrollPaused = !1, this._hasNewMessages = !1, this._wasStreaming = !1;
+    super(...arguments), this.messages = [], this.isStreaming = !1, this.inputEnabled = !1, this.inputPlaceholder = "Send a message to start.", this._inputValue = "", this._autoScrollPaused = !1, this._hasNewMessages = !1, this._wasStreaming = !1;
   }
   _onScroll(e) {
     const t = e.target;
@@ -664,31 +664,31 @@ _.styles = T`
       border-width: 0;
     }
   `;
-y([
+w([
   g({ attribute: !1 })
 ], _.prototype, "messages", 2);
-y([
+w([
   g({ type: Boolean, attribute: "is-streaming" })
 ], _.prototype, "isStreaming", 2);
-y([
+w([
   g({ type: Boolean, attribute: "input-enabled" })
 ], _.prototype, "inputEnabled", 2);
-y([
+w([
   g({ type: String, attribute: "input-placeholder" })
 ], _.prototype, "inputPlaceholder", 2);
-y([
+w([
   p()
 ], _.prototype, "_inputValue", 2);
-y([
+w([
   p()
 ], _.prototype, "_autoScrollPaused", 2);
-y([
+w([
   p()
 ], _.prototype, "_hasNewMessages", 2);
-y([
+w([
   p()
 ], _.prototype, "_wasStreaming", 2);
-_ = y([
+_ = w([
   E("shallai-chat-panel")
 ], _);
 function le(e) {
@@ -708,7 +708,7 @@ function O(e) {
     case "Complete":
       return e.writesTo?.[0] ?? "Complete";
     case "Error":
-      return "Failed";
+      return "Error";
     default:
       return e.status;
   }
@@ -736,11 +736,11 @@ var he = Object.defineProperty, de = Object.getOwnPropertyDescriptor, D = (e) =>
   for (var i = a > 1 ? void 0 : a ? de(t, s) : t, n = e.length - 1, o; n >= 0; n--)
     (o = e[n]) && (i = (a ? o(t, s, i) : o(i)) || i);
   return a && i && he(t, s, i), i;
-}, L = (e, t, s) => t.has(e) || D("Cannot " + s), C = (e, t, s) => (L(e, t, "read from private field"), s ? s.call(e) : t.get(e)), ge = (e, t, s) => t.has(e) ? D("Cannot add the same private member more than once") : t instanceof WeakSet ? t.add(e) : t.set(e, s), me = (e, t, s, a) => (L(e, t, "write to private field"), t.set(e, s), s), w;
+}, L = (e, t, s) => t.has(e) || D("Cannot " + s), $ = (e, t, s) => (L(e, t, "read from private field"), s ? s.call(e) : t.get(e)), ge = (e, t, s) => t.has(e) ? D("Cannot add the same private member more than once") : t instanceof WeakSet ? t.add(e) : t.set(e, s), me = (e, t, s, a) => (L(e, t, "write to private field"), t.set(e, s), s), y;
 let h = class extends z {
   constructor() {
-    super(), ge(this, w), this._instance = null, this._loading = !0, this._error = !1, this._selectedStepId = null, this._cancelling = !1, this._runNumber = 0, this._streaming = !1, this._providerError = !1, this._chatMessages = [], this._streamingText = "", this._viewingStepId = null, this._historyMessages = [], this._stepCompletable = !1, this._agentResponding = !1, this._toolBatchOpen = !1, this.consumeContext(j, (e) => {
-      me(this, w, e);
+    super(), ge(this, y), this._instance = null, this._loading = !0, this._error = !1, this._selectedStepId = null, this._cancelling = !1, this._runNumber = 0, this._streaming = !1, this._providerError = !1, this._chatMessages = [], this._streamingText = "", this._viewingStepId = null, this._historyMessages = [], this._stepCompletable = !1, this._agentResponding = !1, this._toolBatchOpen = !1, this.consumeContext(j, (e) => {
+      me(this, y, e);
     });
   }
   connectedCallback() {
@@ -748,7 +748,7 @@ let h = class extends z {
   }
   async _loadData() {
     try {
-      const e = le(window.location.pathname), t = await C(this, w)?.getLatestToken(), s = await W(e, t);
+      const e = le(window.location.pathname), t = await $(this, y)?.getLatestToken(), s = await W(e, t);
       this._instance = s;
       const a = await U(s.workflowAlias, t), n = X(a).find((o) => o.id === s.id);
       this._runNumber = n?.runNumber ?? 0, this._error = !1;
@@ -780,8 +780,8 @@ let h = class extends z {
       }
       this._viewingStepId = e.id;
       try {
-        const t = await C(this, w)?.getLatestToken(), s = this._instance.id, a = await F(s, e.id, t);
-        this._historyMessages = V(a);
+        const t = await $(this, y)?.getLatestToken(), s = this._instance.id, a = await V(s, e.id, t);
+        this._historyMessages = F(a);
       } catch {
         this._historyMessages = [];
       }
@@ -794,7 +794,7 @@ let h = class extends z {
     if (!(this._streaming || !this._instance)) {
       this._streaming = !0, this._providerError = !1, this._viewingStepId = null, this._streamingText = "";
       try {
-        const e = await C(this, w)?.getLatestToken(), t = await K(this._instance.id, e);
+        const e = await $(this, y)?.getLatestToken(), t = await K(this._instance.id, e);
         if (!t.ok) {
           if (t.status === 400) {
             this._providerError = !0;
@@ -1016,7 +1016,7 @@ let h = class extends z {
       }
     ];
     try {
-      const s = await C(this, w)?.getLatestToken();
+      const s = await $(this, y)?.getLatestToken();
       await P(this._instance.id, t, s);
     } catch {
       this._chatMessages = [
@@ -1041,7 +1041,7 @@ let h = class extends z {
       }
     ];
     try {
-      const s = await C(this, w)?.getLatestToken();
+      const s = await $(this, y)?.getLatestToken();
       await P(this._instance.id, t, s);
     } catch {
       this._chatMessages = [
@@ -1073,7 +1073,7 @@ let h = class extends z {
       }
       this._cancelling = !0;
       try {
-        const e = await C(this, w)?.getLatestToken();
+        const e = await $(this, y)?.getLatestToken();
         await G(this._instance.id, e), await this._loadData();
       } catch {
         console.warn("Failed to cancel instance");
@@ -1128,9 +1128,9 @@ let h = class extends z {
           and try refreshing the page.
         </div>
       `;
-    const e = this._instance, t = e.workflowMode !== "autonomous", s = e.status === "Completed" || e.status === "Failed" || e.status === "Cancelled", a = e.steps.find((b) => b.status === "Active"), i = !!a, n = e.status === "Pending" && !this._streaming, o = t ? "Start conversation" : "Start", c = !t && e.status === "Running" && !i && !this._streaming && e.steps.some((b) => b.status === "Pending"), f = !t && (e.status === "Running" || e.status === "Pending") && !this._streaming;
+    const e = this._instance, t = e.workflowMode !== "autonomous", s = e.status === "Completed" || e.status === "Failed" || e.status === "Cancelled", a = e.steps.find((b) => b.status === "Active"), i = !!a, n = e.status === "Pending" && !this._streaming, o = "Start", c = !t && e.status === "Running" && !i && !this._streaming && e.steps.some((b) => b.status === "Pending"), f = !t && (e.status === "Running" || e.status === "Pending") && !this._streaming;
     let u, l;
-    t ? s ? (u = !1, l = "Workflow complete") : this._viewingStepId ? (u = !1, l = "Viewing step history") : this._agentResponding ? (u = !1, l = "Agent is responding...") : this._streaming || a || e.status === "Running" ? (u = !0, l = "Message the agent...") : (u = !1, l = "Click 'Start conversation' to begin.") : (u = this._streaming && !this._viewingStepId, l = s ? "Workflow complete" : a ? "Step complete" : "Click 'Start' to begin the workflow.");
+    t ? s ? (u = !1, l = "Workflow complete") : this._viewingStepId ? (u = !1, l = "Viewing step history") : this._agentResponding ? (u = !1, l = "Agent is responding...") : this._streaming || a || e.status === "Running" ? (u = !0, l = "Message the agent...") : (u = !1, l = "Send a message to start.") : (u = this._streaming && !this._viewingStepId, l = s ? "Workflow complete" : a ? "Step complete" : "Click 'Start' to begin the workflow.");
     const S = t && !this._streaming ? (b) => this._onSendAndStream(b) : (b) => this._onSendMessage(b), M = t && this._stepCompletable && !this._agentResponding, B = e.steps.every((b) => b.status === "Complete"), R = t && s && B, H = this._providerError ? r`<div class="main-placeholder">Configure an AI provider in Umbraco.AI before workflows can run.</div>` : r`
           <div class="main-panel">
             ${M ? r`
@@ -1190,7 +1190,7 @@ let h = class extends z {
     `;
   }
 };
-w = /* @__PURE__ */ new WeakMap();
+y = /* @__PURE__ */ new WeakMap();
 h.styles = T`
     :host {
       display: block;
@@ -1439,4 +1439,4 @@ export {
   h as ShallaiInstanceDetailElement,
   Se as default
 };
-//# sourceMappingURL=shallai-instance-detail.element-CmS_udwg.js.map
+//# sourceMappingURL=shallai-instance-detail.element-v9F9fb_p.js.map

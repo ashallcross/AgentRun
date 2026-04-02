@@ -34,35 +34,22 @@ async function c(e, n, t) {
     throw new Error(`API error: ${s.status} ${s.statusText}`);
   return s.json();
 }
-async function p(e, n) {
-  const t = {};
-  n && (t.Authorization = `Bearer ${n}`);
-  const o = await fetch(`${a}${e}`, {
-    method: "DELETE",
-    headers: t
-  });
-  if (!o.ok)
-    throw new Error(`API error: ${o.status} ${o.statusText}`);
-}
-function d(e) {
+function h(e) {
   return l("/workflows", e);
 }
-function $(e, n) {
+function d(e, n) {
   return l(`/instances?workflowAlias=${encodeURIComponent(e)}`, n);
 }
-function I(e, n) {
+function C(e, n) {
   return c("/instances", { workflowAlias: e }, n);
 }
-function C(e, n) {
-  return p(`/instances/${encodeURIComponent(e)}`, n);
-}
-function g(e, n) {
+function I(e, n) {
   return l(`/instances/${encodeURIComponent(e)}`, n);
 }
-function y(e, n) {
+function $(e, n) {
   return c(`/instances/${encodeURIComponent(e)}/cancel`, {}, n);
 }
-async function w(e, n, t) {
+async function g(e, n, t) {
   const o = { "Content-Type": "application/json" };
   t && (o.Authorization = `Bearer ${t}`);
   const s = await fetch(
@@ -72,20 +59,20 @@ async function w(e, n, t) {
   if (!s.ok)
     throw new Error(`API error: ${s.status} ${s.statusText}`);
 }
-async function A(e, n) {
+async function y(e, n) {
   const t = {};
   return n && (t.Authorization = `Bearer ${n}`), fetch(`${a}/instances/${encodeURIComponent(e)}/start`, {
     method: "POST",
     headers: t
   });
 }
-function T(e, n, t) {
+function A(e, n, t) {
   return l(
     `/instances/${encodeURIComponent(e)}/conversation/${encodeURIComponent(n)}`,
     t
   );
 }
-function R(e) {
+function w(e) {
   const n = [];
   for (const t of e)
     if (t.role === "assistant" && t.content != null && !t.toolCallId)
@@ -109,7 +96,7 @@ function R(e) {
         arguments: o,
         result: null,
         status: "complete"
-      }, r = m(n);
+      }, r = p(n);
       r ? r.toolCalls = [...r.toolCalls ?? [], s] : n.push({
         role: "agent",
         content: "",
@@ -136,22 +123,21 @@ function R(e) {
     });
   return n;
 }
-function m(e) {
+function p(e) {
   for (let n = e.length - 1; n >= 0; n--)
     if (e[n].role === "agent") return e[n];
   return null;
 }
 export {
-  $ as a,
-  g as b,
-  I as c,
-  C as d,
-  T as e,
-  f,
-  d as g,
-  w as h,
-  y as i,
-  R as m,
-  A as s
+  d as a,
+  I as b,
+  C as c,
+  A as d,
+  f as e,
+  g as f,
+  h as g,
+  $ as h,
+  w as m,
+  y as s
 };
-//# sourceMappingURL=api-client-D3kCoM-2.js.map
+//# sourceMappingURL=api-client-NjdX6lGK.js.map

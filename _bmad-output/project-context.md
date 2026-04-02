@@ -62,6 +62,7 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - Test files (*.test.ts) are excluded from tsconfig — compiled separately by esbuild via web-test-runner
 - Strict mode enforced: no unused locals, no unused parameters, no fallthrough cases
 - Frontend tests use `describe`/`it` with `expect` from `@open-wc/testing` — not assert, not jest globals
+- **Lit state updates MUST be immutable** — never mutate `@state()` or `@property()` objects/arrays directly. Always create new objects via spread (`{ ...msg, content: newContent }`) and new arrays via slice/spread (`[...arr.slice(0, i), newItem, ...arr.slice(i + 1)]`). Direct mutation breaks Lit's dirty-checking reactivity.
 
 #### Testing Conventions
 - Backend: NUnit 4 attributes only — `[TestFixture]`, `[Test]`, `Assert.That()`. Never xUnit or MSTest.
@@ -84,6 +85,7 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - UI components: use UUI (Umbraco UI) component library — do not create custom design system components
 - Bundle ID in umbraco-package.json: `Shallai.UmbracoAgentRunner` — JS output path: `/App_Plugins/ShallaiUmbracoAgentRunner/`
 - SSE streaming for real-time chat — not SignalR, not WebSockets directly
+- **Interactive mode is the primary UX model** — the human drives step progression, the agent responds. Autonomous mode is secondary. All UI labels, buttons, status text, and placeholders must reflect the interactive model by default. Autonomous-specific UI (Running badges, Cancel buttons, spinning icons between turns) must be gated on `workflowMode === "autonomous"`. Story specs with UI work must state the UX mode explicitly.
 
 #### Lit Web Components
 - Components extend `LitElement` with Lit decorators (`@customElement`, `@property`, `@state`)
@@ -208,4 +210,4 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - Review periodically for outdated rules
 - Remove rules that become obvious over time
 
-Last Updated: 2026-04-01
+Last Updated: 2026-04-02

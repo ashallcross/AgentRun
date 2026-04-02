@@ -10,19 +10,19 @@ let e = class extends u {
     super(...arguments), this._routes = [
       {
         path: "workflows/:alias",
-        component: () => import("./shallai-instance-list.element-DIHTQQtR.js"),
+        component: () => import("./shallai-instance-list.element-CqGjrCWi.js"),
         setup: () => {
         }
       },
       {
         path: "workflows",
-        component: () => import("./shallai-workflow-list.element-CmGEkqyh.js"),
+        component: () => import("./shallai-workflow-list.element-3WNx346g.js"),
         setup: () => {
         }
       },
       {
         path: "instances/:id",
-        component: () => import("./shallai-instance-detail.element-CmS_udwg.js"),
+        component: () => import("./shallai-instance-detail.element-v9F9fb_p.js"),
         setup: () => {
         }
       },
@@ -53,4 +53,4 @@ export {
   e as ShallaiDashboardElement,
   f as default
 };
-//# sourceMappingURL=shallai-dashboard.element-DaHgoROj.js.map
+//# sourceMappingURL=shallai-dashboard.element-nu5DMcV1.js.map

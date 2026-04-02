@@ -5,9 +5,11 @@ import {
   extractWorkflowAlias,
   buildInstancePath,
   buildWorkflowListPath,
+  displayStatus,
   statusColor,
   isTerminalStatus,
   numberAndSortInstances,
+  instanceListLabels,
 } from "../utils/instance-list-helpers.js";
 
 describe("shallai-instance-list", () => {
@@ -151,12 +153,57 @@ describe("shallai-instance-list", () => {
       expect(numbered[2].id).to.equal("ccc333ddd444eee555fff666aaa11100");
     });
 
-    it("maps status to correct badge colour via statusColor function", () => {
+    it("maps status to correct badge colour via statusColor function (autonomous)", () => {
+      expect(statusColor("Completed", "autonomous")).to.equal("positive");
+      expect(statusColor("Failed", "autonomous")).to.equal("danger");
+      expect(statusColor("Running", "autonomous")).to.equal("warning");
+      expect(statusColor("Pending", "autonomous")).to.be.undefined;
+      expect(statusColor("Cancelled", "autonomous")).to.be.undefined;
+    });
+
+    it("maps status to correct badge colour for interactive mode", () => {
+      expect(statusColor("Completed", "interactive")).to.equal("positive");
+      expect(statusColor("Failed", "interactive")).to.be.undefined;
+      expect(statusColor("Running", "interactive")).to.be.undefined;
+      expect(statusColor("Pending", "interactive")).to.be.undefined;
+    });
+
+    it("defaults to interactive mode when mode is undefined", () => {
+      expect(statusColor("Running")).to.be.undefined;
+      expect(statusColor("Failed")).to.be.undefined;
       expect(statusColor("Completed")).to.equal("positive");
-      expect(statusColor("Failed")).to.equal("danger");
-      expect(statusColor("Running")).to.equal("warning");
-      expect(statusColor("Pending")).to.be.undefined;
-      expect(statusColor("Cancelled")).to.be.undefined;
+    });
+
+    it("displayStatus maps Running to 'In progress' for interactive mode", () => {
+      expect(displayStatus("Running", "interactive")).to.equal("In progress");
+      expect(displayStatus("Running", "autonomous")).to.equal("Running");
+      expect(displayStatus("Running")).to.equal("In progress");
+    });
+
+    it("displayStatus maps Failed to 'In progress' for interactive mode", () => {
+      expect(displayStatus("Failed", "interactive")).to.equal("In progress");
+      expect(displayStatus("Failed", "autonomous")).to.equal("Failed");
+    });
+
+    it("displayStatus maps Completed to 'Complete' for both modes", () => {
+      expect(displayStatus("Completed", "interactive")).to.equal("Complete");
+      expect(displayStatus("Completed", "autonomous")).to.equal("Complete");
+    });
+
+    it("displayStatus returns status as-is for unknown values", () => {
+      expect(displayStatus("SomeNewStatus")).to.equal("SomeNewStatus");
+    });
+
+    it("instanceListLabels returns interactive labels by default", () => {
+      const labels = instanceListLabels();
+      expect(labels.newButton).to.equal("New session");
+      expect(labels.emptyState).to.equal("No sessions yet. Start one to begin.");
+    });
+
+    it("instanceListLabels returns autonomous labels for autonomous mode", () => {
+      const labels = instanceListLabels("autonomous");
+      expect(labels.newButton).to.equal("New Run");
+      expect(labels.emptyState).to.equal("No runs yet. Click 'New Run' to start.");
     });
 
     it("formats step display correctly", () => {

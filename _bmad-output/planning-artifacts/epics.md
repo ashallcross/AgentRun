@@ -276,6 +276,7 @@ A developer or editor can watch agent output stream in real-time in a chat panel
 
 ### Epic 7: Error Handling & Recovery
 When something goes wrong, users see clear plain-language errors and can retry failed steps or cancel workflows — never stuck in an unrecoverable state.
+**Stories:** 7.0 Interactive mode label/UX cleanup (retro), 7.1 LLM error detection, 7.2 Step retry with context management
 **FRs covered:** FR45, FR46, FR47, FR48
 
 ### Epic 8: Artifact Browsing & Review
@@ -839,6 +840,25 @@ So that the experience matches the human-driven interactive model (PRD: "Human-i
 ## Epic 7: Error Handling & Recovery
 
 When something goes wrong, users see clear plain-language errors and can retry failed steps or cancel workflows — never stuck in an unrecoverable state.
+
+### Story 7.0: Interactive Mode Label & UX Cleanup
+
+As a developer or editor using an interactive workflow,
+I want all UI labels, buttons, status text, and placeholders to reflect the interactive-first model,
+So that the interface feels like a collaborative workspace rather than an autonomous process monitor.
+
+**Acceptance Criteria:**
+
+**Given** the instance list displays interactive workflow instances
+**When** status tags, buttons, empty states, and confirmation modals are rendered
+**Then** all labels use interactive-first language: "In progress" (not "Running"), "New session" (not "New Run"), "Error" subtitle (not "Failed")
+**And** the "Failed" backend status displays as "In progress" in interactive mode (user can return and continue)
+**And** the actions column uses a three-dot menu icon (not the drag/reorder icon)
+**And** the Start button reads "Start" (not "Start conversation")
+**And** the default chat placeholder reads "Send a message to start."
+**And** autonomous mode labels are unchanged
+
+**Note:** Frontend-only corrective story from Epic 6 retrospective. No backend execution changes. Autonomous mode unchanged.
 
 ### Story 7.1: LLM Error Detection & Reporting
 
