@@ -15,6 +15,18 @@ async function fetchJson<T>(path: string, token?: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+async function fetchText(path: string, token?: string): Promise<string> {
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  const response = await fetch(`${API_BASE}${path}`, { headers, credentials: "same-origin" });
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status} ${response.statusText}`);
+  }
+  return response.text();
+}
+
 async function postJson<T>(path: string, body: unknown, token?: string): Promise<T> {
   const headers: Record<string, string> = {
     Accept: "application/json",
@@ -181,4 +193,15 @@ function findLastAgentMessage(messages: ChatMessage[]): ChatMessage | null {
     if (messages[i].role === "agent") return messages[i];
   }
   return null;
+}
+
+export function encodeArtifactPath(path: string): string {
+  return path.split("/").map(encodeURIComponent).join("/");
+}
+
+export function getArtifact(instanceId: string, filePath: string, token?: string): Promise<string> {
+  return fetchText(
+    `/instances/${encodeURIComponent(instanceId)}/artifacts/${encodeArtifactPath(filePath)}`,
+    token,
+  );
 }

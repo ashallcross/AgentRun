@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-30
-last_updated: 2026-04-02 (epic 7 done)
+last_updated: 2026-04-02 (story 8-1 done)
 project: Shallai.UmbracoAgentRunner
 project_key: NOKEY
 tracking_system: file-system
@@ -98,8 +98,8 @@ development_status:
   epic-7-retrospective: optional
 
   # Epic 8: Artifact Browsing & Review
-  epic-8: backlog
-  8-1-artifact-api-and-markdown-renderer: backlog
+  epic-8: in-progress
+  8-1-artifact-api-and-markdown-renderer: done
   8-2-artifact-viewer-and-step-review: backlog
   epic-8-retrospective: optional
 

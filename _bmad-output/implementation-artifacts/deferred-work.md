@@ -127,6 +127,11 @@
 
 - No inner exception inspection in LlmErrorClassifier — provider SDKs may wrap HttpRequestException in their own exception types. Walking `InnerException` would improve classification accuracy but is a pre-existing gap not introduced by this change. [Engine/LlmErrorClassifier.cs]
 
+## Deferred from: code review of 8-1-artifact-api-and-markdown-renderer (2026-04-02)
+
+- Symlink escape test coverage — no endpoint-level test for symlink traversal returning 400. PathSandbox handles internally; creating symlinks in unit tests is platform-dependent. Consider integration test if needed.
+- Binary file handling with ReadAllTextAsync — spec says "return raw bytes with text/plain" for binary files, but `ReadAllTextAsync` may corrupt invalid UTF-8 sequences. Binary artifacts not expected in v1. If binary artifact support is added later, switch to `ReadAllBytesAsync` + `File()` result.
+
 ## Deferred from: code review of 7-2-step-retry-with-context-management (2026-04-02)
 
 - Test RetryInstance_FailedInstance relies on NullReferenceException catch — test verifies state mutations by catching NullReferenceException from missing HttpResponse. Brittle but doesn't affect production code. Pre-existing test pattern across endpoint tests.
