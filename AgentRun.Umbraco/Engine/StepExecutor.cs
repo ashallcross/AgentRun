@@ -13,6 +13,7 @@ public class StepExecutor : IStepExecutor
     private readonly IConversationStore _conversationStore;
     private readonly IArtifactValidator _artifactValidator;
     private readonly ICompletionChecker _completionChecker;
+    private readonly IToolLimitResolver _toolLimitResolver;
     private readonly ILogger<StepExecutor> _logger;
 
     public StepExecutor(
@@ -23,6 +24,7 @@ public class StepExecutor : IStepExecutor
         IConversationStore conversationStore,
         IArtifactValidator artifactValidator,
         ICompletionChecker completionChecker,
+        IToolLimitResolver toolLimitResolver,
         ILogger<StepExecutor> logger)
     {
         _profileResolver = profileResolver;
@@ -32,6 +34,7 @@ public class StepExecutor : IStepExecutor
         _conversationStore = conversationStore;
         _artifactValidator = artifactValidator;
         _completionChecker = completionChecker;
+        _toolLimitResolver = toolLimitResolver;
         _logger = logger;
     }
 
@@ -123,7 +126,11 @@ public class StepExecutor : IStepExecutor
             // FunctionInvokingChatClient in the Umbraco.AI middleware pipeline
             // won't auto-execute tools — our ToolLoop handles execution via declaredTools.
             var toolExecutionContext = new ToolExecutionContext(
-                context.InstanceFolderPath, instance.InstanceId, step.Id, instance.WorkflowAlias);
+                context.InstanceFolderPath, instance.InstanceId, step.Id, instance.WorkflowAlias)
+            {
+                Step = step,
+                Workflow = workflow
+            };
 
             var aiTools = new List<AITool>();
             foreach (var tool in toolDict.Values)
@@ -161,7 +168,7 @@ public class StepExecutor : IStepExecutor
             await ToolLoop.RunAsync(
                 client, messages, chatOptions, toolDict, toolExecutionContext, _logger, cancellationToken,
                 context.UserMessageReader, context.EventEmitter, context.ConversationRecorder,
-                completionCheck);
+                completionCheck, _toolLimitResolver);
 
             _logger.LogInformation(
                 "Tool loop complete for step {StepId} in workflow {WorkflowAlias} instance {InstanceId}",

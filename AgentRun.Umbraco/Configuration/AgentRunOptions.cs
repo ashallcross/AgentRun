@@ -17,4 +17,14 @@ public class AgentRunOptions
     /// Path to workflow definitions folder. Relative to ContentRootPath.
     /// </summary>
     public string WorkflowPath { get; set; } = "App_Data/AgentRun.Umbraco/workflows/";
+
+    /// <summary>
+    /// Site-level default tool tuning values. Bound from <c>AgentRun:ToolDefaults</c>.
+    /// </summary>
+    public AgentRunToolDefaultsOptions? ToolDefaults { get; set; }
+
+    /// <summary>
+    /// Site-level hard ceilings for tool tuning values. Bound from <c>AgentRun:ToolLimits</c>.
+    /// </summary>
+    public AgentRunToolLimitsOptions? ToolLimits { get; set; }
 }

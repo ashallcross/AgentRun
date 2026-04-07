@@ -2,11 +2,14 @@ using System.Threading.Channels;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
+using AgentRun.Umbraco.Configuration;
 using AgentRun.Umbraco.Engine;
 using AgentRun.Umbraco.Engine.Events;
 using AgentRun.Umbraco.Tools;
+using AgentRun.Umbraco.Workflows;
 
 namespace AgentRun.Umbraco.Tests.Engine;
 
@@ -16,7 +19,7 @@ public class ToolLoopTests
     private IChatClient _chatClient = null!;
     private ILogger _logger = null!;
     private ToolExecutionContext _context = null!;
-    private TimeSpan _originalTimeout;
+    private TimeSpan _userMessageTimeout = TimeSpan.FromSeconds(2);
 
     [SetUp]
     public void SetUp()
@@ -24,14 +27,12 @@ public class ToolLoopTests
         _chatClient = Substitute.For<IChatClient>();
         _logger = NullLogger.Instance;
         _context = new ToolExecutionContext("/tmp/instance", "inst-001", "step-1", "test-workflow");
-        _originalTimeout = ToolLoop.UserMessageTimeout;
-        ToolLoop.UserMessageTimeout = TimeSpan.FromSeconds(2);
+        _userMessageTimeout = TimeSpan.FromSeconds(2);
     }
 
     [TearDown]
     public void TearDown()
     {
-        ToolLoop.UserMessageTimeout = _originalTimeout;
         _chatClient?.Dispose();
     }
 
@@ -438,16 +439,14 @@ public class ToolLoopTests
         var channel = Channel.CreateUnbounded<string>();
         channel.Writer.TryWrite("Hello agent");
 
-        // Use short timeout so the test doesn't wait long after the LLM response
-        ToolLoop.UserMessageTimeout = TimeSpan.FromMilliseconds(100);
-
         _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
             .Returns(MakeStreamingTextResponse("Hi there, how can I help?"));
 
         var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
 
         await ToolLoop.RunAsync(_chatClient, messages, new ChatOptions(), declaredTools, _context, _logger, CancellationToken.None,
-            userMessageReader: channel.Reader, emitter: emitter, recorder: recorder);
+            userMessageReader: channel.Reader, emitter: emitter, recorder: recorder,
+            userMessageTimeoutOverride: TimeSpan.FromMilliseconds(100));
 
         // User message should be in conversation messages (drained at start of iteration, before LLM call)
         var userMsg = messages.FirstOrDefault(m => m.Role == ChatRole.User);
@@ -493,7 +492,8 @@ public class ToolLoopTests
         var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
 
         await ToolLoop.RunAsync(_chatClient, messages, new ChatOptions(), declaredTools, _context, _logger, CancellationToken.None,
-            userMessageReader: channel.Reader, recorder: recorder);
+            userMessageReader: channel.Reader, recorder: recorder,
+            userMessageTimeoutOverride: _userMessageTimeout);
 
         // User message should appear in messages after tool result
         var userMsg = messages.FirstOrDefault(m => m.Role == ChatRole.User);
@@ -552,7 +552,8 @@ public class ToolLoopTests
         var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
 
         var response = await ToolLoop.RunAsync(_chatClient, messages, new ChatOptions(), declaredTools, _context, _logger, CancellationToken.None,
-            userMessageReader: channel.Reader);
+            userMessageReader: channel.Reader,
+            userMessageTimeoutOverride: _userMessageTimeout);
 
         // LLM called twice: once initial, once after user message
         _chatClient.Received(2).GetStreamingResponseAsync(
@@ -569,9 +570,6 @@ public class ToolLoopTests
         var declaredTools = new Dictionary<string, IWorkflowTool>(StringComparer.OrdinalIgnoreCase);
         var channel = Channel.CreateUnbounded<string>();
 
-        // Use a very short timeout so this test completes quickly
-        ToolLoop.UserMessageTimeout = TimeSpan.FromMilliseconds(100);
-
         _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
             .Returns(MakeStreamingTextResponse("Any questions?"));
 
@@ -579,7 +577,8 @@ public class ToolLoopTests
 
         // No message written to channel — will timeout
         var response = await ToolLoop.RunAsync(_chatClient, messages, new ChatOptions(), declaredTools, _context, _logger, CancellationToken.None,
-            userMessageReader: channel.Reader);
+            userMessageReader: channel.Reader,
+            userMessageTimeoutOverride: TimeSpan.FromMilliseconds(100));
 
         // Should return normally (not throw)
         Assert.That(response, Is.Not.Null);
@@ -604,7 +603,8 @@ public class ToolLoopTests
 
         Assert.ThrowsAsync<OperationCanceledException>(
             async () => await ToolLoop.RunAsync(_chatClient, messages, new ChatOptions(), declaredTools, _context, _logger, cts.Token,
-                userMessageReader: channel.Reader));
+                userMessageReader: channel.Reader,
+                userMessageTimeoutOverride: _userMessageTimeout));
     }
 
     [Test]
@@ -632,13 +632,72 @@ public class ToolLoopTests
         var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
 
         await ToolLoop.RunAsync(_chatClient, messages, new ChatOptions(), declaredTools, _context, _logger, CancellationToken.None,
-            userMessageReader: channel.Reader);
+            userMessageReader: channel.Reader,
+            userMessageTimeoutOverride: _userMessageTimeout);
 
         var userMessages = messages.Where(m => m.Role == ChatRole.User).ToList();
         Assert.That(userMessages, Has.Count.EqualTo(3));
         Assert.That(userMessages[0].Text, Is.EqualTo("Message 1"));
         Assert.That(userMessages[1].Text, Is.EqualTo("Message 2"));
         Assert.That(userMessages[2].Text, Is.EqualTo("Message 3"));
+    }
+
+    [Test]
+    public async Task Reader_RealResolver_WorkflowOverride_AppliedToWaitTimeout()
+    {
+        // P9 / AC #7: prove the resolver path is wired by passing a real
+        // ToolLimitResolver and a workflow declaring a custom timeout. The wait
+        // should time out at the resolved value and exit normally — not throw.
+        var realResolver = new ToolLimitResolver(Options.Create(new AgentRunOptions()));
+        var step = new StepDefinition { Id = "step-1", Name = "Step", Agent = "a.md" };
+        var workflow = new WorkflowDefinition
+        {
+            Name = "T", Alias = "test-wf",
+            ToolDefaults = new() { ToolLoop = new() { UserMessageTimeoutSeconds = 1 } },
+            Steps = { step }
+        };
+        var context = new ToolExecutionContext("/tmp", "inst", "step-1", "test-wf")
+        {
+            Step = step,
+            Workflow = workflow
+        };
+
+        var declaredTools = new Dictionary<string, IWorkflowTool>(StringComparer.OrdinalIgnoreCase);
+        var channel = Channel.CreateUnbounded<string>();
+
+        _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+            .Returns(MakeStreamingTextResponse("Any questions?"));
+
+        var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
+
+        var startedAt = DateTime.UtcNow;
+        var response = await ToolLoop.RunAsync(
+            _chatClient, messages, new ChatOptions(), declaredTools, context, _logger, CancellationToken.None,
+            userMessageReader: channel.Reader,
+            toolLimitResolver: realResolver);
+        var elapsed = DateTime.UtcNow - startedAt;
+
+        Assert.That(response, Is.Not.Null);
+        // Workflow declared 1s — must have timed out reasonably close to that, not the 300s engine default.
+        Assert.That(elapsed, Is.LessThan(TimeSpan.FromSeconds(10)));
+    }
+
+    [Test]
+    public void Reader_NoOverride_NoResolver_ThrowsInvalidOperationException()
+    {
+        // D2: in interactive mode, missing override AND missing resolver/context is a wiring bug.
+        var declaredTools = new Dictionary<string, IWorkflowTool>(StringComparer.OrdinalIgnoreCase);
+        var channel = Channel.CreateUnbounded<string>();
+
+        _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+            .Returns(MakeStreamingTextResponse("Hello"));
+
+        var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
+
+        Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await ToolLoop.RunAsync(
+                _chatClient, messages, new ChatOptions(), declaredTools, _context, _logger, CancellationToken.None,
+                userMessageReader: channel.Reader));
     }
 
     [Test]
@@ -663,7 +722,8 @@ public class ToolLoopTests
         // MaxIterations is 100 — this will hit it
         var ex = Assert.ThrowsAsync<AgentRunException>(
             async () => await ToolLoop.RunAsync(_chatClient, messages, new ChatOptions(), declaredTools, _context, _logger, CancellationToken.None,
-                userMessageReader: channel.Reader));
+                userMessageReader: channel.Reader,
+                userMessageTimeoutOverride: _userMessageTimeout));
         Assert.That(ex!.Message, Does.Contain("exceeded maximum"));
     }
 }

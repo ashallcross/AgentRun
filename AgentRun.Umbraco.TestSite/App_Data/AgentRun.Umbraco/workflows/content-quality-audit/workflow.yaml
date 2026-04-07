@@ -1,42 +1,51 @@
 name: Content Quality Audit
-description: Audits content for quality and consistency
-mode: autonomous
+description: Scans, analyses, and reports on content quality
+mode: interactive
+# Change this to match your configured Umbraco.AI profile alias
 default_profile: anthropic-sonnet-4-6
+# Story 9.6: workflow-configurable tool tuning. Marketing pages routinely
+# exceed the 1 MB engine default in size only marginally — but live testing
+# on 2026-04-07 found that some homepages need ~2 MB headroom. Bump to 2 MB
+# and extend the per-request fetch_url timeout to 30s to absorb slow CDNs.
+tool_defaults:
+  fetch_url:
+    max_response_bytes: 2097152
+    timeout_seconds: 30
 steps:
-  - id: check_external
-    name: Check External References
-    agent: agents/external-checker.md
+  - id: scanner
+    name: Content Scanner
+    agent: agents/scanner.md
     tools:
       - fetch_url
       - write_file
     writes_to:
-      - artifacts/external-check.md
+      - artifacts/scan-results.md
     completion_check:
       files_exist:
-        - artifacts/external-check.md
-  - id: gather_content
-    name: Gather Content Inventory
-    agent: agents/content-gatherer.md
-    tools:
-      - read_file
-      - list_files
-      - write_file
-    writes_to:
-      - artifacts/content-inventory.json
-    completion_check:
-      files_exist:
-        - artifacts/content-inventory.json
-  - id: analyse_quality
-    name: Analyse Quality
-    agent: agents/quality-analyser.md
+        - artifacts/scan-results.md
+  - id: analyser
+    name: Quality Analyser
+    agent: agents/analyser.md
     tools:
       - read_file
       - write_file
     reads_from:
-      - artifacts/content-inventory.json
-      - artifacts/external-check.md
+      - artifacts/scan-results.md
     writes_to:
-      - artifacts/quality-report.md
+      - artifacts/quality-scores.md
     completion_check:
       files_exist:
-        - artifacts/quality-report.md
+        - artifacts/quality-scores.md
+  - id: reporter
+    name: Report Generator
+    agent: agents/reporter.md
+    tools:
+      - read_file
+      - write_file
+    reads_from:
+      - artifacts/quality-scores.md
+    writes_to:
+      - artifacts/audit-report.md
+    completion_check:
+      files_exist:
+        - artifacts/audit-report.md

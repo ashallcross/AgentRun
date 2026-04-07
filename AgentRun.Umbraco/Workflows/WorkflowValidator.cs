@@ -1,18 +1,38 @@
+using Microsoft.Extensions.Options;
 using YamlDotNet.Core;
 using YamlDotNet.Serialization;
+using AgentRun.Umbraco.Configuration;
 
 namespace AgentRun.Umbraco.Workflows;
 
 public sealed class WorkflowValidator : IWorkflowValidator
 {
+    private readonly IOptions<AgentRunOptions> _options;
+
+    public WorkflowValidator()
+        : this(Options.Create(new AgentRunOptions())) { }
+
+    public WorkflowValidator(IOptions<AgentRunOptions> options)
+    {
+        _options = options;
+    }
+
     private static readonly HashSet<string> AllowedRootKeys = new(StringComparer.Ordinal)
     {
-        "name", "description", "mode", "default_profile", "steps"
+        "name", "description", "mode", "default_profile", "steps", "icon", "variants", "tool_defaults"
     };
 
     private static readonly HashSet<string> AllowedStepKeys = new(StringComparer.Ordinal)
     {
-        "id", "name", "agent", "profile", "tools", "reads_from", "writes_to", "completion_check"
+        "id", "name", "description", "agent", "profile", "tools", "reads_from", "writes_to", "completion_check", "data_files", "tool_overrides"
+    };
+
+    // Tool tuning: allowed tool names and their settings (Story 9.6).
+    // Hardcoded — extend explicitly when migrating new values.
+    private static readonly Dictionary<string, HashSet<string>> AllowedToolSettings = new(StringComparer.Ordinal)
+    {
+        ["fetch_url"] = new(StringComparer.Ordinal) { "max_response_bytes", "timeout_seconds" },
+        ["tool_loop"] = new(StringComparer.Ordinal) { "user_message_timeout_seconds" }
     };
 
     private static readonly HashSet<string> AllowedCompletionCheckKeys = new(StringComparer.Ordinal)
@@ -54,8 +74,68 @@ public sealed class WorkflowValidator : IWorkflowValidator
         ValidateRequiredString(rootDict, "description", "Workflow", errors);
         ValidateMode(rootDict, errors);
         ValidateSteps(rootDict, errors);
+        ValidateToolTuningBlock(rootDict, "tool_defaults", "tool_defaults", errors);
 
         return new WorkflowValidationResult(errors);
+    }
+
+    private static void ValidateToolTuningBlock(
+        Dictionary<object, object> parent,
+        string blockKey,
+        string fieldPathPrefix,
+        List<WorkflowValidationError> errors)
+    {
+        if (!parent.TryGetValue(blockKey, out var blockValue) || blockValue is null)
+        {
+            return; // optional
+        }
+
+        if (blockValue is not Dictionary<object, object> blockDict)
+        {
+            errors.Add(new WorkflowValidationError(fieldPathPrefix, $"'{fieldPathPrefix}' must be a mapping"));
+            return;
+        }
+
+        foreach (var (toolKeyObj, toolValue) in blockDict)
+        {
+            var toolKey = toolKeyObj.ToString()!;
+            if (!AllowedToolSettings.TryGetValue(toolKey, out var allowedSettings))
+            {
+                errors.Add(new WorkflowValidationError(
+                    $"{fieldPathPrefix}.{toolKey}",
+                    $"Unknown tool '{toolKey}' in {fieldPathPrefix}. Allowed tools: {string.Join(", ", AllowedToolSettings.Keys)}"));
+                continue;
+            }
+
+            if (toolValue is not Dictionary<object, object> settingsDict)
+            {
+                errors.Add(new WorkflowValidationError(
+                    $"{fieldPathPrefix}.{toolKey}",
+                    $"'{fieldPathPrefix}.{toolKey}' must be a mapping"));
+                continue;
+            }
+
+            foreach (var (settingKeyObj, settingValue) in settingsDict)
+            {
+                var settingKey = settingKeyObj.ToString()!;
+                if (!allowedSettings.Contains(settingKey))
+                {
+                    errors.Add(new WorkflowValidationError(
+                        $"{fieldPathPrefix}.{toolKey}.{settingKey}",
+                        $"Unknown setting '{settingKey}' for tool '{toolKey}'. Allowed settings: {string.Join(", ", allowedSettings)}"));
+                    continue;
+                }
+
+                if (settingValue is null
+                    || !int.TryParse(settingValue.ToString(), out var intValue)
+                    || intValue <= 0)
+                {
+                    errors.Add(new WorkflowValidationError(
+                        $"{fieldPathPrefix}.{toolKey}.{settingKey}",
+                        $"'{fieldPathPrefix}.{toolKey}.{settingKey}' must be a positive integer, got '{settingValue}'"));
+                }
+            }
+        }
     }
 
     private static void ValidateRequiredString(
@@ -88,8 +168,7 @@ public sealed class WorkflowValidator : IWorkflowValidator
     {
         if (!dict.TryGetValue("mode", out var value) || value is null)
         {
-            errors.Add(new WorkflowValidationError("mode", "Workflow is missing required field 'mode'"));
-            return;
+            return; // mode is optional; default applied via WorkflowDefinition.Mode initializer
         }
 
         if (value is not string modeStr)
@@ -170,6 +249,8 @@ public sealed class WorkflowValidator : IWorkflowValidator
             errors.Add(new WorkflowValidationError($"steps[{index}].agent", $"Step '{stepLabel}' is missing required field 'agent'"));
         }
 
+        ValidateToolTuningBlock(stepDict, "tool_overrides", $"steps[{stepLabel}].tool_overrides", errors);
+
         if (stepDict.TryGetValue("completion_check", out var ccValue) && ccValue is not null)
         {
             if (ccValue is not Dictionary<object, object> ccDict)
@@ -189,6 +270,75 @@ public sealed class WorkflowValidator : IWorkflowValidator
                     errors.Add(new WorkflowValidationError($"steps[{index}].completion_check.files_exist", $"Step '{stepLabel}' completion_check 'files_exist' must be a non-empty list"));
                 }
             }
+        }
+    }
+
+    public void EnforceCeilings(WorkflowDefinition workflow)
+    {
+        var limits = _options.Value.ToolLimits;
+        if (limits is null)
+            return;
+
+        // Workflow-level
+        EnforceField(
+            workflow.ToolDefaults?.FetchUrl?.MaxResponseBytes,
+            limits.FetchUrl?.MaxResponseBytesCeiling,
+            workflow.Alias, "tool_defaults.fetch_url.max_response_bytes",
+            "FetchUrl:MaxResponseBytesCeiling");
+
+        EnforceField(
+            workflow.ToolDefaults?.FetchUrl?.TimeoutSeconds,
+            limits.FetchUrl?.TimeoutSecondsCeiling,
+            workflow.Alias, "tool_defaults.fetch_url.timeout_seconds",
+            "FetchUrl:TimeoutSecondsCeiling");
+
+        EnforceField(
+            workflow.ToolDefaults?.ToolLoop?.UserMessageTimeoutSeconds,
+            limits.ToolLoop?.UserMessageTimeoutSecondsCeiling,
+            workflow.Alias, "tool_defaults.tool_loop.user_message_timeout_seconds",
+            "ToolLoop:UserMessageTimeoutSecondsCeiling");
+
+        // Step-level overrides
+        foreach (var step in workflow.Steps)
+        {
+            EnforceField(
+                step.ToolOverrides?.FetchUrl?.MaxResponseBytes,
+                limits.FetchUrl?.MaxResponseBytesCeiling,
+                workflow.Alias,
+                $"steps[{step.Id}].tool_overrides.fetch_url.max_response_bytes",
+                "FetchUrl:MaxResponseBytesCeiling");
+
+            EnforceField(
+                step.ToolOverrides?.FetchUrl?.TimeoutSeconds,
+                limits.FetchUrl?.TimeoutSecondsCeiling,
+                workflow.Alias,
+                $"steps[{step.Id}].tool_overrides.fetch_url.timeout_seconds",
+                "FetchUrl:TimeoutSecondsCeiling");
+
+            EnforceField(
+                step.ToolOverrides?.ToolLoop?.UserMessageTimeoutSeconds,
+                limits.ToolLoop?.UserMessageTimeoutSecondsCeiling,
+                workflow.Alias,
+                $"steps[{step.Id}].tool_overrides.tool_loop.user_message_timeout_seconds",
+                "ToolLoop:UserMessageTimeoutSecondsCeiling");
+        }
+    }
+
+    private static void EnforceField(
+        int? declaredValue,
+        int? ceiling,
+        string workflowAlias,
+        string fieldPath,
+        string ceilingKey)
+    {
+        if (declaredValue is null || ceiling is null)
+            return;
+
+        if (declaredValue.Value > ceiling.Value)
+        {
+            throw new WorkflowConfigurationException(
+                $"Workflow '{workflowAlias}' {fieldPath} = {declaredValue.Value} exceeds the site-level ceiling of {ceiling.Value}. " +
+                $"Lower the workflow value or raise AgentRun:ToolLimits:{ceilingKey}.");
         }
     }
 

@@ -80,7 +80,16 @@ public class StepExecutorTests
             _conversationStore,
             _artifactValidator,
             _completionChecker,
+            new StubToolLimitResolver(),
             _logger);
+    }
+
+    private sealed class StubToolLimitResolver : AgentRun.Umbraco.Engine.IToolLimitResolver
+    {
+        public int ResolveFetchUrlMaxResponseBytes(StepDefinition step, WorkflowDefinition workflow) => AgentRun.Umbraco.Engine.EngineDefaults.FetchUrlMaxResponseBytes;
+        public int ResolveFetchUrlTimeoutSeconds(StepDefinition step, WorkflowDefinition workflow) => AgentRun.Umbraco.Engine.EngineDefaults.FetchUrlTimeoutSeconds;
+        public int ResolveToolLoopUserMessageTimeoutSeconds(StepDefinition step, WorkflowDefinition workflow) => 1; // short for tests
+        public void EnforceCeilings(WorkflowDefinition workflow) { }
     }
 
     private static StepDefinition MakeStep(string id = "step-1", List<string>? tools = null) =>
@@ -201,7 +210,7 @@ public class StepExecutorTests
     {
         // AC #11: structured logging with WorkflowAlias, InstanceId, StepId
         var loggerSub = Substitute.For<ILogger<StepExecutor>>();
-        var executor = new StepExecutor(_profileResolver, _promptAssembler, [], _instanceManager, _conversationStore, _artifactValidator, _completionChecker, loggerSub);
+        var executor = new StepExecutor(_profileResolver, _promptAssembler, [], _instanceManager, _conversationStore, _artifactValidator, _completionChecker, new StubToolLimitResolver(), loggerSub);
         var context = MakeExecutionContext();
 
         await executor.ExecuteStepAsync(context, CancellationToken.None);

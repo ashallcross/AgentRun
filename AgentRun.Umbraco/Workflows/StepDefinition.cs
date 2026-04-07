@@ -19,4 +19,10 @@ public sealed class StepDefinition
     public List<string>? WritesTo { get; set; }
 
     public CompletionCheckDefinition? CompletionCheck { get; set; }
+
+    /// <summary>
+    /// Step-level tool tuning overrides. Maps to YAML <c>tool_overrides</c>.
+    /// Takes precedence over workflow-level <see cref="WorkflowDefinition.ToolDefaults"/>.
+    /// </summary>
+    public ToolDefaultsConfig? ToolOverrides { get; set; }
 }

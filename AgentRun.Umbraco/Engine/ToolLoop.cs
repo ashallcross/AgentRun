@@ -9,7 +9,6 @@ namespace AgentRun.Umbraco.Engine;
 public static class ToolLoop
 {
     internal const int MaxIterations = 100;
-    internal static TimeSpan UserMessageTimeout = TimeSpan.FromMinutes(5);
 
     public static async Task<ChatResponse> RunAsync(
         IChatClient client,
@@ -22,8 +21,16 @@ public static class ToolLoop
         ChannelReader<string>? userMessageReader = null,
         ISseEventEmitter? emitter = null,
         IConversationRecorder? recorder = null,
-        Func<CancellationToken, Task<bool>>? completionCheck = null)
+        Func<CancellationToken, Task<bool>>? completionCheck = null,
+        IToolLimitResolver? toolLimitResolver = null,
+        TimeSpan? userMessageTimeoutOverride = null)
     {
+        // The user-message wait window (Story 9.6) is only needed in interactive
+        // mode (when userMessageReader is non-null). Resolution is deferred until
+        // first use; in interactive mode without an override, missing resolver or
+        // Step/Workflow context is a wiring bug — fail loud.
+        TimeSpan? userMessageTimeout = userMessageTimeoutOverride;
+
         var iteration = 0;
         while (true)
         {
@@ -125,8 +132,21 @@ public static class ToolLoop
                 }
 
                 // Nothing waiting — block with timeout
+                if (!userMessageTimeout.HasValue)
+                {
+                    if (toolLimitResolver is null || context.Step is null || context.Workflow is null)
+                    {
+                        throw new InvalidOperationException(
+                            "ToolLoop.RunAsync interactive mode requires either userMessageTimeoutOverride OR a non-null " +
+                            "IToolLimitResolver with ToolExecutionContext.Step and ToolExecutionContext.Workflow populated.");
+                    }
+
+                    userMessageTimeout = TimeSpan.FromSeconds(
+                        toolLimitResolver.ResolveToolLoopUserMessageTimeoutSeconds(context.Step, context.Workflow));
+                }
+
                 using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                timeoutCts.CancelAfter(UserMessageTimeout);
+                timeoutCts.CancelAfter(userMessageTimeout.Value);
 
                 try
                 {

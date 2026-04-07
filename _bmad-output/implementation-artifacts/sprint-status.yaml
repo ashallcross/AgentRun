@@ -22,6 +22,10 @@
 #   - in-progress: Developer actively working on implementation
 #   - review: Ready for code review (via Dev's code-review workflow)
 #   - done: Story completed
+#   - moved: Story superseded by another story; see inline comment for pointer
+#       (used when scope is pulled forward / expanded into a different story —
+#        the original is preserved in epics.md as a redirect note, and the new
+#        owning story is the source of truth from then on)
 #
 # Retrospective Status:
 #   - optional: Can be completed but not required
@@ -35,8 +39,8 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-30
-last_updated: 2026-04-02 (R1 rename done)
-project: Shallai.UmbracoAgentRunner
+last_updated: 2026-04-07 (story 9-6 code review complete → done; manual E2E gate still pending user)
+project: AgentRun.Umbraco
 project_key: NOKEY
 tracking_system: file-system
 story_location: /Users/adamshallcross/Documents/Umbraco AI/_bmad-output/implementation-artifacts
@@ -95,29 +99,41 @@ development_status:
   7-0-interactive-mode-label-ux-cleanup: done
   7-1-llm-error-detection-and-reporting: done
   7-2-step-retry-with-context-management: done
-  epic-7-retrospective: optional
+  epic-7-retrospective: done
 
   # Epic 8: Artifact Browsing & Review
   epic-8: done
   8-1-artifact-api-and-markdown-renderer: done
   8-2-artifact-list-and-popover-viewer: done
-  epic-8-retrospective: optional
+  epic-8-retrospective: done
 
   # Pre-Epic 9: Rename Shallai to AgentRun
   R1-rename-shallai-to-agentrun: done
 
-  # Epic 9: Example Workflow, Documentation & Packaging
-  epic-9: backlog
-  9-1-content-quality-audit-example-workflow: backlog
-  9-2-json-schema-for-workflow-yaml: backlog
-  9-3-documentation-and-nuget-packaging: backlog
+  # Epic 9: Beta Release Preparation
+  # Re-scoped 2026-04-07 — was "Example Workflow, Documentation & Packaging".
+  # Goal is now a meaningful private beta (NuGet 1.0.0-beta.1, curated invite list,
+  # NOT public Marketplace). Two example workflows, beta-blocker engine fixes,
+  # documentation. Story dependency order is 9-6 → 9-0 → 9-1c → 9-1b → 9-4 → 9-2 → 9-3 → 9-5.
+  epic-9: in-progress
+  9-6-workflow-configurable-tool-limits: done                   # BETA BLOCKER — architectural foundation, ships first
+  9-0-toolloop-stall-recovery: backlog                          # BETA BLOCKER — depends on 9-6 (configurable user_message_timeout)
+  9-1a-content-quality-audit-working-skeleton: done             # full validation blocked by 9-0; skeleton itself is committed
+  9-1c-first-run-ux-url-input: backlog                          # depends on 9-0 + 9-6
+  9-1b-content-quality-audit-polish-and-quality: backlog        # depends on 9-1c (and on 9-0, 9-6 transitively)
+  9-4-accessibility-quick-scan-workflow: backlog                # depends on 9-1c patterns being in place
+  9-2-json-schema-for-workflow-yaml: backlog                    # needs 9-6 keys (tool_defaults, tool_overrides) included
+  9-3-documentation-and-nuget-packaging: backlog                # needs 9-6 (resolution chain section) and 9-1c (first-run framing)
+  9-5-private-beta-distribution-plan: backlog                   # ships last — distributes everything above
   epic-9-retrospective: optional
 
-  # Epic 10: Ship Readiness & Stability
+  # Epic 10: Ship Readiness & Public Launch
+  # Re-scoped 2026-04-07 — post-beta stability + public 1.0 launch. 10-3 was pulled
+  # forward into 9-0 as a beta blocker.
   epic-10: backlog
   10-1-instance-concurrency-locking: backlog
   10-2-context-management-for-long-conversations: backlog
-  10-3-multi-turn-interactive-fix: backlog
+  10-3-multi-turn-interactive-fix: moved                        # moved into 9-0 on 2026-04-07 — scope expanded from question-detection bug to full stall recovery & completion logic
   10-4-open-source-licence-decision: backlog
   10-5-marketplace-listing-and-community-launch: backlog
   epic-10-retrospective: optional

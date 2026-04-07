@@ -118,6 +118,19 @@ public sealed class WorkflowRegistry : IWorkflowRegistry
             return;
         }
 
+        definition.Alias = alias;
+
+        // Story 9.6: enforce site-level ceilings on tool tuning values.
+        try
+        {
+            _validator.EnforceCeilings(definition);
+        }
+        catch (WorkflowConfigurationException ex)
+        {
+            _logger.LogError("Workflow '{WorkflowAlias}': {Message}", alias, ex.Message);
+            return;
+        }
+
         VerifyAgentFiles(alias, folderPath, definition);
 
         if (!VerifyToolReferences(alias, definition))

@@ -29,6 +29,9 @@ public class AgentRunComposer : IComposer
         // Conversation persistence (JSONL append-only per step)
         builder.Services.AddSingleton<IConversationStore, ConversationStore>();
 
+        // Tool limit resolver (Story 9.6) — singleton, stateless, depends only on IOptions<>.
+        builder.Services.AddSingleton<IToolLimitResolver, ToolLimitResolver>();
+
         // Engine services
         builder.Services.AddSingleton<IPromptAssembler, PromptAssembler>();
         builder.Services.AddSingleton<IProfileResolver, ProfileResolver>();
@@ -55,10 +58,9 @@ public class AgentRunComposer : IComposer
         // SSRF protection + fetch_url tool (Story 5.3)
         builder.Services.AddSingleton<INetworkAccessPolicy, DefaultNetworkAccessPolicy>();
         builder.Services.AddSingleton<SsrfProtection>();
-        builder.Services.AddHttpClient("FetchUrl", client =>
-        {
-            client.Timeout = TimeSpan.FromSeconds(15);
-        });
+        // FetchUrl HttpClient — timeout is applied per-request via IToolLimitResolver
+        // (Story 9.6), NOT via HttpClient.Timeout.
+        builder.Services.AddHttpClient("FetchUrl");
         builder.Services.AddSingleton<IWorkflowTool, FetchUrlTool>();
     }
 }
