@@ -51,6 +51,18 @@ public class ToolLoopTests
         await Task.CompletedTask;
     }
 
+    private static async IAsyncEnumerable<ChatResponseUpdate> MakeEmptyStreamingResponse()
+    {
+        // Single whitespace-only assistant chunk — accumulatedText becomes whitespace,
+        // and an empty assistant message is added to the conversation. No tool calls.
+        yield return new ChatResponseUpdate
+        {
+            Role = ChatRole.Assistant,
+            Contents = [new TextContent(" ")]
+        };
+        await Task.CompletedTask;
+    }
+
     private static async IAsyncEnumerable<ChatResponseUpdate> MakeStreamingTextResponse(string text)
     {
         yield return new ChatResponseUpdate
@@ -725,5 +737,311 @@ public class ToolLoopTests
                 userMessageReader: channel.Reader,
                 userMessageTimeoutOverride: _userMessageTimeout));
         Assert.That(ex!.Message, Does.Contain("exceeded maximum"));
+    }
+
+    // --- Story 9.0 stall detection wiring tests ---
+
+    [Test]
+    public void Stall_Interactive_EmptyAssistantTurnAfterToolResult_ThrowsStallDetectedException()
+    {
+        // AC #1: empty turn after a tool result in interactive mode → fail fast.
+        var tool = Substitute.For<IWorkflowTool>();
+        tool.Name.Returns("fetch_url");
+        tool.Description.Returns("Fetches a URL");
+        tool.ExecuteAsync(Arg.Any<IDictionary<string, object?>>(), Arg.Any<ToolExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns("<html>...</html>");
+
+        var declaredTools = new Dictionary<string, IWorkflowTool>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["fetch_url"] = tool
+        };
+
+        var channel = Channel.CreateUnbounded<string>();
+        var callSequence = 0;
+        _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                callSequence++;
+                if (callSequence == 1)
+                    return MakeStreamingToolCalls(("call-1", "fetch_url", null));
+                return MakeEmptyStreamingResponse();
+            });
+
+        var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
+
+        var ex = Assert.ThrowsAsync<StallDetectedException>(
+            async () => await ToolLoop.RunAsync(_chatClient, messages, new ChatOptions(), declaredTools, _context, _logger, CancellationToken.None,
+                userMessageReader: channel.Reader,
+                userMessageTimeoutOverride: _userMessageTimeout));
+
+        Assert.That(ex!.Message, Is.EqualTo("The agent stopped responding mid-task. Click retry to try again."));
+        Assert.That(ex.LastToolCall, Is.EqualTo("fetch_url"));
+        Assert.That(ex.StepId, Is.EqualTo("step-1"));
+        Assert.That(ex.InstanceId, Is.EqualTo("inst-001"));
+        Assert.That(ex.WorkflowAlias, Is.EqualTo("test-workflow"));
+    }
+
+    [Test]
+    public void Stall_Interactive_NarrativeTextAfterToolResult_ThrowsStallDetectedException()
+    {
+        // AC #3: narration without tool call after a tool result is a stall.
+        var tool = Substitute.For<IWorkflowTool>();
+        tool.Name.Returns("fetch_url");
+        tool.Description.Returns("Fetches a URL");
+        tool.ExecuteAsync(Arg.Any<IDictionary<string, object?>>(), Arg.Any<ToolExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns("<html>...</html>");
+
+        var declaredTools = new Dictionary<string, IWorkflowTool>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["fetch_url"] = tool
+        };
+
+        var channel = Channel.CreateUnbounded<string>();
+        var callSequence = 0;
+        _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                callSequence++;
+                if (callSequence == 1)
+                    return MakeStreamingToolCalls(("call-1", "fetch_url", null));
+                return MakeStreamingTextResponse("Let me process that and write the results.");
+            });
+
+        var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
+
+        var ex = Assert.ThrowsAsync<StallDetectedException>(
+            async () => await ToolLoop.RunAsync(_chatClient, messages, new ChatOptions(), declaredTools, _context, _logger, CancellationToken.None,
+                userMessageReader: channel.Reader,
+                userMessageTimeoutOverride: _userMessageTimeout));
+
+        Assert.That(ex!.LastToolCall, Is.EqualTo("fetch_url"));
+    }
+
+    [Test]
+    public async Task Stall_Interactive_QuestionAfterToolResult_DoesNotThrow_WaitsForUser()
+    {
+        // AC #2: text ending in `?` after a tool result is a wait, not a stall.
+        var tool = Substitute.For<IWorkflowTool>();
+        tool.Name.Returns("fetch_url");
+        tool.Description.Returns("Fetches a URL");
+        tool.ExecuteAsync(Arg.Any<IDictionary<string, object?>>(), Arg.Any<ToolExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns("<html>...</html>");
+
+        var declaredTools = new Dictionary<string, IWorkflowTool>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["fetch_url"] = tool
+        };
+
+        var channel = Channel.CreateUnbounded<string>();
+        var callSequence = 0;
+        _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                callSequence++;
+                if (callSequence == 1)
+                    return MakeStreamingToolCalls(("call-1", "fetch_url", null));
+                return MakeStreamingTextResponse("I retrieved the page. Anything else you want me to fetch?");
+            });
+
+        var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
+
+        // Times out waiting on the channel — exits normally, not as a stall exception.
+        var response = await ToolLoop.RunAsync(_chatClient, messages, new ChatOptions(), declaredTools, _context, _logger, CancellationToken.None,
+            userMessageReader: channel.Reader,
+            userMessageTimeoutOverride: TimeSpan.FromMilliseconds(100));
+
+        Assert.That(response, Is.Not.Null);
+    }
+
+    [Test]
+    public async Task Stall_Autonomous_EmptyTurnAfterToolResult_DoesNotThrow_ExitsNormally()
+    {
+        // AC #6: stall detection is interactive-only. Autonomous mode must NOT throw on
+        // an empty turn following a tool result — the existing exit branch handles it.
+        var tool = Substitute.For<IWorkflowTool>();
+        tool.Name.Returns("fetch_url");
+        tool.Description.Returns("Fetches a URL");
+        tool.ExecuteAsync(Arg.Any<IDictionary<string, object?>>(), Arg.Any<ToolExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns("<html>...</html>");
+
+        var declaredTools = new Dictionary<string, IWorkflowTool>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["fetch_url"] = tool
+        };
+
+        var callSequence = 0;
+        _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                callSequence++;
+                if (callSequence == 1)
+                    return MakeStreamingToolCalls(("call-1", "fetch_url", null));
+                return MakeEmptyStreamingResponse();
+            });
+
+        var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
+
+        // No userMessageReader → autonomous mode. Must exit normally.
+        var response = await ToolLoop.RunAsync(_chatClient, messages, new ChatOptions(), declaredTools, _context, _logger, CancellationToken.None);
+
+        Assert.That(response, Is.Not.Null);
+    }
+
+    [Test]
+    public async Task Stall_Interactive_NoPrecedingToolResult_DoesNotThrow_RunsInputWait()
+    {
+        // AC #4: empty turn at step start (no tool result yet) → not a stall.
+        // Existing input-wait path runs.
+        var declaredTools = new Dictionary<string, IWorkflowTool>(StringComparer.OrdinalIgnoreCase);
+        var channel = Channel.CreateUnbounded<string>();
+
+        _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+            .Returns(MakeEmptyStreamingResponse());
+
+        var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
+
+        var response = await ToolLoop.RunAsync(_chatClient, messages, new ChatOptions(), declaredTools, _context, _logger, CancellationToken.None,
+            userMessageReader: channel.Reader,
+            userMessageTimeoutOverride: TimeSpan.FromMilliseconds(100));
+
+        Assert.That(response, Is.Not.Null);
+    }
+
+    [Test]
+    public async Task Stall_Interactive_NarrationButCompletionCheckPasses_ReturnsCleanly_NoStall()
+    {
+        // Story 9.0 live-test refinement (2026-04-07): when the model narrates after a
+        // tool result but the step's completion criteria are already satisfied, the run
+        // actually succeeded. Treat as success, NOT a stall — running the completion
+        // check first short-circuits the stall throw. Discovered when the scanner
+        // workflow successfully wrote artifacts/scan-results.md, then the model said
+        // "Done!" and Story 9.0 was incorrectly failing the instance.
+        var tool = Substitute.For<IWorkflowTool>();
+        tool.Name.Returns("write_file");
+        tool.Description.Returns("Writes a file");
+        tool.ExecuteAsync(Arg.Any<IDictionary<string, object?>>(), Arg.Any<ToolExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns("ok");
+
+        var declaredTools = new Dictionary<string, IWorkflowTool>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["write_file"] = tool
+        };
+
+        var channel = Channel.CreateUnbounded<string>();
+        var callSequence = 0;
+        _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                callSequence++;
+                if (callSequence == 1)
+                    return MakeStreamingToolCalls(("call-1", "write_file", null));
+                // Narration after a successful tool round-trip — would have been a
+                // StallNarration without the completion-check short-circuit.
+                return MakeStreamingTextResponse("All done! I have written the results.");
+            });
+
+        // Completion check passes — file exists, run is logically complete.
+        Func<CancellationToken, Task<bool>> completionCheck = _ => Task.FromResult(true);
+
+        var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
+
+        var response = await ToolLoop.RunAsync(
+            _chatClient, messages, new ChatOptions(), declaredTools, _context, _logger, CancellationToken.None,
+            userMessageReader: channel.Reader,
+            completionCheck: completionCheck,
+            userMessageTimeoutOverride: _userMessageTimeout);
+
+        Assert.That(response, Is.Not.Null);
+        // Sanity: only two LLM calls — tool round-trip + the narrative final turn.
+        // No retry, no extra calls. The narration final turn is recorded normally.
+        _chatClient.Received(2).GetStreamingResponseAsync(
+            Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public void Stall_Interactive_NarrationAndCompletionCheckFails_StillThrowsStall()
+    {
+        // Same shape as the success case above but completionCheck returns false —
+        // the narration is genuinely a stall and must still throw. This guards against
+        // the completion-check short-circuit being too permissive.
+        var tool = Substitute.For<IWorkflowTool>();
+        tool.Name.Returns("write_file");
+        tool.Description.Returns("Writes a file");
+        tool.ExecuteAsync(Arg.Any<IDictionary<string, object?>>(), Arg.Any<ToolExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns("ok");
+
+        var declaredTools = new Dictionary<string, IWorkflowTool>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["write_file"] = tool
+        };
+
+        var channel = Channel.CreateUnbounded<string>();
+        var callSequence = 0;
+        _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                callSequence++;
+                if (callSequence == 1)
+                    return MakeStreamingToolCalls(("call-1", "write_file", null));
+                return MakeStreamingTextResponse("Let me think about this for a moment.");
+            });
+
+        Func<CancellationToken, Task<bool>> completionCheck = _ => Task.FromResult(false);
+
+        var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
+
+        Assert.ThrowsAsync<StallDetectedException>(
+            async () => await ToolLoop.RunAsync(
+                _chatClient, messages, new ChatOptions(), declaredTools, _context, _logger, CancellationToken.None,
+                userMessageReader: channel.Reader,
+                completionCheck: completionCheck,
+                userMessageTimeoutOverride: _userMessageTimeout));
+    }
+
+    [Test]
+    public async Task Stall_Interactive_MultiTurn_UserRepliedThenEmptyTurn_DoesNotThrow()
+    {
+        // Failure & Edge Cases: after a user reply (most recent non-assistant is User,
+        // not Tool), an empty turn must NOT trigger stall detection. AC #4 path.
+        var tool = Substitute.For<IWorkflowTool>();
+        tool.Name.Returns("fetch_url");
+        tool.Description.Returns("Fetches a URL");
+        tool.ExecuteAsync(Arg.Any<IDictionary<string, object?>>(), Arg.Any<ToolExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns("<html>...</html>");
+
+        var declaredTools = new Dictionary<string, IWorkflowTool>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["fetch_url"] = tool
+        };
+
+        var channel = Channel.CreateUnbounded<string>();
+        var callSequence = 0;
+        _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                callSequence++;
+                if (callSequence == 1)
+                {
+                    return MakeStreamingToolCalls(("call-1", "fetch_url", null));
+                }
+                if (callSequence == 2)
+                {
+                    // LLM asks a question after the tool result — input-wait branch runs.
+                    // Pre-queue the user reply so the wait drains and the loop continues.
+                    channel.Writer.TryWrite("yes please");
+                    return MakeStreamingTextResponse("Want me to fetch the sitemap too?");
+                }
+                // After the user reply the LLM produces an empty turn. The most recent
+                // non-assistant message is now ChatRole.User → NotApplicable, NOT a stall.
+                return MakeEmptyStreamingResponse();
+            });
+
+        var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
+
+        var response = await ToolLoop.RunAsync(_chatClient, messages, new ChatOptions(), declaredTools, _context, _logger, CancellationToken.None,
+            userMessageReader: channel.Reader,
+            userMessageTimeoutOverride: TimeSpan.FromMilliseconds(100));
+
+        Assert.That(response, Is.Not.Null);
     }
 }

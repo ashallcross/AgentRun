@@ -100,12 +100,53 @@ public static class ToolLoop
 
             if (functionCalls.Count == 0)
             {
+                // Story 9.0: classify the empty-tool-call turn before deciding
+                // whether to wait for user input. Detection is pure; recovery
+                // (the throw below) is the only line a future strategy would
+                // swap. Autonomous mode ignores the classification entirely.
+                var stallClassification = StallDetector.Classify(messages, accumulatedText, functionCalls);
+
                 // No tool calls — check if we should wait for user input
                 if (userMessageReader is null)
                 {
-                    // Non-interactive mode — exit immediately
+                    // Non-interactive mode — exit immediately. Stall detection
+                    // is interactive-only (Story 9.0 AC #6).
                     return new ChatResponse(messages.Where(m => m.Role == ChatRole.Assistant).LastOrDefault()
                         ?? new ChatMessage(ChatRole.Assistant, accumulatedText));
+                }
+
+                if (stallClassification == StallClassification.StallEmptyContent
+                    || stallClassification == StallClassification.StallNarration)
+                {
+                    // Story 9.0 refinement (live test 2026-04-07): if the step's
+                    // completion criteria are already satisfied, the run actually
+                    // succeeded — the model just narrated "I'm done" instead of
+                    // going silent. Failing it would mask a successful run as a
+                    // bug and force a pointless retry. Run the completion check
+                    // first; if it passes, exit cleanly with success. Only throw
+                    // a stall when there is no verified evidence of completion.
+                    // This preserves "deny by default" — unverified narration
+                    // still stalls — while letting verified-complete runs finish.
+                    if (completionCheck is not null && await completionCheck(cancellationToken))
+                    {
+                        logger.LogInformation(
+                            "Completion check passed despite empty/narrative final turn for step {StepId} in workflow {WorkflowAlias} instance {InstanceId} — treating as successful completion, not a stall",
+                            context.StepId, context.WorkflowAlias, context.InstanceId);
+                        return new ChatResponse(messages.Where(m => m.Role == ChatRole.Assistant).LastOrDefault()
+                            ?? new ChatMessage(ChatRole.Assistant, accumulatedText));
+                    }
+
+                    var lastToolCallName = ExtractLastToolCallName(messages);
+                    var stallType = stallClassification == StallClassification.StallEmptyContent
+                        ? "empty"
+                        : "narration";
+
+                    logger.LogWarning(
+                        "ToolLoop stall detected ({StallType}) for step {StepId} in workflow {WorkflowAlias} instance {InstanceId} after tool call {LastToolCall}",
+                        stallType, context.StepId, context.WorkflowAlias, context.InstanceId, lastToolCallName);
+
+                    throw new StallDetectedException(
+                        lastToolCallName, context.StepId, context.InstanceId, context.WorkflowAlias);
                 }
 
                 // Try non-blocking drain first
@@ -271,6 +312,21 @@ public static class ToolLoop
             // Drain any user messages sent during tool execution
             await DrainUserMessagesAsync(userMessageReader, messages, recorder, emitter, cancellationToken);
         }
+    }
+
+    private static string ExtractLastToolCallName(IList<ChatMessage> messages)
+    {
+        // Walk backwards through assistant messages and find the most recent
+        // FunctionCallContent — that is the tool call the LLM saw a result for
+        // before stalling. "none" if there is no tool call in the conversation
+        // (defensive — stall detection should not fire in that case).
+        for (var i = messages.Count - 1; i >= 0; i--)
+        {
+            if (messages[i].Role != ChatRole.Assistant) continue;
+            var fnCall = messages[i].Contents.OfType<FunctionCallContent>().LastOrDefault();
+            if (fnCall is not null) return fnCall.Name;
+        }
+        return "none";
     }
 
     private static async Task<int> DrainUserMessagesAsync(

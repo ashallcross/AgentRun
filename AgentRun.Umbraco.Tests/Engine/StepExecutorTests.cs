@@ -345,6 +345,29 @@ public class StepExecutorTests
     }
 
     [Test]
+    public async Task StallDetectedException_SetsLlmError_StallDetected_PreservesUserFacingMessage()
+    {
+        // Story 9.0 regression: StallDetectedException must NOT be reformatted by
+        // LlmErrorClassifier. Its own Message is the user-facing string surfaced
+        // via run.error in the chat panel.
+        var stall = new StallDetectedException("fetch_url", "step-1", "inst-001", "test-workflow");
+        _profileResolver.ResolveAndGetClientAsync(Arg.Any<StepDefinition>(), Arg.Any<WorkflowDefinition>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(stall);
+
+        var executor = CreateExecutor();
+        var context = MakeExecutionContext();
+
+        await executor.ExecuteStepAsync(context, CancellationToken.None);
+
+        await _instanceManager.Received(1).UpdateStepStatusAsync(
+            "test-workflow", "inst-001", 0, StepStatus.Error, Arg.Any<CancellationToken>());
+        Assert.That(context.LlmError, Is.Not.Null);
+        Assert.That(context.LlmError!.Value.ErrorCode, Is.EqualTo("stall_detected"));
+        Assert.That(context.LlmError.Value.UserMessage,
+            Is.EqualTo("The agent stopped responding mid-task. Click retry to try again."));
+    }
+
+    [Test]
     public async Task TaskCanceledException_SetsLlmError_Timeout()
     {
         _profileResolver.ResolveAndGetClientAsync(Arg.Any<StepDefinition>(), Arg.Any<WorkflowDefinition>(), Arg.Any<CancellationToken>())

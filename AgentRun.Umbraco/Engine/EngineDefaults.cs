@@ -14,4 +14,12 @@ public static class EngineDefaults
 
     /// <summary>300 seconds (5 minutes). Interactive-mode user input wait window.</summary>
     public const int ToolLoopUserMessageTimeoutSeconds = 300;
+
+    /// <summary>
+    /// 10 seconds. Upper bound a stall (Story 9.0) is allowed to take from
+    /// detection to surfacing as a <c>run.error</c>. The actual throw is
+    /// synchronous, so this exists for documentation/observability and as the
+    /// promise codified in Story 9.0 AC #1.
+    /// </summary>
+    public const int StallDetectionWindowSeconds = 10;
 }

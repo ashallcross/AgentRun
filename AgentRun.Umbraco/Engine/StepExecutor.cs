@@ -218,7 +218,16 @@ public class StepExecutor : IStepExecutor
                 "Step {StepId} failed for workflow {WorkflowAlias} instance {InstanceId}",
                 step.Id, instance.WorkflowAlias, instance.InstanceId);
 
-            context.LlmError = LlmErrorClassifier.Classify(ex);
+            // Engine-domain exceptions (AgentRunException and subclasses such as
+            // StallDetectedException from Story 9.0) carry their own user-facing
+            // message and must NOT be reformatted by the LLM provider classifier,
+            // which would otherwise mask them as a generic "provider_error".
+            context.LlmError = ex switch
+            {
+                StallDetectedException stall => ("stall_detected", stall.Message),
+                AgentRunException agentEx => ("step_failed", agentEx.Message),
+                _ => LlmErrorClassifier.Classify(ex),
+            };
 
             try
             {

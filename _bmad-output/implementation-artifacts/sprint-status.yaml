@@ -39,7 +39,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-30
-last_updated: 2026-04-07 (story 9-6 code review complete → done; manual E2E gate still pending user)
+last_updated: 2026-04-07 (story 9-0 done — manual E2E 7.1–7.6 confirmed, 7.7 deferred to pre-public-beta gate)
 project: AgentRun.Umbraco
 project_key: NOKEY
 tracking_system: file-system
@@ -117,7 +117,7 @@ development_status:
   # documentation. Story dependency order is 9-6 → 9-0 → 9-1c → 9-1b → 9-4 → 9-2 → 9-3 → 9-5.
   epic-9: in-progress
   9-6-workflow-configurable-tool-limits: done                   # BETA BLOCKER — architectural foundation, ships first
-  9-0-toolloop-stall-recovery: backlog                          # BETA BLOCKER — depends on 9-6 (configurable user_message_timeout)
+  9-0-toolloop-stall-recovery: done                             # BETA BLOCKER cleared — Tasks 1–6 + manual E2E 7.1–7.6 done; 7.7 prod smoke deferred to pre-public-beta cumulative gate
   9-1a-content-quality-audit-working-skeleton: done             # full validation blocked by 9-0; skeleton itself is committed
   9-1c-first-run-ux-url-input: backlog                          # depends on 9-0 + 9-6
   9-1b-content-quality-audit-polish-and-quality: backlog        # depends on 9-1c (and on 9-0, 9-6 transitively)

@@ -303,6 +303,36 @@ public class ConversationStoreTests
     }
 
     [Test]
+    public async Task TruncateLastAssistantEntryAsync_LastAssistantIsToolCallFollowedByToolResult_DoesNotTruncate()
+    {
+        // Story 9.0 regression: when a stall fires after a successful tool round-trip,
+        // the empty assistant turn is NOT recorded (ToolLoop only records non-empty
+        // accumulatedText). The conversation file ends at [assistant_tool_call, tool_result]
+        // — already a clean tool_use → tool_result boundary. Truncating the assistant
+        // tool_call would orphan the trailing tool_result, and the next provider call
+        // would 400 with "tool_result with no matching tool_use in previous message".
+        var instanceDir = Path.Combine(_tempDir, "test-workflow", "inst-001");
+        Directory.CreateDirectory(instanceDir);
+
+        await _store.AppendAsync("test-workflow", "inst-001", "step-one",
+            CreateTestEntry(role: "user", content: "fetch www.example.com"), CancellationToken.None);
+        await _store.AppendAsync("test-workflow", "inst-001", "step-one",
+            CreateTestEntry(role: "assistant", toolCallId: "tc_001", toolName: "fetch_url", toolArguments: "{\"url\":\"www.example.com\"}"), CancellationToken.None);
+        await _store.AppendAsync("test-workflow", "inst-001", "step-one",
+            CreateTestEntry(role: "tool", toolCallId: "tc_001", toolResult: "<html>...</html>"), CancellationToken.None);
+
+        await _store.TruncateLastAssistantEntryAsync("test-workflow", "inst-001", "step-one", CancellationToken.None);
+
+        var history = await _store.GetHistoryAsync("test-workflow", "inst-001", "step-one", CancellationToken.None);
+        Assert.That(history, Has.Count.EqualTo(3), "Stall retry must NOT remove the assistant tool_call when a tool_result follows it");
+        Assert.That(history[0].Role, Is.EqualTo("user"));
+        Assert.That(history[1].Role, Is.EqualTo("assistant"));
+        Assert.That(history[1].ToolCallId, Is.EqualTo("tc_001"));
+        Assert.That(history[2].Role, Is.EqualTo("tool"));
+        Assert.That(history[2].ToolCallId, Is.EqualTo("tc_001"));
+    }
+
+    [Test]
     public async Task TruncateLastAssistantEntryAsync_MultipleAssistantEntries_RemovesOnlyLast()
     {
         var instanceDir = Path.Combine(_tempDir, "test-workflow", "inst-001");
