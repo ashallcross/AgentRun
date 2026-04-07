@@ -17,6 +17,7 @@ describe("agentrun-artifact-list", () => {
     const entries: Array<{ path: string; stepName: string; stepStatus: string }> = [];
     for (const step of steps) {
       if (!step.writesTo || step.writesTo.length === 0) continue;
+      if (step.status !== "Complete") continue;
       for (const path of step.writesTo) {
         entries.push({ path, stepName: step.name, stepStatus: step.status });
       }
@@ -86,18 +87,16 @@ describe("agentrun-artifact-list", () => {
     expect(event.composed).to.be.true;
   });
 
-  // 6.7: applies disabled styling to artifacts from non-Complete steps
-  it("marks artifacts from non-Complete steps with non-Complete stepStatus", () => {
+  // 6.7: excludes artifacts from non-Complete steps
+  it("excludes artifacts from non-Complete steps", () => {
     const steps = [
       mockStep({ status: "Active", writesTo: ["partial.md"] }),
       mockStep({ id: "step-2", status: "Complete", writesTo: ["done.md"] }),
     ];
     const artifacts = deriveArtifacts(steps);
-    expect(artifacts[0].stepStatus).to.equal("Active");
-    expect(artifacts[1].stepStatus).to.equal("Complete");
-    // Component uses stepStatus !== "Complete" to apply disabled class
-    expect(artifacts[0].stepStatus !== "Complete").to.be.true;
-    expect(artifacts[1].stepStatus !== "Complete").to.be.false;
+    expect(artifacts).to.have.lengthOf(1);
+    expect(artifacts[0].path).to.equal("done.md");
+    expect(artifacts[0].stepStatus).to.equal("Complete");
   });
 
   // 6.8: skips steps with null writesTo and empty array writesTo

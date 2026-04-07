@@ -22,6 +22,7 @@ export class AgentRunArtifactListElement extends UmbLitElement {
     const entries: ArtifactEntry[] = [];
     for (const step of this.steps) {
       if (!step.writesTo || step.writesTo.length === 0) continue;
+      if (step.status !== "Complete") continue;
       for (const path of step.writesTo) {
         entries.push({ path, stepName: step.name, stepStatus: step.status });
       }
@@ -35,7 +36,6 @@ export class AgentRunArtifactListElement extends UmbLitElement {
   }
 
   private _onArtifactClick(entry: ArtifactEntry): void {
-    if (entry.stepStatus !== "Complete") return;
     this.dispatchEvent(
       new CustomEvent("artifact-selected", {
         detail: { path: entry.path, stepName: entry.stepName },
@@ -46,7 +46,6 @@ export class AgentRunArtifactListElement extends UmbLitElement {
   }
 
   private _onKeyDown(e: KeyboardEvent, entry: ArtifactEntry): void {
-    if (entry.stepStatus !== "Complete") return;
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       this._onArtifactClick(entry);
@@ -65,17 +64,16 @@ export class AgentRunArtifactListElement extends UmbLitElement {
               ${artifacts.map(
                 (entry) => html`
                   <div
-                    class="artifact-item ${entry.stepStatus !== "Complete" ? "disabled" : ""}"
+                    class="artifact-item"
                     role="listitem"
                   >
                     <uui-icon class="file-icon" name="icon-document"></uui-icon>
                     <div class="artifact-text">
                       <span
                         class="artifact-name"
-                        role="${entry.stepStatus === "Complete" ? "button" : "text"}"
-                        tabindex="${entry.stepStatus === "Complete" ? "0" : "-1"}"
+                        role="button"
+                        tabindex="0"
                         aria-label="${this._getFilename(entry.path)} from ${entry.stepName}"
-                        aria-disabled="${entry.stepStatus !== "Complete"}"
                         @click=${() => this._onArtifactClick(entry)}
                         @keydown=${(e: KeyboardEvent) => this._onKeyDown(e, entry)}
                       >${this._getFilename(entry.path)}</span>
@@ -121,18 +119,10 @@ export class AgentRunArtifactListElement extends UmbLitElement {
       gap: var(--uui-size-space-3);
     }
 
-    .artifact-item.disabled {
-      color: var(--uui-color-disabled);
-    }
-
     .file-icon {
       flex-shrink: 0;
       margin-top: 2px;
       color: var(--uui-color-text-alt);
-    }
-
-    .artifact-item.disabled .file-icon {
-      color: var(--uui-color-disabled);
     }
 
     .artifact-text {
@@ -159,19 +149,11 @@ export class AgentRunArtifactListElement extends UmbLitElement {
       border-radius: 2px;
     }
 
-    .artifact-item.disabled .artifact-name {
-      color: var(--uui-color-disabled);
-      cursor: default;
-    }
-
     .artifact-step {
       color: var(--uui-color-text-alt);
       font-size: var(--uui-type-small-size);
     }
 
-    .artifact-item.disabled .artifact-step {
-      color: var(--uui-color-disabled);
-    }
   `;
 }
 
