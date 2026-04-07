@@ -287,12 +287,13 @@ A developer or editor can browse all files produced by a workflow, view rendered
 The entire codebase is renamed from Shallai/UmbracoAgentRunner to AgentRun/Umbraco — solution, projects, namespaces, classes, frontend components, config, API routes, and build output. Zero logic changes, one commit.
 **FRs covered:** (Naming — prerequisite for Epic 9 packaging and Marketplace listing)
 
-### Epic 9: Example Workflow, Documentation & Packaging
-The package ships with a working Content Quality Audit workflow, JSON Schema for IDE support, and documentation — ready to install from NuGet and run out-of-the-box.
+### Epic 9: Beta Release Preparation
+_Restructured 2026-04-07._ Two polished example workflows (Content Quality Audit + Accessibility Quick-Scan), a beta-blocking ToolLoop stall fix, sample target data, JSON Schema, documentation, and a private beta distribution plan. Ships as `1.0.0-beta.1` pre-release NuGet to a curated invite list — NOT listed on Umbraco Marketplace.
+**Stories:** 9.6 Workflow-Configurable Tool Limits (beta blocker, architectural), 9.0 ToolLoop Stall Recovery (beta blocker), 9.1a CQA Working Skeleton, 9.1b CQA Polish & Quality, 9.1c First-Run UX (URL input, no canned dataset), 9.2 JSON Schema, 9.3 Documentation & Pre-Release Packaging, 9.4 Accessibility Quick-Scan Workflow, 9.5 Private Beta Distribution Plan
 **FRs covered:** FR65, FR66, FR67, FR68, FR69
 
-### Epic 10: Ship Readiness & Stability
-Known bugs and gaps are fixed before community launch — instance concurrency locking, context management for long conversations, multi-turn interactive fix, and open source licence decision.
+### Epic 10: Ship Readiness & Public Launch
+_Updated 2026-04-07 — Story 10.3 moved to 9.0._ Post-beta stability work (instance concurrency locking, context management for long conversations), open source licence decision, and public 1.0 launch via Umbraco Marketplace and community channels.
 **FRs covered:** FR52 (full implementation), plus stability improvements beyond original FR scope
 
 ### Epic 11: Adoption Accelerators
@@ -1014,11 +1015,251 @@ So that the package ships under its final product name before Epic 9.
 
 Full story spec: `_bmad-output/implementation-artifacts/R1-rename-shallai-to-agentrun.md`
 
-## Epic 9: Example Workflow, Documentation & Packaging
+## Epic 9: Beta Release Preparation
 
-The package ships with a working Content Quality Audit workflow, JSON Schema for IDE support, and documentation — ready to install from NuGet and run out-of-the-box.
+_Updated 2026-04-07 — restructured for private beta release. Previously titled "Example Workflow, Documentation & Packaging". The goal is no longer "ship to public NuGet / Marketplace" — that moves to Epic 10.5. The goal is now "produce a meaningful private beta" with two polished example workflows, a beta-blocker engine fix, sample data so workflows run out-of-the-box, and distribution to a curated invite list._
 
-### Story 9.1: Content Quality Audit Example Workflow
+**Beta definition:** NuGet pre-release version `1.0.0-beta.1`, distributed privately to a curated invite list (Cogworks colleagues, selected Umbraco community contacts, Discord). NOT listed on the Umbraco Marketplace. NOT announced publicly. Purpose is to gather feedback and find bugs before the public 1.0 launch.
+
+### Story 9.6: Workflow-Configurable Tool Limits (BETA BLOCKER — architectural)
+
+_Added 2026-04-07 — surfaced during live testing of the Content Quality Audit example. The fetch_url tool was hardcoded to truncate HTML responses at 100 KB, which silently broke real-world page audits (modern homepages routinely exceed 300 KB-2 MB). The investigation revealed the deeper architectural problem: the engine has been making policy decisions that belong to workflow authors. This story establishes the pattern that fixes it._
+
+**Architectural principle being established (record in v2-future-considerations.md catalogue):**
+
+The engine separates **mechanism** from **policy**. Mechanism (tool dispatch, sandboxing behaviour, prompt assembly, state persistence, SSE protocol, authentication, the *existence* of safety limits) stays in the engine. Policy (the *values* of safety limits, timeouts, iteration caps) belongs to the workflow YAML, with site-level defaults and hard ceilings configurable via appsettings.json. Safety invariants (SSRF blocking, path sandboxing, the *fact* that limits exist) stay hardcoded.
+
+**Resolution chain (canonical, parallels existing profile resolution):**
+
+```
+effective_value = (
+    step.tool_overrides[tool].setting
+    ?? workflow.tool_defaults[tool].setting
+    ?? site.tool_defaults[tool].setting       // appsettings.json AgentRun:ToolDefaults
+    ?? engine_default                          // hardcoded fallback
+)
+// Then apply hard cap:
+if site.tool_limits[tool].setting_max is set:
+    effective_value = min(effective_value, site.tool_limits[tool].setting_max)
+```
+
+**Hard caps are hard.** Workflow YAML cannot exceed the site-level ceiling under any circumstances. Decision recorded 2026-04-07: tighten in, loosen later, never the reverse.
+
+As a workflow author,
+I want to configure tool tuning values (response size limits, timeouts, user-message wait windows) at the workflow or step level,
+So that my workflows are not blocked by engine assumptions about what counts as "too big" or "too long" for unrelated use cases.
+
+**Acceptance Criteria:**
+
+**Given** a workflow.yaml file
+**When** the workflow author declares `tool_defaults` at the workflow level
+**Then** the WorkflowValidator accepts the new optional key without rejecting the file
+**And** the values are persisted in the parsed `WorkflowDefinition` model
+**And** the values flow through to the relevant engine components at execution time
+
+**Given** a workflow.yaml step
+**When** the workflow author declares `tool_overrides` at the step level
+**Then** the WorkflowValidator accepts the new optional key
+**And** at runtime the step-level value takes precedence over the workflow-level value for that step only
+**And** other steps in the same workflow are unaffected
+
+**Given** appsettings.json contains `AgentRun:ToolDefaults` and/or `AgentRun:ToolLimits` sections
+**When** the engine resolves a tool tuning value
+**Then** the resolution chain is applied: step → workflow → site default → engine default
+**And** the resolved value is then capped by the site-level ceiling (if any)
+**And** if a workflow attempts to declare a value above the ceiling, the workflow load fails with a clear validation error naming the offending field, the attempted value, and the ceiling
+
+**Given** the resolution chain
+**When** at least one of the values in the chain is missing
+**Then** resolution proceeds to the next level without error
+**And** the engine never crashes due to a missing config value (engine default is the last-resort fallback)
+
+**Three values migrated in this story:**
+
+1. **`fetch_url.max_response_bytes`** (replaces `JsonSizeLimitBytes` and `HtmlSizeLimitBytes`)
+   - Engine default: 1 MB (1_048_576) — sensible default for general fetches
+   - The content-type-aware split (HTML 100 KB / JSON 200 KB) is **collapsed into a single value**. Decision recorded 2026-04-07: content-type-aware limits were a layer of magic the workflow author should not have to reason about.
+   - The `GetSizeLimit(string? mediaType)` helper in `FetchUrlTool.cs` is removed.
+
+2. **`fetch_url.timeout_seconds`** (replaces `client.Timeout = TimeSpan.FromSeconds(15)` in `AgentRunComposer.cs:60`)
+   - Engine default: 15 seconds (preserves current behaviour)
+   - Per-call override mechanism: the resolved value must be applied at fetch time, not at HttpClient construction time, because the HttpClient is shared. Implementation pattern: use `CancellationTokenSource.CancelAfter(timeout)` per request rather than `HttpClient.Timeout`.
+
+3. **`tool_loop.user_message_timeout_seconds`** (replaces `UserMessageTimeout = TimeSpan.FromMinutes(5)` in `ToolLoop.cs:12`)
+   - Engine default: 300 seconds (preserves current behaviour)
+   - This setting cooperates with Story 9.0: Story 9.0 fixes stall *detection* (no more waiting on a stalled LLM); 9.6 makes the legitimate user-input wait window *tunable* for workflows where 5 minutes isn't right.
+
+**Values explicitly NOT migrated in this story (deferred to v2):**
+
+- `MaxIterations = 100` in `ToolLoop.cs:11` — not blocking the beta. Migrate later using the same pattern.
+- Any other hardcoded values found during the v2 catalogue audit. The full list is in `v2-future-considerations.md` under "Engine Flexibility Audit — Hardcoded Policy Values".
+
+**Example workflow.yaml after the story ships:**
+
+```yaml
+name: "Content Quality Audit"
+default_profile: anthropic-sonnet-4-6
+
+tool_defaults:
+  fetch_url:
+    max_response_bytes: 2097152      # 2 MB — generous for marketing site audits
+    timeout_seconds: 30
+  tool_loop:
+    user_message_timeout_seconds: 600  # 10 minutes
+
+steps:
+  - id: scanner
+    name: "Content Scanner"
+    agent: "agents/scanner.md"
+    tools: [fetch_url, write_file]
+    tool_overrides:
+      fetch_url:
+        max_response_bytes: 5242880    # 5 MB just for this step
+    writes_to: [scan-results.md]
+    completion_check:
+      files_exist: [scan-results.md]
+```
+
+**Example appsettings.json:**
+
+```json
+{
+  "AgentRun": {
+    "ToolDefaults": {
+      "FetchUrl": {
+        "MaxResponseBytes": 2097152,
+        "TimeoutSeconds": 30
+      },
+      "ToolLoop": {
+        "UserMessageTimeoutSeconds": 600
+      }
+    },
+    "ToolLimits": {
+      "FetchUrl": {
+        "MaxResponseBytesCeiling": 20971520,
+        "TimeoutSecondsCeiling": 300
+      },
+      "ToolLoop": {
+        "UserMessageTimeoutSecondsCeiling": 3600
+      }
+    }
+  }
+}
+```
+
+**Documentation requirements:**
+
+- The workflow authoring guide (Story 9.3) gets a new section: "Configuring Tool Tuning Values" covering the resolution chain, the three migrated values, the available settings, and the security rationale for hard caps.
+- The README "First Run" section mentions sensible defaults: "AgentRun ships with sensible defaults — most workflows won't need to tune these. If your workflow audits large pages or runs long-form interactions, see the workflow authoring guide for how to adjust."
+- The JSON Schema (Story 9.2) is updated to include the new optional `tool_defaults` and `tool_overrides` keys with validation and autocomplete.
+
+**Failure & Edge Cases:**
+
+- Workflow declares `max_response_bytes: 0` or negative → validation error at workflow load
+- Workflow declares `max_response_bytes` above the site-level ceiling → validation error at workflow load with clear "value X exceeds site-level ceiling Y" message
+- Workflow declares an unknown tool name in `tool_defaults` (e.g. `tool_defaults.fake_tool`) → validation error at workflow load (deny by default)
+- Workflow declares an unknown setting name (e.g. `tool_defaults.fetch_url.unknown_setting`) → validation error at workflow load
+- appsettings.json has malformed `AgentRun:ToolDefaults` section → engine logs a clear error and falls back to engine defaults (do not crash startup)
+- Resolved timeout value of 0 or negative → engine treats as "use engine default" and logs a warning
+- The fetch_url request takes longer than the resolved timeout → cancellation triggers, surfaces as a normal timeout error to the agent (existing behaviour)
+- The user_message_timeout fires legitimately (user took too long) → existing behaviour preserved (exits cleanly, step remains resumable)
+
+**What NOT to Build:**
+
+- Do NOT migrate any of the v2-deferred values (MaxIterations, sidecar paths, completion check strategies, etc.) — scope creep
+- Do NOT add new tunable values that don't exist as hardcoded constants today
+- Do NOT introduce a "disable limit entirely" option for any safety value (max_response_bytes cannot be set to "unlimited" — it must always be a finite number)
+- Do NOT change SSRF protection, path sandboxing, or atomic write semantics — these are safety invariants
+- Do NOT make this a generic "workflow config" subsystem — it's specifically the resolution chain for tool tuning values. Other future config needs use the same pattern but get their own scoping.
+
+**Architectural notes for the dev agent:**
+
+- The resolution chain logic should live in a single helper class (`ToolLimitResolver` or similar) so it can be reused for future migrations without copy-paste
+- The helper takes the step, workflow, site config, and engine defaults; returns the resolved + capped value
+- ToolLoop, FetchUrlTool, and any other consumer call the helper rather than reading config directly
+- The helper is unit-testable in isolation against synthesised inputs
+- Site-level config binding: extend `AgentRunOptions` (or add a sibling options class) for the new sections
+- Backwards compatibility: workflows without `tool_defaults` / `tool_overrides` continue to work unchanged using engine defaults
+
+_Full story spec to be created by SM before development begins._
+
+### Story 9.0: ToolLoop Stall Recovery & Completion Logic (BETA BLOCKER)
+
+_Added 2026-04-07 — pulled forward from Story 10.3 and expanded in scope after live testing of Content Quality Audit revealed the scanner stalling silently after a successful fetch_url call. This is the beta-blocking bug. The original 10.3 ("ToolLoop exits when LLM asks a question") was a related but narrower framing of the same root cause: the ToolLoop's exit conditions are too eager and collapse multiple distinct states into "wait for user input"._
+
+_Cooperates with Story 9.6: Story 9.0 fixes stall **detection** (engine logic — distinguish stall from "waiting for user" from "complete"). Story 9.6 makes the legitimate user-input wait window **tunable** (configurable timeout). Both ship in the beta. The stall detection in this story must respect the configured timeout from 9.6 rather than the hardcoded 5-minute constant._
+
+As a developer running an interactive workflow,
+I want the engine to correctly distinguish between "agent is waiting for user input", "agent has completed its work", and "agent has stalled mid-task",
+So that workflows fail fast and visibly when the agent stops responding, instead of hanging silently until a timeout.
+
+**Problem statement (from live test 2026-04-07):**
+
+Live test of the Content Quality Audit example workflow, instance `642b6c583e3540cda11a8d88938f37e1`, produced the following conversation trace in the Content Scanner step:
+
+1. System: "Starting Content Scanner..."
+2. Assistant: "Paste the URLs of the pages you'd like me to audit, one per line."
+3. User: "www.wearecogworks.com"
+4. Assistant (tool call): `fetch_url({"url":"https://www.wearecogworks.com"})`
+5. Tool result: full HTML of the target page returned successfully (~150KB)
+6. **— LLM produced no further output. No tool call. No text. Nothing. —**
+7. (~5 minutes later) User message wait timed out, ToolLoop exited, completion check failed, step marked Error.
+
+The engine treated "LLM produced empty response after tool result" as "step is awaiting user input" and sat idle for the full user-message timeout window. This is wrong on two counts: (a) the scanner's own instructions require it to call `write_file` after parsing tool results, so an empty turn is definitionally incomplete; (b) waiting silently for 5 minutes before surfacing an error is the worst possible UX for a first-run example.
+
+**Acceptance Criteria:**
+
+**Given** a workflow step is executing in interactive mode
+**When** the LLM produces no tool calls AND no text content after a tool result
+**Then** the engine detects this as a stall (NOT as "waiting for user input")
+**And** the step is marked Error within 10 seconds (not after the user-message timeout)
+**And** the chat panel surfaces a clear error message: "The agent stopped responding mid-task. Click retry to try again."
+**And** the step can be retried from the chat panel using the existing retry flow (Story 7.2)
+**And** the error is logged with the instance ID, step ID, and last tool call
+
+**Given** a workflow step is executing in interactive mode
+**When** the LLM produces a text message that reads as a question to the user (e.g. ending with "?", or no tool calls and an unambiguously conversational message)
+**Then** the engine correctly enters the "waiting for user input" state
+**And** the ToolLoop resumes when the user sends a reply, without exiting the step (fixes the original Story 10.3 symptom)
+**And** the multi-turn conversation continues until the LLM signals completion (either via writing the expected output file, or via the completion check passing)
+
+**Given** a workflow step is executing
+**When** the LLM's output completes the expected work (completion check files written)
+**Then** the step is marked Complete
+**And** the ToolLoop exits cleanly
+**And** in autonomous mode the next step starts
+
+**Architectural decision (fail-fast, not retry-with-nudge):**
+
+When a stall is detected, the engine marks the step errored immediately. It does NOT automatically inject a "continue your task" nudge prompt and retry. Recovery is via the user clicking retry (existing Story 7.2 flow).
+
+Rationale: fail-fast is simpler to build, easier to debug, and prevents hidden retries from masking genuine prompt quality issues. The prompt-quality strengthening in Story 9.1b should substantially reduce stall frequency regardless. The retry-with-nudge alternative is documented in `v2-future-considerations.md` and is a trigger-based revisit if beta telemetry shows stalls happening more than occasionally.
+
+**Design note:** Keep the stall detection logic cleanly separable from the recovery action, so a future retry-with-nudge strategy could swap in as a pluggable policy rather than requiring a ToolLoop rewrite.
+
+**Failure & Edge Cases:**
+
+- LLM returns an empty assistant message after a tool result → treat as stall, fail fast
+- LLM returns a text message after a tool result that looks like a question to the user (ends with "?") → treat as waiting for user input, NOT a stall
+- LLM returns a text message after a tool result that is clearly narrative ("Let me now process that...") without a tool call → this is the ambiguous case; for the beta, treat as stall to enforce the scanner.md "never narrate without calling a tool" rule. Document this decision.
+- LLM returns a tool call for an undeclared tool → existing Story 5.4 validation path (reject, don't stall)
+- User sends a message while the LLM is mid-response → existing multi-turn queue, no change
+- Multiple consecutive stalls on retry → each retry is its own attempt, each can independently stall; the error message should hint at a possible prompt issue if the same step stalls 3+ times in a row (log only, no automatic behaviour change)
+
+**What NOT to Build:**
+
+- Do NOT implement retry-with-nudge (deferred to V2+, see v2-future-considerations.md)
+- Do NOT change the user-message timeout value or wait-for-input behaviour for legitimate question-to-user cases
+- Do NOT modify the completion-check file detection logic — this story is about ToolLoop exit detection, not completion detection
+- Do NOT rework the Story 7.2 retry flow — reuse it as-is
+
+_Full story spec to be created by SM before development begins, using the above as input._
+
+### Story 9.1a: Content Quality Audit — Working Skeleton
+
+_Was the original Story 9.1 (mostly complete). Renamed for clarity after the polish split. The workflow file structure, workflow.yaml, agent markdown files, and step wiring all exist and run end-to-end (modulo the Story 9.0 stall bug). This story captures what has been built._
+
+As a developer,
 
 As a developer,
 I want a pre-built example workflow that runs out-of-the-box after package installation,
@@ -1051,6 +1292,147 @@ So that I can see multi-agent orchestration in action without writing any workfl
 **And** the workflow folder is located at Workflows/content-quality-audit/ with workflow.yaml and agents/scanner.md, agents/analyser.md, agents/reporter.md
 **And** all three agent prompts are well-crafted markdown files that produce high-quality output
 
+### Story 9.1b: Content Quality Audit — Polish & Quality
+
+_Added 2026-04-07 — this story is the iterative "make the output undeniable" work that turns a technically-working example into a showcase-quality one. It is explicitly NOT a build story; it is a tuning-and-testing loop with a quality gate._
+
+As a developer evaluating AgentRun,
+I want the Content Quality Audit example workflow to produce an output I would happily paste into a client deck,
+So that my first experience of the package proves its value, not just its plumbing.
+
+**Quality gate (the trustworthiness gate):** Adam, acting as the reviewer, would be willing to run this workflow against a paying client's live site without supervision and trust the output. This is a subjective gate but it is the gate — the story is not done until the gate is passed.
+
+_Decision recorded 2026-04-07: This trustworthiness gate replaces the earlier "structural consistency" gate. Structural consistency was a proxy for trustworthiness — replacing the proxy with the real thing is more honest. Since Story 9.1c removed the canned dataset, the workflow now runs against arbitrary user-provided URLs, so the gate cannot be measured by repeated runs against fixed input. It is measured by Adam picking representative real test inputs and judging the output directly._
+
+**Acceptance Criteria:**
+
+**Given** Stories 9.0 (stall fix) and 9.6 (configurable limits) have shipped
+**When** Content Quality Audit is run against 3-5 representative real test inputs of Adam's choice (e.g. a small Cogworks page, a Wikipedia article, an Umbraco community blog post, a deliberately problematic page picked to exercise edge cases)
+**Then** the scanner agent completes every run without stalling
+**And** the agent never produces a broken, empty, or obviously degraded report
+**And** the report identifies real issues specific to the actual fetched content — not generic advice that could apply to any page
+**And** the recommendations are tied to evidence the agent observed in the page (not invented)
+**And** the report is useful enough that Adam would be willing to send it to a paying client without rewriting
+
+**Given** five runs of the workflow against the same real URL
+**When** the outputs are compared
+**Then** the same major issues are flagged in each run (the model's findings are stable, even if the phrasing varies)
+**And** the report length stays within a reasonable band (~500-2000 words, not pathologically short or long)
+**And** no run produces a structurally broken document (missing executive summary, no findings section, etc.)
+
+**Given** a non-technical reviewer (simulate: Adam reading as if he were a marketing director receiving the report)
+**When** they evaluate `audit-report.md`
+**Then** they can understand it without technical context
+**And** they can identify the top 3 issues without re-reading
+**And** they perceive the recommendations as credible and worth acting on
+**And** they would forward the report to a colleague without embarrassment
+
+**Given** the scanner.md prompt file
+**When** reviewed post-polish
+**Then** it contains explicit instructions preventing the stall observed in instance 642b6c583e3540cda11a8d88938f37e1:
+  - Clear "after receiving fetch_url results, your VERY NEXT action MUST be another tool call (either another fetch_url or write_file)" instruction
+  - Clear "you are NOT done until write_file has been called with artifacts/scan-results.md" instruction
+  - An example sequence showing the expected tool call ordering
+**And** the analyser.md and reporter.md prompts receive equivalent strengthening for their respective completion steps
+
+**Process:**
+
+1. Adam picks 3-5 representative real test inputs (mix of his own pages, public pages with known issues, and at least one deliberately problematic page)
+2. Run the workflow end-to-end against each test input
+3. Review each agent's output critically against the trustworthiness gate
+4. Identify what's weak, generic, hallucinated, or evidence-free
+5. Iterate on the agent prompt markdown files (scanner.md, analyser.md, reporter.md)
+6. Re-run. Repeat until the trustworthiness gate passes for every test input.
+7. Lock the prompts. Record the final versions in git with a clear commit message noting the polish pass is complete.
+
+**What NOT to Build:**
+
+- Do NOT change the workflow.yaml step structure (keep 3 steps)
+- Do NOT add new tools (scanner/analyser/reporter use only what exists today)
+- Do NOT add retry logic at the engine level — that's Story 9.0's scope, not this one
+- Do NOT add tunable values to the workflow YAML — that's Story 9.6's scope, not this one
+- Do NOT generalise the prompts across multiple content types — Content Quality Audit is a single fixed use case for V1
+- Do NOT bundle sample content or pre-fetched HTML — Story 9.1c removed that approach
+
+**Failure & Edge Cases:**
+
+- Trustworthiness gate fails after 3+ polish iterations → pause and have an architect/reviewer conversation; the problem may be prompt structure, not prompt content
+- Reports are inconsistent between models or providers → lock to Anthropic Sonnet for the beta (note: already the default in workflow.yaml). Document the recommendation in the workflow authoring guide.
+- The test input set doesn't cover enough variation → expand the input list and re-run the polish loop. The story is not done until all chosen inputs pass.
+- The agent hallucinates issues that don't exist on the page → the polish loop must add explicit "only flag issues you can directly cite from the fetched HTML" instructions to the analyser prompt
+- A test input is so large it pushes against `fetch_url.max_response_bytes` → either raise the value via Story 9.6's `tool_defaults`, or accept the truncation and ensure the scanner records it clearly
+
+_Full story spec to be created by SM before development begins._
+
+### Story 9.1c: First-Run UX — User-Provided URL Input Handling
+
+_Rewritten 2026-04-07 after product owner challenged the canned-dataset premise. Original framing assumed the example needed bundled sample content to make the first run work out-of-the-box. Product owner pushed back: faking the data does not provide confidence; the user should be asked for a URL to scan. This is architecturally simpler (no engine changes, no hosting, no spike) and product-honest (the example demonstrates real auditing, not a magic trick). Recorded as a beta scope decision._
+
+**Decision recorded:** No bundled sample dataset. No demo site. No inline mock content. The first run experience is "the agent asks for URLs, the user pastes URLs, the agent audits them, the user sees real results." This makes the trustworthiness gate of Story 9.1b the *actual* gate the package must pass — there is nowhere to hide behind a stacked deck.
+
+As a developer running Content Quality Audit for the first time,
+I want the scanner agent to gracefully and unambiguously ask me for URLs to audit,
+So that my first interaction with the package is welcoming, clear, and successful on real content.
+
+**Acceptance Criteria:**
+
+**Given** a developer has installed the package, configured a profile, and started a Content Quality Audit instance
+**When** the scanner step begins
+**Then** the agent's opening message is welcoming and unambiguous: "Paste one or more URLs you'd like me to audit, one per line. You can paste URLs from your own site or any public site you'd like a second opinion on."
+**And** the message makes it clear that the user is in control of what gets audited
+
+**Given** the user pastes a single URL into the chat
+**When** the URL is well-formed
+**Then** the agent immediately calls `fetch_url` and proceeds with the audit
+**And** the agent does not narrate ("Let me fetch that page now…") — Story 9.0's stall detection enforces this
+
+**Given** the user pastes a list of URLs
+**When** the list is separated by newlines, commas, or spaces
+**Then** the agent extracts all URLs correctly and processes them in sequence
+**And** the agent handles mixed delimiters within the same message
+
+**Given** the user pastes a domain without an explicit protocol (e.g. `www.wearecogworks.com`)
+**When** the agent processes it
+**Then** the agent prepends `https://` and proceeds (this case was confirmed working in the live test on 2026-04-07 — preserve the behaviour, do not regress it)
+
+**Given** the user pastes something that contains no recognisable URLs
+**When** the agent processes it
+**Then** the agent re-prompts politely with an example of valid input rather than guessing or stalling
+
+**Given** the user pastes 5+ URLs at once
+**When** the scanner processes them
+**Then** the agent fetches each in sequence, providing brief progress updates between fetches (e.g. "Fetched 3 of 5...")
+**And** all results are aggregated into the same `scan-results.md` file
+**And** the agent does not stall between fetches (Story 9.0 prerequisite)
+
+**Given** the user provides URLs that exceed the configured `fetch_url.max_response_bytes` ceiling
+**When** a fetch succeeds but is truncated
+**Then** the truncation is surfaced to the agent in a way it cannot miss (Story 9.6 may improve the truncation marker; if not, this story's prompt strengthening must instruct the scanner to verify response completeness before parsing)
+**And** the scan-results.md output notes which pages were truncated and why
+
+**What this story is NOT building:**
+
+- No bundled HTML files, no `sample-content/` folder, no demo site, no inline mock content
+- No engine changes (the user-input handling is purely agent prompt work plus the existing fetch_url tool)
+- No URL allow-list, no URL pre-validation in the engine — the agent handles malformed input gracefully via re-prompting
+- No new tools or new workflow YAML keys
+- No new completion logic — the scanner is "done" when it has written `scan-results.md` covering all the requested URLs (existing completion check)
+
+**Failure & Edge Cases:**
+
+- User pastes a URL behind authentication (e.g. a private staging site with HTTP basic auth) → fetch_url returns 401, scanner records the failure in the "Failed URLs" section of scan-results.md and continues with other URLs
+- User pastes a URL that returns a non-HTML content type (PDF, JSON, image) → scanner notes the content type and skips detailed analysis for that URL
+- User pastes the same URL twice → scanner can deduplicate or process both; either is acceptable, must not crash
+- User pastes a URL behind SSRF protection (RFC1918, loopback, etc.) → fetch_url rejects, scanner records the failure clearly with the security reason
+- User cancels mid-fetch → existing cancellation behaviour, no new requirements
+
+**Dependencies:**
+
+- Story 9.0 (stall fix) MUST ship before this story is testable end-to-end — without it, the scanner stalls on the first fetch and the entire UX is broken
+- Story 9.6 (configurable limits) MUST ship for real-world page sizes to work — without it, the 100 KB hardcoded limit truncates everything
+
+_Full story spec to be created by SM after Stories 9.0 and 9.6 are complete (or in flight), since it depends on both._
+
 ### Story 9.2: JSON Schema for workflow.yaml
 
 As a developer,
@@ -1068,6 +1450,9 @@ So that I get instant feedback on schema errors and discover available fields wh
 **And** the schema file is located at Schemas/workflow-schema.json and ships in the NuGet package (FR67)
 **And** the schema includes descriptions for all fields to aid discoverability
 **And** the example workflow.yaml references the schema via a comment or $schema property
+**And** the schema includes the new optional `tool_defaults` (workflow-level) and `tool_overrides` (step-level) keys introduced by Story 9.6, with full validation, autocomplete, and descriptions for `fetch_url.max_response_bytes`, `fetch_url.timeout_seconds`, and `tool_loop.user_message_timeout_seconds` — see Story 9.6 for the canonical semantics and the YAML ↔ JSON ↔ C# naming map
+
+_Dependency: this story cannot be completed until Story 9.6 has shipped, because the schema must reflect the keys 9.6 introduces. Spec the story after 9.6 is at least at `review` status._
 
 ### Story 9.3: Documentation & NuGet Packaging
 
@@ -1090,15 +1475,111 @@ So that I can install, configure, and extend the workflow engine with confidence
 **When** they read the getting started guide
 **Then** the guide covers: installation via NuGet, Umbraco.AI provider and profile configuration prerequisites, running the example workflow for the first time, and what to expect (FR68)
 **And** the guide is concise and task-oriented — not a reference manual
+**And** the "First Run" section explicitly frames the example workflows as user-driven, with language along the lines of: _"AgentRun ships with two example workflows: Content Quality Audit and Accessibility Quick-Scan. After installing the package and configuring an Umbraco.AI profile, open the Agent Workflows section, click a workflow, and click Start. The agent will ask you for one or more URLs to audit — paste URLs from your own site (or any public site you'd like a second opinion on) and watch the workflow run."_ (Story 9.1c decision: the example workflows do not ship with bundled data; the user provides URLs.)
+**And** the README front matter uses the same "paste your own URLs" framing as a pull-quote — this is intentional product positioning. Most AI tool launches in 2026 are slick fake demos. AgentRun being unapologetically real is differentiation.
 
 **Given** a developer wants to create their own workflow
 **When** they read the workflow authoring guide
 **Then** the guide covers: workflow.yaml schema and field reference, writing agent prompt markdown files, artifact handoff (reads_from/writes_to), completion checking, profile configuration (per-step and defaults), available tools, and a walkthrough of creating a simple 2-step workflow (FR69)
 **And** the guide references the JSON Schema for IDE validation setup
 
-## Epic 10: Ship Readiness & Stability
+_Note (2026-04-07): For the beta, the "Documentation" portion of this story ships; the "NuGet Packaging" portion ships as a pre-release NuGet only (`1.0.0-beta.1`), NOT listed on Umbraco Marketplace. Public Marketplace listing and full 1.0 packaging move to Story 10.5._
 
-Known bugs and gaps are fixed before community launch — the concurrency and context bugs will be hit by real users immediately.
+### Story 9.4: Accessibility Quick-Scan Workflow
+
+_Added 2026-04-07 — second example workflow for the beta. Confirmed by product owner decision: two workflows in beta to make the package feel meaningful, not thin. Accessibility is deliberately chosen over SEO Metadata Generator because (a) it exercises a different engine code path than CQA (less file munging, more fetch-based analysis), proving the engine isn't a one-trick pony; (b) accessibility is a high-salience concern for agencies in 2026; (c) the prompt complexity is moderate and achievable within the beta window._
+
+As a developer evaluating AgentRun,
+I want a second pre-built example workflow that showcases accessibility analysis,
+So that I can see the engine handle a different kind of task than content quality audit.
+
+**Acceptance Criteria:**
+
+**Given** the package is installed and a profile is configured
+**When** the developer opens the Agent Workflows dashboard
+**Then** an "Accessibility Quick-Scan" workflow appears alongside Content Quality Audit
+**And** it has 2-3 steps (fetcher/analyser + reporter, or similar)
+**And** it runs in interactive mode
+
+**Given** the developer runs Accessibility Quick-Scan
+**When** the fetcher step begins
+**Then** the agent asks the user for one or more URLs to scan, using the same welcoming, unambiguous prompt pattern as Content Quality Audit (Story 9.1c)
+**And** when URLs are provided, the agent fetches each via `fetch_url` and extracts accessibility-relevant signals: alt text presence on images, heading order, link text quality, ARIA landmarks, form field labels, colour contrast hints (inline style-based)
+**And** writes a structured findings file
+**And** the agent does not stall between fetches (Story 9.0 prerequisite)
+
+**Given** the findings step has completed
+**When** the reporter step executes
+**Then** it produces a prioritised fix list grouped by severity (critical, major, minor)
+**And** references specific WCAG 2.1 AA success criteria where appropriate
+**And** the output is understandable by a non-developer content manager
+
+**Given** Adam runs the workflow against 3-5 representative real test inputs of his choice
+**When** he reviews the output
+**Then** the same trustworthiness gate from Story 9.1b applies: he would be willing to send the report to a paying client without rewriting
+**And** the agent flags real issues specific to the actual fetched content, not generic WCAG advice
+**And** the agent does not hallucinate WCAG criteria references — every cited criterion is one the agent can directly evidence from the page HTML
+
+**What NOT to Build:**
+
+- Do NOT build a full WCAG 2.2 or WCAG 3.0 audit tool — this is a quick-scan that shows value, not a replacement for axe or Pa11y
+- Do NOT add browser rendering or JavaScript execution (the fetch_url tool returns raw HTML; that's all we work with)
+- Do NOT attempt colour contrast calculations that require rendered CSS — flag inline style colours only as hints
+- Do NOT introduce new tools — reuse fetch_url, write_file, read_file as-is
+- Do NOT bundle a sample dataset — the workflow asks for user-provided URLs, like Content Quality Audit (Story 9.1c decision)
+
+**Failure & Edge Cases:**
+
+- User provides URLs with no accessibility issues → the report still produces value by confirming what's done well, with a brief "no critical issues found" summary
+- Agent conflates issues across pages → prompts must enforce per-page findings before aggregation
+- LLM hallucinates WCAG criteria references → prompt must explicitly restrict claims to 2.1 AA and require evidence-based reasoning ("only cite a criterion if you can quote the offending HTML")
+- User pastes a URL whose page is too large for the configured fetch limit → truncation handling per Story 9.6, surfaced clearly in the findings file
+
+_Full story spec to be created by SM after Stories 9.0, 9.1c, and 9.6 are complete (or in flight)._
+
+### Story 9.5: Private Beta Distribution Plan
+
+_Added 2026-04-07 — defines the beta release milestone explicitly. Previously there was no distinction between "beta" and "public launch" in the epic plan, which created ambiguity about when Epic 9 was "done"._
+
+As a product owner,
+I want the beta release milestone defined, packaged, and distributed to a curated invite list,
+So that real users exercise the package before public launch.
+
+**Acceptance Criteria:**
+
+**Given** Stories 9.6, 9.0, 9.1a, 9.1b, 9.1c, 9.2, 9.3, and 9.4 are all complete
+**When** the beta is packaged
+**Then** the NuGet package is built with version `1.0.0-beta.1`
+**And** it is pushed to NuGet.org as a pre-release package (NOT listed on Umbraco Marketplace)
+**And** pre-release versioning ensures it does not appear in default search results for stable package consumers
+
+**Given** the beta invite list is finalised
+**When** invitations are sent
+**Then** each invitee receives: installation instructions, a link to the documentation (Story 9.3 deliverable), a request for structured feedback, and explicit language that this is a private beta not for re-sharing
+**And** the invite list includes: Cogworks internal engineering contacts, 3-5 Umbraco community contacts, selected Umbraco Discord members (coordinated with Discord moderators as appropriate)
+
+**Given** a beta user reports an issue or gives feedback
+**When** the feedback is triaged
+**Then** it is captured in a dedicated tracking location (file, issue tracker, or equivalent) with classification: bug, enhancement, or question
+**And** the triage decides whether it blocks the public 1.0 launch or is deferred
+
+**Given** the beta runs for a defined period (architect and product owner to agree duration during story refinement)
+**When** the beta period ends
+**Then** a beta retrospective is held to capture lessons learned
+**And** a decision is made about readiness for public launch (Epic 10.5)
+
+**What NOT to Build:**
+
+- Do NOT list on Umbraco Marketplace during the beta
+- Do NOT announce publicly (LinkedIn, DEV Community, Twitter/X, etc.) — that's the public launch
+- Do NOT build telemetry or usage analytics — feedback is manual for the beta
+- Do NOT include pricing, licensing discussions, or Pro-tier messaging — it's a free open-source beta with no commercial angle yet
+
+_Full story spec to be created by product owner with SM support._
+
+## Epic 10: Ship Readiness & Public Launch
+
+_Updated 2026-04-07 — post-beta stability work and public 1.0 launch. Story 10.3 (Multi-Turn Interactive Fix) was pulled forward into Story 9.0 as a beta blocker after live testing on 2026-04-07 confirmed the bug prevents the scanner from completing the first example workflow. This epic is now the fast-follower stability + launch epic, executed after beta feedback has been collected._
 
 ### Story 10.1: Instance Concurrency Locking
 
@@ -1116,13 +1597,9 @@ So that token waste is reduced and long workflows don't hit context limits.
 
 _Full story spec to be created by SM before development begins._
 
-### Story 10.3: Multi-Turn Interactive Fix
+### Story 10.3: _MOVED to Story 9.0 — ToolLoop Stall Recovery & Completion Logic_
 
-As a developer,
-I want the ToolLoop to continue when the LLM asks a question instead of exiting,
-So that multi-turn interactive conversations work correctly.
-
-_Full story spec to be created by SM before development begins._
+_This story was originally scoped as "Multi-Turn Interactive Fix" — a narrow fix for the ToolLoop exiting when the LLM asks a question. Live testing on 2026-04-07 (instance 642b6c583e3540cda11a8d88938f37e1) revealed a broader root cause: the ToolLoop's exit conditions are too eager and collapse stall, question-to-user, and completion into a single "wait for input" state. The fix was expanded in scope and pulled forward into Story 9.0 as a beta blocker. See Story 9.0 for the full spec._
 
 ### Story 10.4: Open Source Licence Decision
 

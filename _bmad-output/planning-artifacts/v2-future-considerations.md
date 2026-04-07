@@ -2,7 +2,7 @@
 
 _Living document for architectural decisions, limitations, and ideas that need addressing beyond the current V1 implementation. Add thoughts freely — they'll be triaged and formalised when we plan the next cycle._
 
-**Last updated:** 2026-04-01
+**Last updated:** 2026-04-07
 **Status:** Active ideation — not yet prioritised or committed
 
 ---
@@ -413,6 +413,114 @@ Move the Agent Workflows listing page into the Umbraco section tree (left nav pa
 - Touches routing for every existing view — significant but clean refactor
 
 **Recommendation:** Scope as a dedicated UX story in a future epic (not V1 MVP). It's a quality-of-life improvement, not a blocker. Could pair with the dashboard idea for a "UX polish" epic post-V1.
+
+---
+
+---
+
+## Engine Flexibility Audit — Hardcoded Policy Values
+
+**Added:** 2026-04-07
+**Triggered by:** Story 9.6 (Workflow-Configurable Tool Limits) and the broader architectural realisation that the engine has been making policy decisions that belong to workflow authors. The 100 KB HTML fetch limit hardcoded in `FetchUrlTool.cs` was the trigger — a perfectly reasonable workflow (audit a real website) collided with an engine assumption (HTML pages are small) and broke. The pattern is wider than that one constant.
+
+### The principle (record this as the architectural rule)
+
+An engine for running arbitrary workflows must separate **mechanism** (engine concern) from **policy** (workflow concern):
+
+- **Mechanism stays in the engine.** Tool dispatch, sandboxing behaviour, prompt assembly, state persistence atomicity, SSE streaming protocol, authentication, the *existence* of safety limits.
+- **Policy belongs to the workflow.** The *values* of safety limits, which tools a step can call, which model to use, what counts as completion, prompt content, timeout values, retry policies.
+- **Safety invariants are non-negotiable.** SSRF blocking rules, path sandboxing rules, the *fact* that some size/iteration limit exists. These are the only hardcoded policy decisions the engine should make. The values are configurable. The existence is not.
+
+### The catalogue
+
+This is the master list of every hardcoded policy value in the engine as of 2026-04-07. Each is classified, scoped, and (where applicable) flagged for migration.
+
+| # | Location | Value | What it controls | Classification | Status |
+|---|---|---|---|---|---|
+| 1 | `FetchUrlTool.cs:19-20` | 200 KB / 100 KB | Max fetch_url response size (split by content-type) | **Tuning value** — must be configurable | **Story 9.6 (BETA)** — collapsed to single `max_response_bytes`, workflow → step → site default → engine default with site-level hard cap |
+| 2 | `AgentRunComposer.cs:60` | 15 seconds | HTTP fetch_url timeout | **Tuning value** — must be configurable | **Story 9.6 (BETA)** — same resolution chain |
+| 3 | `ToolLoop.cs:12` | 5 minutes | User message wait timeout (how long to wait for user input before exiting tool loop) | **Tuning value** — must be configurable | **Story 9.6 (BETA)** — same resolution chain |
+| 4 | `ToolLoop.cs:11` | 100 iterations | Max LLM round-trips per step before bail | **Tuning value** — must be configurable | **V2** — not blocking the beta. Migrate to same resolution chain as 9.6 establishes. Pattern is mechanical. |
+| 5 | `FetchUrlTool.cs:92-99` | content-type → limit mapping | Which HTTP content types get which limit | **Tuning value, but obsolete** | **Story 9.6 (BETA)** — collapsed by removing the split (single limit applies regardless of content type). The mapping function disappears. |
+| 6 | `PromptAssembler.cs:40-41` | `sidecars/{stepId}/instructions.md` | Default sidecar instruction file path | **Convention vs. config** — debatable | **V2** — consider whether sidecar layout should be workflow-configurable (e.g. shared sidecars across steps, alternative folder layouts). Not blocking. |
+| 7 | `WorkflowValidator` / `CompletionChecker` | `files_exist` only | The completion check mechanism is hardcoded to one strategy | **Mechanism gap** | **V2** — consider pluggable completion strategies (file existence, tool-call signal, output marker, custom predicate). Significant design work. Not blocking. |
+| 8 | `ToolLoop` exit conditions | Hardcoded "no more tool calls = done" semantics | The engine decides what "step done" means, not the workflow | **Mechanism gap** | **V2** — overlaps with the Story 9.0 fix and item 7. The engine should distinguish: stalled, awaiting user, awaiting work, complete. Story 9.0 partially addresses this; deeper rework is V2. |
+| 9 | SSE event names (various) | `text.delta`, `tool.start`, `tool.result`, `tool.end`, `step.finished`, `input.wait`, `run.error` | Fixed event taxonomy | **Convention** — could become extensible | **V2** — workflows can't emit custom events to the chat panel today. Low priority unless real demand emerges. |
+| 10 | `WriteFileTool` / `ReadFileTool` | Instance folder only | File tools are sandboxed to instance folder; no workflow-folder reads | **Safety invariant for v1, policy gap for v2** | **V2** — relates to data_files, variants, and sample data discussions. Requires careful sandbox design (declared paths only). |
+
+### Items NOT in the catalogue (intentionally hardcoded — safety invariants)
+
+These should NEVER become workflow-configurable. Recording them explicitly so future contributors don't try.
+
+- **SSRF protection rules** in `SsrfProtection.cs` — RFC1918, loopback, link-local IP blocking. A workflow author who needs internal IPs should NOT be able to disable this via YAML. It's a confused-deputy attack vector.
+- **Path sandboxing canonical-path checking** in `PathSandbox.cs` — the rule "canonicalise paths and reject anything outside the allowed root" is not negotiable. Only the *allowed root* itself can become configurable (and even that is a v2 architectural decision, not a config knob).
+- **Atomic write semantics** (temp file + rename) — implementation invariant for crash safety.
+- **The fact that *some* size limit exists for fetch_url** — `max_response_bytes` is configurable; setting it to "unlimited" is not allowed. There must always be a finite ceiling, even if the workflow author makes it large.
+- **The fact that *some* iteration cap exists in ToolLoop** — `max_iterations` is configurable; setting it to "unlimited" is not allowed. Misbehaving agents must hit a wall.
+- **Backoffice authentication** — the `BackOfficeAccess` policy on all endpoints is non-negotiable.
+
+### The resolution chain pattern (established by Story 9.6)
+
+Story 9.6 establishes the pattern that all future tunable values follow. Recording it here as the canonical reference:
+
+```
+effective_value = (
+    step.tool_overrides[tool].setting
+    ?? workflow.tool_defaults[tool].setting
+    ?? site.tool_defaults[tool].setting       // appsettings.json AgentRun:ToolDefaults
+    ?? engine_default                          // hardcoded fallback if nothing else set
+)
+
+// Then enforce hard cap:
+if site.tool_limits[tool].setting_max is set:
+    effective_value = min(effective_value, site.tool_limits[tool].setting_max)
+```
+
+**Hard cap is a hard cap.** Workflow YAML cannot exceed the site-level ceiling under any circumstances. Decision recorded 2026-04-07: hard caps preferred over soft defaults for v1 — easier to relax later, impossible to tighten retroactively without breaking deployed workflows.
+
+### Migration strategy for v2 catalogue items
+
+When migrating remaining items (4, 6, 7, 8, 9, 10) in v2:
+
+- Each item gets its own story, not a bulk migration
+- Each story uses the resolution chain pattern from Story 9.6 unchanged
+- Items 7, 8, 9, 10 require design work first — they're not just "make this configurable", they're "rethink what this engine concern actually is"
+- Item 4 (MaxIterations) is mechanical and can ship in any cleanup epic
+
+### Why this audit exists
+
+Two reasons:
+
+1. **It's the master checklist for v2 engine work.** When v2 planning starts, this catalogue is the input. Each item gets a yes/no/defer decision and the yeses become stories.
+2. **It's the test for new engine PRs.** When future story specs propose adding a hardcoded value to the engine, the reviewer should ask "is this a safety invariant or a tuning value? if tuning, why isn't it in the catalogue with a resolution chain?" This prevents the same architectural mistake from recurring.
+
+### Trigger to revisit
+
+After Story 9.6 ships, do a follow-up audit pass on the codebase looking for any new constants or TimeSpan literals that crept in during beta polish work. Add them to the catalogue.
+
+---
+
+## ToolLoop Stall Recovery — Retry-with-Nudge Alternative
+
+**Added:** 2026-04-07
+**Context:** Story 9.0 (beta blocker) implements "fail fast" stall recovery in the ToolLoop — when the LLM produces no tool call and no text after a tool result, the step is marked errored immediately and the user retries via the chat. This was chosen for the beta because it is simpler, more debuggable, and relies on the existing retry button as the recovery path.
+
+**Alternative deferred to V2+:** Retry-with-nudge. When a stall is detected, the engine automatically injects a system message along the lines of "Continue your task. You have not yet written the required output file." and re-invokes the LLM once. If the model stalls a second time, then fail.
+
+**Potential benefits:**
+- More forgiving for intermittent model non-responses (network blip, provider hiccup, token budget edge)
+- Hides transient issues from the user without them needing to manually retry
+- Could dramatically reduce surface-level flakiness on longer workflows
+
+**Costs / risks:**
+- Additional complexity in ToolLoop state machine (retry counter, nudge message construction, conversation log semantics)
+- Hidden retries that the user doesn't see — makes debugging harder when things go wrong
+- Wastes tokens on a nudge cycle that may not help
+- Can mask genuine prompt quality issues that should be fixed at the prompt layer, not papered over at the engine layer
+
+**Trigger to revisit:** If beta telemetry (or real-world usage) shows stalls happening more than occasionally despite the prompt-quality fixes in Story 9.1b. If stalls are rare, fail-fast remains the right call. If they become a recurring friction point, promote this to a V2 story.
+
+**Design note:** The fail-fast implementation should keep the stall detection logic cleanly separable from the recovery action, so a future retry-with-nudge implementation is a pluggable strategy swap rather than a rewrite.
 
 ---
 
