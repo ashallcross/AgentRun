@@ -480,3 +480,6 @@ umbraco-package-schema.json
 
 # Media files
 /wwwroot/media/
+
+# AgentRun runtime instance state — local manual-test output, not source
+AgentRun.Umbraco.TestSite/App_Data/AgentRun.Umbraco/instances/
