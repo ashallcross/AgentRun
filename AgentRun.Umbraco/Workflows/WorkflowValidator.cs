@@ -32,6 +32,7 @@ public sealed class WorkflowValidator : IWorkflowValidator
     private static readonly Dictionary<string, HashSet<string>> AllowedToolSettings = new(StringComparer.Ordinal)
     {
         ["fetch_url"] = new(StringComparer.Ordinal) { "max_response_bytes", "timeout_seconds" },
+        ["read_file"] = new(StringComparer.Ordinal) { "max_response_bytes" },
         ["tool_loop"] = new(StringComparer.Ordinal) { "user_message_timeout_seconds" }
     };
 
@@ -293,6 +294,12 @@ public sealed class WorkflowValidator : IWorkflowValidator
             "FetchUrl:TimeoutSecondsCeiling");
 
         EnforceField(
+            workflow.ToolDefaults?.ReadFile?.MaxResponseBytes,
+            limits.ReadFile?.MaxResponseBytesCeiling,
+            workflow.Alias, "tool_defaults.read_file.max_response_bytes",
+            "ReadFile:MaxResponseBytesCeiling");
+
+        EnforceField(
             workflow.ToolDefaults?.ToolLoop?.UserMessageTimeoutSeconds,
             limits.ToolLoop?.UserMessageTimeoutSecondsCeiling,
             workflow.Alias, "tool_defaults.tool_loop.user_message_timeout_seconds",
@@ -314,6 +321,13 @@ public sealed class WorkflowValidator : IWorkflowValidator
                 workflow.Alias,
                 $"steps[{step.Id}].tool_overrides.fetch_url.timeout_seconds",
                 "FetchUrl:TimeoutSecondsCeiling");
+
+            EnforceField(
+                step.ToolOverrides?.ReadFile?.MaxResponseBytes,
+                limits.ReadFile?.MaxResponseBytesCeiling,
+                workflow.Alias,
+                $"steps[{step.Id}].tool_overrides.read_file.max_response_bytes",
+                "ReadFile:MaxResponseBytesCeiling");
 
             EnforceField(
                 step.ToolOverrides?.ToolLoop?.UserMessageTimeoutSeconds,

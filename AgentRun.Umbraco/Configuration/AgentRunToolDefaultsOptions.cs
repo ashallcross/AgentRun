@@ -9,12 +9,19 @@ public sealed class AgentRunToolDefaultsOptions
 {
     public FetchUrlDefaults? FetchUrl { get; set; }
 
+    public ReadFileDefaults? ReadFile { get; set; }
+
     public ToolLoopDefaults? ToolLoop { get; set; }
 
     public sealed class FetchUrlDefaults
     {
         public int? MaxResponseBytes { get; set; }
         public int? TimeoutSeconds { get; set; }
+    }
+
+    public sealed class ReadFileDefaults
+    {
+        public int? MaxResponseBytes { get; set; }
     }
 
     public sealed class ToolLoopDefaults

@@ -10,12 +10,19 @@ public sealed class ToolDefaultsConfig
 {
     public FetchUrlConfig? FetchUrl { get; set; }
 
+    public ReadFileConfig? ReadFile { get; set; }
+
     public ToolLoopConfig? ToolLoop { get; set; }
 
     public sealed class FetchUrlConfig
     {
         public int? MaxResponseBytes { get; set; }
         public int? TimeoutSeconds { get; set; }
+    }
+
+    public sealed class ReadFileConfig
+    {
+        public int? MaxResponseBytes { get; set; }
     }
 
     public sealed class ToolLoopConfig

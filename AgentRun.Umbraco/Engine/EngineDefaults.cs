@@ -9,6 +9,14 @@ public static class EngineDefaults
     /// <summary>1 MB. Single value applied regardless of content type.</summary>
     public const int FetchUrlMaxResponseBytes = 1_048_576;
 
+    /// <summary>
+    /// 256 KB. Per-call byte cap for <c>read_file</c>. Files at or below this
+    /// limit return as today; files over the limit return the first
+    /// <see cref="ReadFileMaxResponseBytes"/> bytes plus the verbatim truncation
+    /// marker. Story 9.9 — defence in depth for tool result offloading.
+    /// </summary>
+    public const int ReadFileMaxResponseBytes = 262_144;
+
     /// <summary>15 seconds. Per-request timeout for fetch_url.</summary>
     public const int FetchUrlTimeoutSeconds = 15;
 

@@ -10,12 +10,19 @@ public sealed class AgentRunToolLimitsOptions
 {
     public FetchUrlLimits? FetchUrl { get; set; }
 
+    public ReadFileLimits? ReadFile { get; set; }
+
     public ToolLoopLimits? ToolLoop { get; set; }
 
     public sealed class FetchUrlLimits
     {
         public int? MaxResponseBytesCeiling { get; set; }
         public int? TimeoutSecondsCeiling { get; set; }
+    }
+
+    public sealed class ReadFileLimits
+    {
+        public int? MaxResponseBytesCeiling { get; set; }
     }
 
     public sealed class ToolLoopLimits

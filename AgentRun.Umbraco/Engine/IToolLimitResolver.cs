@@ -21,6 +21,13 @@ public interface IToolLimitResolver
     int ResolveFetchUrlMaxResponseBytes(StepDefinition step, WorkflowDefinition workflow);
 
     /// <summary>
+    /// Resolves <c>read_file.max_response_bytes</c> for the given step in the given workflow.
+    /// Chain: step.tool_overrides → workflow.tool_defaults → site default → engine default (256 KB).
+    /// Story 9.9 — defence in depth for tool result offloading.
+    /// </summary>
+    int ResolveReadFileMaxResponseBytes(StepDefinition step, WorkflowDefinition workflow);
+
+    /// <summary>
     /// Resolves <c>fetch_url.timeout_seconds</c> for the given step in the given workflow.
     /// </summary>
     int ResolveFetchUrlTimeoutSeconds(StepDefinition step, WorkflowDefinition workflow);

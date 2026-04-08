@@ -59,6 +59,17 @@ public sealed class ToolLimitResolver : IToolLimitResolver
             ceiling:       options.ToolLimits?.FetchUrl?.MaxResponseBytesCeiling);
     }
 
+    public int ResolveReadFileMaxResponseBytes(StepDefinition step, WorkflowDefinition workflow)
+    {
+        var options = SafeOptions();
+        return ResolveCore(
+            stepValue:     step.ToolOverrides?.ReadFile?.MaxResponseBytes,
+            workflowValue: workflow.ToolDefaults?.ReadFile?.MaxResponseBytes,
+            siteDefault:   options.ToolDefaults?.ReadFile?.MaxResponseBytes,
+            engineDefault: EngineDefaults.ReadFileMaxResponseBytes,
+            ceiling:       options.ToolLimits?.ReadFile?.MaxResponseBytesCeiling);
+    }
+
     public int ResolveFetchUrlTimeoutSeconds(StepDefinition step, WorkflowDefinition workflow)
     {
         var options = SafeOptions();

@@ -259,6 +259,104 @@ public class WorkflowToolDefaultsValidationTests
         Assert.DoesNotThrow(() => ValidatorWithCeilings(options).EnforceCeilings(workflow));
     }
 
+    // --- Story 9.9: read_file.max_response_bytes ---
+
+    [Test]
+    public void ToolDefaults_ReadFile_MaxResponseBytes_Accepted()
+    {
+        var yaml = $"""
+            name: Test
+            description: Test
+            tool_defaults:
+              read_file:
+                max_response_bytes: 524288
+            {ValidStepsBlock}
+            """;
+        var result = _validator.Validate(yaml);
+        Assert.That(result.IsValid, Is.True, string.Join("; ", result.Errors.Select(e => e.Message)));
+    }
+
+    [Test]
+    public void ToolDefaults_ReadFile_ZeroOrNegative_Rejected()
+    {
+        var yaml = $"""
+            name: Test
+            description: Test
+            tool_defaults:
+              read_file:
+                max_response_bytes: 0
+            {ValidStepsBlock}
+            """;
+        var result = _validator.Validate(yaml);
+        Assert.That(result.IsValid, Is.False);
+        Assert.That(result.Errors.Any(e => e.Message.Contains("must be a positive integer")), Is.True);
+    }
+
+    [Test]
+    public void ToolDefaults_ReadFile_UnknownSetting_Rejected()
+    {
+        var yaml = $"""
+            name: Test
+            description: Test
+            tool_defaults:
+              read_file:
+                bogus: 100
+            {ValidStepsBlock}
+            """;
+        var result = _validator.Validate(yaml);
+        Assert.That(result.IsValid, Is.False);
+        Assert.That(result.Errors.Any(e => e.Message.Contains("Unknown setting 'bogus'")), Is.True);
+    }
+
+    [Test]
+    public void EnforceCeilings_ReadFile_WorkflowValueAboveCeiling_Throws()
+    {
+        var options = new AgentRunOptions
+        {
+            ToolLimits = new() { ReadFile = new() { MaxResponseBytesCeiling = 524_288 } }
+        };
+        var workflow = new WorkflowDefinition
+        {
+            Name = "T", Alias = "content-quality-audit",
+            ToolDefaults = new() { ReadFile = new() { MaxResponseBytes = 1_048_576 } },
+            Steps = { new StepDefinition { Id = "s", Name = "S", Agent = "a.md" } }
+        };
+
+        var ex = Assert.Throws<WorkflowConfigurationException>(
+            () => ValidatorWithCeilings(options).EnforceCeilings(workflow));
+        Assert.That(ex!.Message, Does.Contain("content-quality-audit"));
+        Assert.That(ex.Message, Does.Contain("tool_defaults.read_file.max_response_bytes"));
+        Assert.That(ex.Message, Does.Contain("1048576"));
+        Assert.That(ex.Message, Does.Contain("524288"));
+        Assert.That(ex.Message, Does.Contain("ReadFile:MaxResponseBytesCeiling"));
+    }
+
+    [Test]
+    public void EnforceCeilings_ReadFile_StepOverrideAboveCeiling_Throws()
+    {
+        var options = new AgentRunOptions
+        {
+            ToolLimits = new() { ReadFile = new() { MaxResponseBytesCeiling = 100_000 } }
+        };
+        var workflow = new WorkflowDefinition
+        {
+            Name = "T", Alias = "test-wf",
+            Steps =
+            {
+                new StepDefinition
+                {
+                    Id = "scanner", Name = "S", Agent = "a.md",
+                    ToolOverrides = new() { ReadFile = new() { MaxResponseBytes = 200_000 } }
+                }
+            }
+        };
+        var ex = Assert.Throws<WorkflowConfigurationException>(
+            () => ValidatorWithCeilings(options).EnforceCeilings(workflow));
+        Assert.That(ex!.Message, Does.Contain("steps[scanner].tool_overrides.read_file.max_response_bytes"));
+        Assert.That(ex.Message, Does.Contain("200000"));
+        Assert.That(ex.Message, Does.Contain("100000"));
+    }
+
     [Test]
     public void Workflow_Without_ToolDefaults_StillValid()
     {

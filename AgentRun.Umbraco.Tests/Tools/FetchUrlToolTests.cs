@@ -62,6 +62,7 @@ public class FetchUrlToolTests
         public int TimeoutSeconds { get; set; } = EngineDefaults.FetchUrlTimeoutSeconds;
         public int ResolveFetchUrlMaxResponseBytes(StepDefinition step, WorkflowDefinition workflow) => MaxBytes;
         public int ResolveFetchUrlTimeoutSeconds(StepDefinition step, WorkflowDefinition workflow) => TimeoutSeconds;
+        public int ResolveReadFileMaxResponseBytes(StepDefinition step, WorkflowDefinition workflow) => EngineDefaults.ReadFileMaxResponseBytes;
         public int ResolveToolLoopUserMessageTimeoutSeconds(StepDefinition step, WorkflowDefinition workflow) => 300;
     }
 
@@ -240,7 +241,7 @@ public class FetchUrlToolTests
         var args = new Dictionary<string, object?> { ["url"] = "https://example.com/reach" };
         var handle = Parse(await _tool.ExecuteAsync(args, _context, CancellationToken.None));
 
-        var readFile = new ReadFileTool();
+        var readFile = new ReadFileTool(_resolver);
         var read = await readFile.ExecuteAsync(
             new Dictionary<string, object?> { ["path"] = handle.saved_to! },
             _context,
@@ -509,13 +510,14 @@ public class FetchUrlToolTests
     }
 
     [Test]
-    public void NullStepOrWorkflow_Throws_InvalidOperationException()
+    public void NullStepOrWorkflow_Throws_ToolContextMissingException()
     {
         var contextWithoutStep = new ToolExecutionContext(_instanceRoot, "i", "s", "w");
 
         var args = new Dictionary<string, object?> { ["url"] = "https://example.com" };
-        Assert.ThrowsAsync<InvalidOperationException>(
+        var ex = Assert.ThrowsAsync<ToolContextMissingException>(
             () => _tool.ExecuteAsync(args, contextWithoutStep, CancellationToken.None));
+        Assert.That(ex, Is.InstanceOf<AgentRunException>());
     }
 
     [Test]

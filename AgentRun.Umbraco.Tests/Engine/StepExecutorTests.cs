@@ -88,6 +88,7 @@ public class StepExecutorTests
     {
         public int ResolveFetchUrlMaxResponseBytes(StepDefinition step, WorkflowDefinition workflow) => AgentRun.Umbraco.Engine.EngineDefaults.FetchUrlMaxResponseBytes;
         public int ResolveFetchUrlTimeoutSeconds(StepDefinition step, WorkflowDefinition workflow) => AgentRun.Umbraco.Engine.EngineDefaults.FetchUrlTimeoutSeconds;
+        public int ResolveReadFileMaxResponseBytes(StepDefinition step, WorkflowDefinition workflow) => AgentRun.Umbraco.Engine.EngineDefaults.ReadFileMaxResponseBytes;
         public int ResolveToolLoopUserMessageTimeoutSeconds(StepDefinition step, WorkflowDefinition workflow) => 1; // short for tests
         public void EnforceCeilings(WorkflowDefinition workflow) { }
     }

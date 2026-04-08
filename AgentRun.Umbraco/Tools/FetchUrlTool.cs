@@ -56,12 +56,15 @@ public class FetchUrlTool : IWorkflowTool
             throw new ToolExecutionException($"Invalid URL: '{urlString}'");
 
         // Story 9.6: tool tuning values must come through the resolver chain.
-        // Missing Step/Workflow on the execution context is a wiring bug — fail loud.
+        // Missing Step/Workflow on the execution context is an engine wiring bug.
+        // Throw a typed AgentRunException subtype (Story 9.9 D2 cross-cutting fix)
+        // so LlmErrorClassifier does not silently rewrite this as a generic
+        // provider failure.
         if (context.Step is null || context.Workflow is null)
         {
-            throw new InvalidOperationException(
-                "FetchUrlTool requires ToolExecutionContext.Step and ToolExecutionContext.Workflow to be set " +
-                "so the tool limit resolver can read step/workflow tuning values.");
+            throw new ToolContextMissingException(
+                "FetchUrlTool requires ToolExecutionContext.Step and .Workflow to be set by the executor. " +
+                "This is an engine wiring bug, not a workflow configuration issue.");
         }
 
         // Story 9.7: instance folder is required for response offloading.

@@ -112,6 +112,64 @@ public class ToolLimitResolverTests
         Assert.That(result, Is.EqualTo(60));
     }
 
+    // ---------- Story 9.9: read_file.max_response_bytes ----------
+
+    [Test]
+    public void ReadFile_EngineDefault_AppliesWhenNothingConfigured()
+    {
+        var resolver = MakeResolver();
+        var result = resolver.ResolveReadFileMaxResponseBytes(MakeStep(), MakeWorkflow());
+        Assert.That(result, Is.EqualTo(EngineDefaults.ReadFileMaxResponseBytes));
+        Assert.That(result, Is.EqualTo(262_144));
+    }
+
+    [Test]
+    public void ReadFile_SiteDefault_OverridesEngineDefault()
+    {
+        var options = new AgentRunOptions
+        {
+            ToolDefaults = new() { ReadFile = new() { MaxResponseBytes = 524_288 } }
+        };
+        var result = MakeResolver(options).ResolveReadFileMaxResponseBytes(MakeStep(), MakeWorkflow());
+        Assert.That(result, Is.EqualTo(524_288));
+    }
+
+    [Test]
+    public void ReadFile_WorkflowDefault_OverridesSiteDefault()
+    {
+        var options = new AgentRunOptions
+        {
+            ToolDefaults = new() { ReadFile = new() { MaxResponseBytes = 524_288 } }
+        };
+        var workflow = MakeWorkflow(new() { ReadFile = new() { MaxResponseBytes = 1_048_576 } });
+        var result = MakeResolver(options).ResolveReadFileMaxResponseBytes(MakeStep(), workflow);
+        Assert.That(result, Is.EqualTo(1_048_576));
+    }
+
+    [Test]
+    public void ReadFile_StepOverride_TakesPrecedenceOverEverything()
+    {
+        var options = new AgentRunOptions
+        {
+            ToolDefaults = new() { ReadFile = new() { MaxResponseBytes = 524_288 } }
+        };
+        var workflow = MakeWorkflow(new() { ReadFile = new() { MaxResponseBytes = 1_048_576 } });
+        var step = MakeStep(new() { ReadFile = new() { MaxResponseBytes = 65_536 } });
+        var result = MakeResolver(options).ResolveReadFileMaxResponseBytes(step, workflow);
+        Assert.That(result, Is.EqualTo(65_536));
+    }
+
+    [Test]
+    public void ReadFile_Ceiling_BelowEngineDefault_SilentlyClampsForUnconfiguredWorkflow()
+    {
+        var options = new AgentRunOptions
+        {
+            ToolLimits = new() { ReadFile = new() { MaxResponseBytesCeiling = 100_000 } }
+        };
+        var result = MakeResolver(options).ResolveReadFileMaxResponseBytes(MakeStep(), MakeWorkflow());
+        Assert.That(result, Is.EqualTo(100_000));
+    }
+
     [Test]
     public void SiteDefault_NonPositive_IsIgnoredAndFallsThroughToEngineDefault()
     {
