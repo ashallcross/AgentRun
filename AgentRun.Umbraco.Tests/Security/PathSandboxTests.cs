@@ -159,6 +159,59 @@ public class PathSandboxTests
         Assert.That(result, Is.EqualTo(Path.Combine(_root, "test.txt")));
     }
 
+    // Story 9.7: dotted directories like .fetch-cache/ must be reachable.
+    [Test]
+    public void DottedDirectory_FetchCacheFile_IsAccepted()
+    {
+        var dir = Path.Combine(_root, ".fetch-cache");
+        Directory.CreateDirectory(dir);
+        var file = Path.Combine(dir, "abc123.html");
+        File.WriteAllText(file, "x");
+
+        var result = PathSandbox.ValidatePath(".fetch-cache/abc123.html", _root);
+
+        Assert.That(result, Is.EqualTo(file));
+    }
+
+    [Test]
+    public void DottedDirectory_RootOfCacheDir_IsAccepted()
+    {
+        var dir = Path.Combine(_root, ".fetch-cache");
+        Directory.CreateDirectory(dir);
+
+        var result = PathSandbox.ValidatePath(".fetch-cache", _root);
+
+        Assert.That(result, Is.EqualTo(dir));
+    }
+
+    [Test]
+    public void DottedDirectory_PathEscape_StillRejected()
+    {
+        var ex = Assert.Throws<UnauthorizedAccessException>(
+            () => PathSandbox.ValidatePath(".fetch-cache/../../etc/passwd", _root));
+        Assert.That(ex!.Message, Does.Contain("outside the instance folder"));
+    }
+
+    [Test]
+    public void DottedDirectory_DeepPathEscape_StillRejected()
+    {
+        var ex = Assert.Throws<UnauthorizedAccessException>(
+            () => PathSandbox.ValidatePath(".fetch-cache/../../../tmp/foo", _root));
+        Assert.That(ex!.Message, Does.Contain("outside the instance folder"));
+    }
+
+    [Test]
+    public void DottedDirectory_AbsolutePathArgument_StillRejected()
+    {
+        var absolute = OperatingSystem.IsWindows()
+            ? @"C:\Windows\System32\config\SAM"
+            : "/etc/passwd";
+
+        var ex = Assert.Throws<UnauthorizedAccessException>(
+            () => PathSandbox.ValidatePath(absolute, _root));
+        Assert.That(ex!.Message, Does.Contain("Access denied"));
+    }
+
     [Test]
     public void RootWithoutTrailingSeparator_HandledConsistently()
     {

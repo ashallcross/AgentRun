@@ -1,5 +1,7 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using AgentRun.Umbraco.Configuration;
@@ -18,6 +20,7 @@ public class FetchUrlToolTests
     private FakeToolLimitResolver _resolver = null!;
     private FetchUrlTool _tool = null!;
     private ToolExecutionContext _context = null!;
+    private string _instanceRoot = null!;
 
     [SetUp]
     public void SetUp()
@@ -34,13 +37,23 @@ public class FetchUrlToolTests
         _resolver = new FakeToolLimitResolver();
         _tool = new FetchUrlTool(_ssrfProtection, _httpClientFactory, _resolver);
 
+        _instanceRoot = Path.Combine(Path.GetTempPath(), "agentrun-fetchurl-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(_instanceRoot);
+
         var step = new StepDefinition { Id = "step-1", Name = "Test", Agent = "agents/test.md" };
         var workflow = new WorkflowDefinition { Name = "Test Workflow", Alias = "test-workflow", Steps = { step } };
-        _context = new ToolExecutionContext("/tmp/test", "inst-001", "step-1", "test-workflow")
+        _context = new ToolExecutionContext(_instanceRoot, "inst-001", "step-1", "test-workflow")
         {
             Step = step,
             Workflow = workflow
         };
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        if (Directory.Exists(_instanceRoot))
+            Directory.Delete(_instanceRoot, recursive: true);
     }
 
     private sealed class FakeToolLimitResolver : IToolLimitResolver
@@ -59,8 +72,26 @@ public class FetchUrlToolTests
         _httpClientFactory.CreateClient("FetchUrl").Returns(client);
     }
 
+    private sealed record Handle(
+        string url,
+        int status,
+        string content_type,
+        long size_bytes,
+        string? saved_to,
+        bool truncated);
+
+    private static Handle Parse(object result)
+    {
+        Assert.That(result, Is.InstanceOf<string>());
+        var json = (string)result;
+        Assert.That(json.Length, Is.LessThan(1024), "handle JSON must be < 1 KB");
+        return JsonSerializer.Deserialize<Handle>(json)!;
+    }
+
+    // ---------- Task 4 / handle shape, offloading, truncation, no-body, IO failure ----------
+
     [Test]
-    public async Task SuccessfulFetch_ReturnsResponseBody()
+    public async Task HandleShape_HasExactlyExpectedFields_AndIsUnder1KB()
     {
         SetupHttpClient((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
         {
@@ -70,8 +101,308 @@ public class FetchUrlToolTests
         var args = new Dictionary<string, object?> { ["url"] = "https://example.com" };
         var result = await _tool.ExecuteAsync(args, _context, CancellationToken.None);
 
-        Assert.That(result, Is.EqualTo("Hello, world!"));
+        var json = (string)result;
+        Assert.That(json.Length, Is.LessThan(1024));
+
+        using var doc = JsonDocument.Parse(json);
+        var props = doc.RootElement.EnumerateObject().Select(p => p.Name).ToHashSet();
+        Assert.That(props, Is.EquivalentTo(new[] { "url", "status", "content_type", "size_bytes", "saved_to", "truncated" }));
+
+        var handle = Parse(result);
+        Assert.That(handle.url, Is.EqualTo("https://example.com"));
+        Assert.That(handle.status, Is.EqualTo(200));
+        Assert.That(handle.content_type, Is.EqualTo("text/plain"));
+        Assert.That(handle.size_bytes, Is.EqualTo(13));
+        Assert.That(handle.truncated, Is.False);
+        Assert.That(handle.saved_to, Is.Not.Null);
+        Assert.That(Regex.IsMatch(handle.saved_to!, @"^\.fetch-cache/[0-9a-f]{64}\.html$"));
     }
+
+    [Test]
+    public async Task SuccessfulFetch_WritesBytesToCacheFile()
+    {
+        var body = new string('A', 10_000);
+        SetupHttpClient((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(body, Encoding.UTF8, "text/html")
+        }));
+
+        var args = new Dictionary<string, object?> { ["url"] = "https://example.com/page" };
+        var handle = Parse(await _tool.ExecuteAsync(args, _context, CancellationToken.None));
+
+        var fullPath = Path.Combine(_instanceRoot, handle.saved_to!.Replace('/', Path.DirectorySeparatorChar));
+        Assert.That(File.Exists(fullPath), Is.True);
+        var bytes = await File.ReadAllBytesAsync(fullPath);
+        Assert.That(Encoding.UTF8.GetString(bytes), Is.EqualTo(body));
+        Assert.That(handle.size_bytes, Is.EqualTo(new FileInfo(fullPath).Length));
+    }
+
+    [Test]
+    public async Task TruncationCooperation_WritesTruncatedBytes_AndFlagIsTrue()
+    {
+        _resolver.MaxBytes = 5_000;
+        var body = new string('A', 12_000);
+        SetupHttpClient((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(body, Encoding.UTF8, "text/html")
+        }));
+
+        var args = new Dictionary<string, object?> { ["url"] = "https://example.com/big" };
+        var handle = Parse(await _tool.ExecuteAsync(args, _context, CancellationToken.None));
+
+        Assert.That(handle.truncated, Is.True);
+
+        var marker = $"\n\n[Response truncated at 5000 bytes]";
+        var expectedSize = 5000 + Encoding.UTF8.GetByteCount(marker);
+        Assert.That(handle.size_bytes, Is.EqualTo(expectedSize));
+
+        var fullPath = Path.Combine(_instanceRoot, handle.saved_to!.Replace('/', Path.DirectorySeparatorChar));
+        var bytes = await File.ReadAllBytesAsync(fullPath);
+        Assert.That(bytes.Length, Is.EqualTo(expectedSize));
+        Assert.That(Encoding.UTF8.GetString(bytes, 0, 5000), Is.EqualTo(new string('A', 5000)));
+        Assert.That(Encoding.UTF8.GetString(bytes), Does.EndWith(marker));
+    }
+
+    [Test]
+    public async Task NoBody_204_ReturnsHandleWithNullSavedTo_AndWritesNoFile()
+    {
+        SetupHttpClient((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.NoContent)
+        {
+            Content = new ByteArrayContent(Array.Empty<byte>())
+        }));
+
+        var args = new Dictionary<string, object?> { ["url"] = "https://example.com/nope" };
+        var handle = Parse(await _tool.ExecuteAsync(args, _context, CancellationToken.None));
+
+        Assert.That(handle.status, Is.EqualTo(204));
+        Assert.That(handle.size_bytes, Is.EqualTo(0));
+        Assert.That(handle.saved_to, Is.Null);
+        Assert.That(handle.truncated, Is.False);
+        Assert.That(Directory.Exists(Path.Combine(_instanceRoot, ".fetch-cache")), Is.False);
+    }
+
+    [Test]
+    public async Task NoBody_200WithEmptyBody_ReturnsHandleWithNullSavedTo_AndWritesNoFile()
+    {
+        SetupHttpClient((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(string.Empty, Encoding.UTF8, "text/plain")
+        }));
+
+        var args = new Dictionary<string, object?> { ["url"] = "https://example.com/empty" };
+        var handle = Parse(await _tool.ExecuteAsync(args, _context, CancellationToken.None));
+
+        Assert.That(handle.status, Is.EqualTo(200));
+        Assert.That(handle.size_bytes, Is.EqualTo(0));
+        Assert.That(handle.saved_to, Is.Null);
+        Assert.That(handle.truncated, Is.False);
+        Assert.That(Directory.Exists(Path.Combine(_instanceRoot, ".fetch-cache")), Is.False);
+    }
+
+    [Test]
+    public async Task Http404_PreservesExistingErrorStringContract_AndWritesNoFile()
+    {
+        SetupHttpClient((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound)
+        {
+            ReasonPhrase = "Not Found"
+        }));
+
+        var args = new Dictionary<string, object?> { ["url"] = "https://example.com/missing" };
+        var result = await _tool.ExecuteAsync(args, _context, CancellationToken.None);
+
+        Assert.That(result, Is.EqualTo("HTTP 404: Not Found"));
+        Assert.That(Directory.Exists(Path.Combine(_instanceRoot, ".fetch-cache")), Is.False);
+    }
+
+    [Test]
+    public async Task Http500_PreservesExistingErrorStringContract()
+    {
+        SetupHttpClient((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)
+        {
+            ReasonPhrase = "Internal Server Error"
+        }));
+
+        var args = new Dictionary<string, object?> { ["url"] = "https://example.com/error" };
+        var result = await _tool.ExecuteAsync(args, _context, CancellationToken.None);
+
+        Assert.That(result, Is.EqualTo("HTTP 500: Internal Server Error"));
+    }
+
+    [Test]
+    public async Task ReachabilityViaReadFile_AfterFetch_ReturnsCachedBytes()
+    {
+        var body = "<html><body>Hello cache!</body></html>";
+        SetupHttpClient((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(body, Encoding.UTF8, "text/html")
+        }));
+
+        var args = new Dictionary<string, object?> { ["url"] = "https://example.com/reach" };
+        var handle = Parse(await _tool.ExecuteAsync(args, _context, CancellationToken.None));
+
+        var readFile = new ReadFileTool();
+        var read = await readFile.ExecuteAsync(
+            new Dictionary<string, object?> { ["path"] = handle.saved_to! },
+            _context,
+            CancellationToken.None);
+
+        Assert.That(read, Is.EqualTo(body));
+    }
+
+    [Test]
+    public async Task PathSandbox_IsCalledForWriteTarget_FilenameIsHashOfUrl()
+    {
+        var url = "https://example.com/abc";
+        var expectedHash = Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(url)))
+            .ToLowerInvariant();
+
+        SetupHttpClient((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("body", Encoding.UTF8, "text/plain")
+        }));
+
+        var args = new Dictionary<string, object?> { ["url"] = url };
+        var handle = Parse(await _tool.ExecuteAsync(args, _context, CancellationToken.None));
+
+        Assert.That(handle.saved_to, Is.EqualTo($".fetch-cache/{expectedHash}.html"));
+        var fullPath = Path.Combine(_instanceRoot, ".fetch-cache", $"{expectedHash}.html");
+        Assert.That(File.Exists(fullPath), Is.True);
+    }
+
+    [Test]
+    public void IoFailure_ThrowsToolExecutionException_WithoutInliningBody()
+    {
+        SetupHttpClient((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("THIS_BODY_MUST_NOT_LEAK", Encoding.UTF8, "text/html")
+        }));
+
+        // Force the write to fail by pre-creating .fetch-cache as a *file* instead of a directory.
+        var collisionPath = Path.Combine(_instanceRoot, ".fetch-cache");
+        File.WriteAllText(collisionPath, "blocking");
+
+        var args = new Dictionary<string, object?> { ["url"] = "https://example.com/io-fail" };
+
+        var ex = Assert.ThrowsAsync<ToolExecutionException>(
+            () => _tool.ExecuteAsync(args, _context, CancellationToken.None));
+
+        Assert.That(ex!.Message, Does.Contain("Failed to cache fetch_url response"));
+        Assert.That(ex.Message, Does.Contain(".fetch-cache/"));
+        Assert.That(ex.Message, Does.Not.Contain("THIS_BODY_MUST_NOT_LEAK"));
+    }
+
+    [Test]
+    public async Task ConcurrentDirectoryCreation_DoesNotThrow()
+    {
+        SetupHttpClient((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("payload", Encoding.UTF8, "text/plain")
+        }));
+
+        var args1 = new Dictionary<string, object?> { ["url"] = "https://example.com/a" };
+        var args2 = new Dictionary<string, object?> { ["url"] = "https://example.com/b" };
+
+        var t1 = _tool.ExecuteAsync(args1, _context, CancellationToken.None);
+        var t2 = _tool.ExecuteAsync(args2, _context, CancellationToken.None);
+
+        await Task.WhenAll(t1, t2);
+
+        Assert.That(Directory.Exists(Path.Combine(_instanceRoot, ".fetch-cache")), Is.True);
+        var files = Directory.GetFiles(Path.Combine(_instanceRoot, ".fetch-cache"));
+        Assert.That(files.Length, Is.EqualTo(2));
+    }
+
+    [Test]
+    public async Task MissingContentType_HandleHasEmptyContentTypeField()
+    {
+        var content = "no-content-type-here";
+        SetupHttpClient((_, _) =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(Encoding.UTF8.GetBytes(content))
+            };
+            return Task.FromResult(response);
+        });
+
+        var args = new Dictionary<string, object?> { ["url"] = "https://example.com/noct" };
+        var handle = Parse(await _tool.ExecuteAsync(args, _context, CancellationToken.None));
+
+        Assert.That(handle.content_type, Is.EqualTo(""));
+        Assert.That(handle.saved_to, Is.Not.Null);
+    }
+
+    // ---------- Task 5: regression fixtures (small / medium / large) ----------
+
+    private static byte[] LoadFixture(string name)
+    {
+        var dir = Path.Combine(TestContext.CurrentContext.TestDirectory, "Tools", "Fixtures");
+        var path = Path.Combine(dir, name);
+        Assert.That(File.Exists(path), $"Fixture missing: {path}");
+        return File.ReadAllBytes(path);
+    }
+
+    [TestCase("fetch-url-100kb.html", "https://wearecogworks.com/")]
+    [TestCase("fetch-url-500kb.html", "https://umbraco.com/products/cms/")]
+    [TestCase("fetch-url-1500kb.html", "https://www.bbc.co.uk/news")]
+    public async Task RegressionFixture_FullSize_HandleUnder1KB_AndCachedBytesMatch(string fixture, string url)
+    {
+        var bytes = LoadFixture(fixture);
+        // Allow the full body through (no truncation).
+        _resolver.MaxBytes = bytes.Length + 10_000;
+
+        SetupHttpClient((_, _) =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(bytes)
+            };
+            response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/html");
+            return Task.FromResult(response);
+        });
+
+        var args = new Dictionary<string, object?> { ["url"] = url };
+        var result = await _tool.ExecuteAsync(args, _context, CancellationToken.None);
+        var json = (string)result;
+        Assert.That(json.Length, Is.LessThan(1024));
+        var handle = Parse(result);
+        Assert.That(handle.truncated, Is.False);
+        Assert.That(handle.size_bytes, Is.EqualTo(bytes.Length));
+
+        var fullPath = Path.Combine(_instanceRoot, handle.saved_to!.Replace('/', Path.DirectorySeparatorChar));
+        var written = await File.ReadAllBytesAsync(fullPath);
+        Assert.That(written, Is.EqualTo(bytes));
+    }
+
+    [Test]
+    public async Task RegressionFixture_BbcLargest_TruncatedBranchAlsoCovered()
+    {
+        var bytes = LoadFixture("fetch-url-1500kb.html");
+        _resolver.MaxBytes = 100_000; // force truncation
+
+        SetupHttpClient((_, _) =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(bytes)
+            };
+            response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/html");
+            return Task.FromResult(response);
+        });
+
+        var args = new Dictionary<string, object?> { ["url"] = "https://www.bbc.co.uk/news" };
+        var handle = Parse(await _tool.ExecuteAsync(args, _context, CancellationToken.None));
+
+        Assert.That(handle.truncated, Is.True);
+        var fullPath = Path.Combine(_instanceRoot, handle.saved_to!.Replace('/', Path.DirectorySeparatorChar));
+        var written = await File.ReadAllBytesAsync(fullPath);
+        Assert.That(handle.size_bytes, Is.EqualTo(written.LongLength));
+        Assert.That(written.Length, Is.LessThan(bytes.Length));
+        Assert.That(Encoding.UTF8.GetString(written), Does.EndWith("[Response truncated at 100000 bytes]"));
+    }
+
+    // ---------- Existing behavioural guarantees (preserved) ----------
 
     [Test]
     public void MissingUrlArgument_Throws()
@@ -94,69 +425,8 @@ public class FetchUrlToolTests
     }
 
     [Test]
-    public async Task Http404_ReturnsErrorString()
-    {
-        SetupHttpClient((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound)
-        {
-            ReasonPhrase = "Not Found"
-        }));
-
-        var args = new Dictionary<string, object?> { ["url"] = "https://example.com/missing" };
-        var result = await _tool.ExecuteAsync(args, _context, CancellationToken.None);
-
-        Assert.That(result, Is.EqualTo("HTTP 404: Not Found"));
-    }
-
-    [Test]
-    public async Task Http500_ReturnsErrorString()
-    {
-        SetupHttpClient((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)
-        {
-            ReasonPhrase = "Internal Server Error"
-        }));
-
-        var args = new Dictionary<string, object?> { ["url"] = "https://example.com/error" };
-        var result = await _tool.ExecuteAsync(args, _context, CancellationToken.None);
-
-        Assert.That(result, Is.EqualTo("HTTP 500: Internal Server Error"));
-    }
-
-    [Test]
-    public async Task ResponseExceedingResolvedLimit_IsTruncated()
-    {
-        _resolver.MaxBytes = 50_000;
-        var largeContent = new string('A', 60_000);
-        SetupHttpClient((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-        {
-            Content = new StringContent(largeContent, Encoding.UTF8, "application/json")
-        }));
-
-        var args = new Dictionary<string, object?> { ["url"] = "https://example.com/data.json" };
-        var result = (string)await _tool.ExecuteAsync(args, _context, CancellationToken.None);
-
-        Assert.That(result, Does.EndWith("[Response truncated at 50000 bytes]"));
-        Assert.That(result, Does.StartWith(new string('A', 100)));
-    }
-
-    [Test]
-    public async Task ResponseWithinLimit_ReturnsFull()
-    {
-        var content = new string('B', 1000);
-        SetupHttpClient((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-        {
-            Content = new StringContent(content, Encoding.UTF8, "application/json")
-        }));
-
-        var args = new Dictionary<string, object?> { ["url"] = "https://example.com/small.json" };
-        var result = await _tool.ExecuteAsync(args, _context, CancellationToken.None);
-
-        Assert.That(result, Is.EqualTo(content));
-    }
-
-    [Test]
     public void SsrfBlockedUrl_Throws()
     {
-        // Create a protection that blocks everything
         var blockingPolicy = Substitute.For<INetworkAccessPolicy>();
         blockingPolicy.IsAddressAllowed(Arg.Any<IPAddress>()).Returns(false);
 
@@ -177,7 +447,6 @@ public class FetchUrlToolTests
     [Test]
     public void Timeout_ThrowsWithTimeoutMessage()
     {
-        // Story 9.6: timeout is applied per-request via a linked CTS, not HttpClient.Timeout.
         SetupHttpClient((_, _) =>
             throw new TaskCanceledException("Cancelled"));
 
@@ -187,38 +456,6 @@ public class FetchUrlToolTests
             () => _tool.ExecuteAsync(args, _context, CancellationToken.None));
         Assert.That(ex!.Message, Does.Contain("timed out"));
         Assert.That(ex.Message, Does.Contain($"{EngineDefaults.FetchUrlTimeoutSeconds} seconds"));
-    }
-
-    [Test]
-    public async Task HtmlResponse_UsesSameLimit_AsAllOtherContentTypes()
-    {
-        // Story 9.6: the HTML/JSON content-type-aware split is collapsed.
-        // A single max_response_bytes applies regardless of media type.
-        _resolver.MaxBytes = 80_000;
-        var largeHtml = new string('H', 90_000);
-        SetupHttpClient((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-        {
-            Content = new StringContent(largeHtml, Encoding.UTF8, "text/html")
-        }));
-
-        var args = new Dictionary<string, object?> { ["url"] = "https://example.com/page.html" };
-        var result = (string)await _tool.ExecuteAsync(args, _context, CancellationToken.None);
-
-        Assert.That(result, Does.EndWith("[Response truncated at 80000 bytes]"));
-    }
-
-    [Test]
-    public async Task EmptyResponseBody_ReturnsEmptyString()
-    {
-        SetupHttpClient((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-        {
-            Content = new StringContent(string.Empty, Encoding.UTF8, "text/plain")
-        }));
-
-        var args = new Dictionary<string, object?> { ["url"] = "https://example.com/empty" };
-        var result = await _tool.ExecuteAsync(args, _context, CancellationToken.None);
-
-        Assert.That(result, Is.EqualTo(string.Empty));
     }
 
     [Test]
@@ -235,31 +472,9 @@ public class FetchUrlToolTests
 
         var args = new Dictionary<string, object?> { ["url"] = "https://example.com" };
 
-        // HttpClient wraps OCE in TaskCanceledException — verify it propagates (not wrapped in ToolExecutionException)
         Assert.That(
             () => _tool.ExecuteAsync(args, _context, cts.Token),
             Throws.InstanceOf<OperationCanceledException>());
-    }
-
-    [Test]
-    public async Task MissingContentType_StillUsesResolvedLimit()
-    {
-        _resolver.MaxBytes = 30_000;
-        var content = new string('X', 40_000);
-        SetupHttpClient((_, _) =>
-        {
-            var response = new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new ByteArrayContent(Encoding.UTF8.GetBytes(content))
-            };
-            // No Content-Type header set
-            return Task.FromResult(response);
-        });
-
-        var args = new Dictionary<string, object?> { ["url"] = "https://example.com/noct" };
-        var result = (string)await _tool.ExecuteAsync(args, _context, CancellationToken.None);
-
-        Assert.That(result, Does.EndWith("[Response truncated at 30000 bytes]"));
     }
 
     [Test]
@@ -278,10 +493,6 @@ public class FetchUrlToolTests
     [Test]
     public void Timeout_LinkedCtsActuallyFires_ProducesFriendlyTimeoutMessage()
     {
-        // P7 / AC #6: prove the per-request CancellationTokenSource.CancelAfter
-        // really fires and the OCE is caught into a friendly ToolExecutionException.
-        // The handler awaits Task.Delay on the cancellation token — it does NOT
-        // throw TaskCanceledException synchronously like the older test stub.
         _resolver.TimeoutSeconds = 1;
         SetupHttpClient(async (_, ct) =>
         {
@@ -300,8 +511,7 @@ public class FetchUrlToolTests
     [Test]
     public void NullStepOrWorkflow_Throws_InvalidOperationException()
     {
-        // D2: missing step/workflow context is a wiring bug — fail loud.
-        var contextWithoutStep = new ToolExecutionContext("/tmp", "i", "s", "w");
+        var contextWithoutStep = new ToolExecutionContext(_instanceRoot, "i", "s", "w");
 
         var args = new Dictionary<string, object?> { ["url"] = "https://example.com" };
         Assert.ThrowsAsync<InvalidOperationException>(
@@ -311,9 +521,6 @@ public class FetchUrlToolTests
     [Test]
     public async Task RealResolver_WorkflowDeclaredMaxResponseBytes_FlowsThroughToTruncation()
     {
-        // P8 / AC #6 integration: a workflow-declared tool_defaults value must
-        // flow end-to-end through the real ToolLimitResolver into FetchUrlTool's
-        // truncation logic — not via the test FakeToolLimitResolver shortcut.
         var realResolver = new ToolLimitResolver(Options.Create(new AgentRunOptions()));
         var tool = new FetchUrlTool(_ssrfProtection, _httpClientFactory, realResolver);
 
@@ -325,7 +532,7 @@ public class FetchUrlToolTests
             ToolDefaults = new() { FetchUrl = new() { MaxResponseBytes = 25_000 } },
             Steps = { step }
         };
-        var context = new ToolExecutionContext("/tmp", "inst", "scan", "e2e")
+        var context = new ToolExecutionContext(_instanceRoot, "inst", "scan", "e2e")
         {
             Step = step,
             Workflow = workflow
@@ -338,15 +545,17 @@ public class FetchUrlToolTests
         }));
 
         var args = new Dictionary<string, object?> { ["url"] = "https://example.com/big" };
-        var result = (string)await tool.ExecuteAsync(args, context, CancellationToken.None);
+        var handle = Parse(await tool.ExecuteAsync(args, context, CancellationToken.None));
 
-        Assert.That(result, Does.EndWith("[Response truncated at 25000 bytes]"));
+        Assert.That(handle.truncated, Is.True);
+        var fullPath = Path.Combine(_instanceRoot, handle.saved_to!.Replace('/', Path.DirectorySeparatorChar));
+        var written = await File.ReadAllBytesAsync(fullPath);
+        Assert.That(Encoding.UTF8.GetString(written), Does.EndWith("[Response truncated at 25000 bytes]"));
     }
 
     [Test]
     public async Task RealResolver_StepOverride_BeatsWorkflowDefault()
     {
-        // P8 (b): step-level override flows end-to-end via the real resolver.
         var realResolver = new ToolLimitResolver(Options.Create(new AgentRunOptions()));
         var tool = new FetchUrlTool(_ssrfProtection, _httpClientFactory, realResolver);
 
@@ -361,7 +570,7 @@ public class FetchUrlToolTests
             ToolDefaults = new() { FetchUrl = new() { MaxResponseBytes = 50_000 } },
             Steps = { step }
         };
-        var context = new ToolExecutionContext("/tmp", "inst", "tight", "e2e")
+        var context = new ToolExecutionContext(_instanceRoot, "inst", "tight", "e2e")
         {
             Step = step,
             Workflow = workflow
@@ -373,9 +582,12 @@ public class FetchUrlToolTests
         }));
 
         var args = new Dictionary<string, object?> { ["url"] = "https://example.com/x" };
-        var result = (string)await tool.ExecuteAsync(args, context, CancellationToken.None);
+        var handle = Parse(await tool.ExecuteAsync(args, context, CancellationToken.None));
 
-        Assert.That(result, Does.EndWith("[Response truncated at 10000 bytes]"));
+        Assert.That(handle.truncated, Is.True);
+        var fullPath = Path.Combine(_instanceRoot, handle.saved_to!.Replace('/', Path.DirectorySeparatorChar));
+        var written = await File.ReadAllBytesAsync(fullPath);
+        Assert.That(Encoding.UTF8.GetString(written), Does.EndWith("[Response truncated at 10000 bytes]"));
     }
 
     private class MockHttpHandler : HttpMessageHandler

@@ -1,5 +1,7 @@
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using AgentRun.Umbraco.Engine;
 using AgentRun.Umbraco.Security;
 
@@ -17,13 +19,19 @@ public class FetchUrlTool : IWorkflowTool
         }
         """).RootElement;
 
+    private static readonly JsonSerializerOptions HandleJsonOptions = new()
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.Never
+    };
+
     private readonly SsrfProtection _ssrfProtection;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IToolLimitResolver _limitResolver;
 
     public string Name => "fetch_url";
 
-    public string Description => "Fetches the contents of a URL via HTTP GET";
+    public string Description => "Fetches the contents of a URL via HTTP GET. Returns a small JSON handle " +
+                                 "with metadata and a `saved_to` relative path; use `read_file` to load the cached body.";
 
     public JsonElement? ParameterSchema => Schema;
 
@@ -54,6 +62,14 @@ public class FetchUrlTool : IWorkflowTool
             throw new InvalidOperationException(
                 "FetchUrlTool requires ToolExecutionContext.Step and ToolExecutionContext.Workflow to be set " +
                 "so the tool limit resolver can read step/workflow tuning values.");
+        }
+
+        // Story 9.7: instance folder is required for response offloading.
+        if (string.IsNullOrEmpty(context.InstanceFolderPath))
+        {
+            throw new InvalidOperationException(
+                "FetchUrlTool requires ToolExecutionContext.InstanceFolderPath to be set " +
+                "so the tool can offload response bodies to the instance scratch path.");
         }
 
         var maxBytes       = _limitResolver.ResolveFetchUrlMaxResponseBytes(context.Step, context.Workflow);
@@ -88,11 +104,69 @@ public class FetchUrlTool : IWorkflowTool
                 totalRead += bytesRead;
             }
 
-            var text = Encoding.UTF8.GetString(buffer, 0, Math.Min(totalRead, maxBytes));
-            if (totalRead > maxBytes)
-                text += $"\n\n[Response truncated at {maxBytes} bytes]";
+            var contentType = response.Content.Headers.ContentType?.MediaType ?? "";
+            var status      = (int)response.StatusCode;
 
-            return text;
+            // No body (HTTP 204, or HTTP 200 with Content-Length: 0): return handle with
+            // saved_to: null and write nothing to disk. Decision per architect 2026-04-08.
+            if (totalRead == 0)
+            {
+                var emptyHandle = new FetchUrlHandle(urlString, status, contentType, 0, null, false);
+                return JsonSerializer.Serialize(emptyHandle, HandleJsonOptions);
+            }
+
+            var truncated = totalRead > maxBytes;
+            byte[] bytesToWrite;
+            if (truncated)
+            {
+                var marker = Encoding.UTF8.GetBytes($"\n\n[Response truncated at {maxBytes} bytes]");
+                bytesToWrite = new byte[maxBytes + marker.Length];
+                Buffer.BlockCopy(buffer, 0, bytesToWrite, 0, maxBytes);
+                Buffer.BlockCopy(marker, 0, bytesToWrite, maxBytes, marker.Length);
+            }
+            else
+            {
+                bytesToWrite = new byte[totalRead];
+                Buffer.BlockCopy(buffer, 0, bytesToWrite, 0, totalRead);
+            }
+
+            // Hash-derived filename (SHA-256, never SHA-1 or MD5).
+            var relPath = $".fetch-cache/{ComputeUrlHash(urlString)}.html";
+
+            // Defence-in-depth (architect review 2026-04-08): obtain the canonical
+            // absolute path via PathSandbox.ValidatePath and write to *that* path —
+            // do NOT separately compute a write target via Path.Combine.
+            string validatedPath;
+            try
+            {
+                validatedPath = PathSandbox.ValidatePath(relPath, context.InstanceFolderPath);
+            }
+            catch (Exception ex) when (ex is ArgumentException or UnauthorizedAccessException)
+            {
+                throw new ToolExecutionException(
+                    $"Failed to cache fetch_url response to {relPath}: {ex.Message}");
+            }
+
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(validatedPath)!);
+                await File.WriteAllBytesAsync(validatedPath, bytesToWrite, timeoutCts.Token);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                throw new ToolExecutionException(
+                    $"Failed to cache fetch_url response to {relPath}: {ex.Message}");
+            }
+
+            var handle = new FetchUrlHandle(
+                urlString,
+                status,
+                contentType,
+                bytesToWrite.LongLength,
+                relPath,
+                truncated);
+
+            return JsonSerializer.Serialize(handle, HandleJsonOptions);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -103,6 +177,21 @@ public class FetchUrlTool : IWorkflowTool
             throw new ToolExecutionException($"Connection failed: {ex.Message}");
         }
     }
+
+    private static string ComputeUrlHash(string url)
+    {
+        var bytes = Encoding.UTF8.GetBytes(url);
+        var hash  = SHA256.HashData(bytes);
+        return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    private sealed record FetchUrlHandle(
+        [property: JsonPropertyName("url")] string Url,
+        [property: JsonPropertyName("status")] int Status,
+        [property: JsonPropertyName("content_type")] string ContentType,
+        [property: JsonPropertyName("size_bytes")] long SizeBytes,
+        [property: JsonPropertyName("saved_to")] string? SavedTo,
+        [property: JsonPropertyName("truncated")] bool Truncated);
 
     private static string ExtractStringArgument(IDictionary<string, object?> arguments, string name)
     {

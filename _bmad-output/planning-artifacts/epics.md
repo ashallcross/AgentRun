@@ -289,11 +289,11 @@ The entire codebase is renamed from Shallai/UmbracoAgentRunner to AgentRun/Umbra
 
 ### Epic 9: Beta Release Preparation
 _Restructured 2026-04-07._ Two polished example workflows (Content Quality Audit + Accessibility Quick-Scan), a beta-blocking ToolLoop stall fix, sample target data, JSON Schema, documentation, and a private beta distribution plan. Ships as `1.0.0-beta.1` pre-release NuGet to a curated invite list — NOT listed on Umbraco Marketplace.
-**Stories:** 9.6 Workflow-Configurable Tool Limits (beta blocker, architectural), 9.0 ToolLoop Stall Recovery (beta blocker), 9.1a CQA Working Skeleton, 9.1b CQA Polish & Quality, 9.1c First-Run UX (URL input, no canned dataset), 9.2 JSON Schema, 9.3 Documentation & Pre-Release Packaging, 9.4 Accessibility Quick-Scan Workflow, 9.5 Private Beta Distribution Plan
+**Stories:** 9.6 Workflow-Configurable Tool Limits (beta blocker, architectural), 9.0 ToolLoop Stall Recovery (beta blocker), 9.1a CQA Working Skeleton, 9.7 Tool Result Offloading for fetch_url (beta blocker — added 2026-04-08 via SCP, done 2026-04-08), 9.9 read_file Size Guard with Truncation Marker (beta blocker — added 2026-04-08 via read_file bloat finding, defence-in-depth sibling to 9.1b), 9.1c First-Run UX (URL input, no canned dataset — paused pending 9.7 + 9.1b + 9.9), 9.1b CQA Polish & Quality (reframed 2026-04-08 as second reliability gate), 9.2 JSON Schema, 9.3 Documentation & Pre-Release Packaging, 9.4 Accessibility Quick-Scan Workflow, 9.5 Private Beta Distribution Plan
 **FRs covered:** FR65, FR66, FR67, FR68, FR69
 
 ### Epic 10: Ship Readiness & Public Launch
-_Updated 2026-04-07 — Story 10.3 moved to 9.0._ Post-beta stability work (instance concurrency locking, context management for long conversations), open source licence decision, and public 1.0 launch via Umbraco Marketplace and community channels.
+_Updated 2026-04-07 — Story 10.3 moved to 9.0._ _Updated 2026-04-08 — Story 10.6 (Retry-Replay Degeneration Recovery) added as a fast-follower; promoted from a Story 9.1b edge case bullet via [SCP 2026-04-08 — 9.1b Rescope](sprint-change-proposal-2026-04-08-9-1b-rescope.md). Includes explicit beta-blocker escalation criteria in the spec — may be pulled forward into Epic 9 if private-beta telemetry shows the failure mode firing more than rarely._ Post-beta stability work (instance concurrency locking, context management for long conversations, retry-replay degeneration recovery), open source licence decision, and public 1.0 launch via Umbraco Marketplace and community channels.
 **FRs covered:** FR52 (full implementation), plus stability improvements beyond original FR scope
 
 ### Epic 11: Adoption Accelerators
@@ -1294,11 +1294,58 @@ So that I can see multi-agent orchestration in action without writing any workfl
 
 ### Story 9.1b: Content Quality Audit — Polish & Quality
 
-_Added 2026-04-07 — this story is the iterative "make the output undeniable" work that turns a technically-working example into a showcase-quality one. It is explicitly NOT a build story; it is a tuning-and-testing loop with a quality gate._
+_Added 2026-04-07 — this story is the iterative "make the output undeniable" work that turns a technically-working example into a showcase-quality one._
+
+_**Scope reshaped 2026-04-08** via [Sprint Change Proposal 2026-04-08 — Story 9.1b Rescope](sprint-change-proposal-2026-04-08-9-1b-rescope.md). Was: pure prompt iteration loop ("iterate prompts until trustworthy"). Now: two-phase build-and-tune sequence — Phase 1 lands Option 2 (server-side structured extraction via AngleSharp), Phase 2 iterates prompts on top of the new contract. The reshape was triggered by the same architectural finding ([9-1c-architectural-finding-fetch-url-context-bloat.md](9-1c-architectural-finding-fetch-url-context-bloat.md)) that paused Story 9.1c. The trustworthiness gate criterion, the 5-pass soft cap, and the signoff artefact location are all unchanged. AngleSharp is the locked parser choice (MIT-licensed)._
+
+_**Reframed 2026-04-08 (evening)** via [SCP 2026-04-08 — Story 9.1b Rescope Addendum (read_file finding)](sprint-change-proposal-2026-04-08-9-1b-rescope-addendum-2026-04-08-readfile.md). Locked design unchanged; what changes is the weight of the lock. After Story 9.7's manual E2E surfaced a second context-bloat path on `read_file`, 9.1b is reframed from "quality improvement on top of an already-working scanner" to "second reliability gate without which the scanner cannot complete a single end-to-end run." Story 9.9 (read_file size guard — Option D from the [read_file bloat finding](9-7-architectural-finding-read-file-bloat.md)) is added as a parallel sibling — no order dependency between 9.1b and 9.9._
+
+**Depends on:** 9.6 (configurable tool limits — done), 9.0 (ToolLoop stall recovery — done), 9.1a (CQA working skeleton — done), 9.7 (Tool Result Offloading for `fetch_url` — done 2026-04-08 via DoD amendment), 9.1c (First-Run UX — paused, must reach `done` before 9.1b starts implementation work), 9.9 (read_file size guard — to be created in Ceremony 3; parallel sibling, no order dependency — 9.1b touches FetchUrlTool.cs, 9.9 touches ReadFileTool.cs)
+**Blocks:** 9.4 (Accessibility Quick-Scan — inherits the structured extraction pattern established here)
 
 As a developer evaluating AgentRun,
 I want the Content Quality Audit example workflow to produce an output I would happily paste into a client deck,
 So that my first experience of the package proves its value, not just its plumbing.
+
+The story is a **two-phase build-and-tune** sequence:
+
+**Phase 1 (build):** Implement Option 2 — server-side structured extraction. Add an optional `extract: "raw" | "structured"` parameter to the existing `fetch_url` tool (default: `"raw"`, preserving backwards compatibility with Story 9.7's offloading shape). When `extract: "structured"` is set, fetch the page as today (SSRF / truncation / cancellation / Story 9.6 ceiling all preserved), parse it server-side using AngleSharp (MIT-licensed), and return a structured handle with title, meta description, headings, word count, image counts, and link counts. Update scanner.md / analyser.md / reporter.md to consume the structured return shape and strip the prompt complexity that the new contract makes obsolete (specifically: the "defending against context bloat" framing of the current scanner.md, which is no longer needed because the parsing happens server-side and the model never sees raw HTML).
+
+**Phase 2 (tune):** Iterate prompts on top of the new contract until the trustworthiness gate passes against ≥3 representative real test inputs. The 5-pass soft cap with architect escalation applies to **Phase 2 (the polish phase) only** — the build phase (Phase 1) has no soft cap and ships when AngleSharp is integrated and the agents consume the structured return shape correctly. Bounded by the parser library, not by iteration cycles. _(Reaffirmed in the [9.1b reshape addendum 2026-04-08](sprint-change-proposal-2026-04-08-9-1b-rescope-addendum-2026-04-08-readfile.md) — the polish-phase-only scope of the cap matters more after the reframing made Phase 1 strictly beta-blocking.)_
+
+**Implementation Approach (Phase 1 — Build)**
+
+_Locked decisions from Winston's 2026-04-08 architect response. Do not relitigate during the formal-spec writing pass._
+
+- **Parser:** AngleSharp. MIT-licensed (verified 2026-04-08). Actively maintained, modern .NET targeting, DOM-faithful API. Not currently in the project's dependency tree — adding the NuGet reference is part of Phase 1.
+- **Implementation shape:** Add an optional `extract` parameter to `fetch_url`'s schema — enum `"raw" | "structured"`, default `"raw"`. The architect explicitly **rejected** adding a sibling tool like `fetch_url_structured`. One tool, one concept, two return shapes. The scanner's `tools: [fetch_url, write_file]` declaration in workflow.yaml does not change; the scanner.md prompt explicitly tells the agent to use `extract: "structured"` for audit work.
+- **Structured return shape:**
+  ```json
+  {
+    "url": "https://example.com/page",
+    "status": 200,
+    "title": "Example - Home",
+    "meta_description": "...",
+    "headings": { "h1": [...], "h2": [...], "h3_h6_count": 47 },
+    "word_count": 2341,
+    "images": { "total": 84, "with_alt": 79, "missing_alt": 5 },
+    "links": { "internal": 312, "external": 89 },
+    "truncated": false,
+    "truncated_during_parse": false
+  }
+  ```
+  - `truncated` cooperates with Story 9.6's `max_response_bytes` ceiling at the byte-stream layer (same field as in Story 9.7's `extract: "raw"` handle).
+  - `truncated_during_parse` is NEW and `extract: "structured"`-specific. It is `true` if AngleSharp had to parse a document that hit the byte ceiling before parsing, in which case the structured fields may be incomplete and the agent needs to know.
+- **AngleSharp selectors map cleanly to every field:**
+  - `title` → `document.Title`
+  - `meta_description` → `document.QuerySelector("meta[name=description]")?.GetAttribute("content")`
+  - `headings.h1` / `h2` → `document.QuerySelectorAll("h1").Select(e => e.TextContent.Trim())`
+  - `headings.h3_h6_count` → `document.QuerySelectorAll("h3, h4, h5, h6").Length` (CSS selector lists work)
+  - `word_count` → `document.Body.TextContent.Split(WhitespaceChars, RemoveEmpty).Length`
+  - `images.total` / `with_alt` / `missing_alt` → `document.QuerySelectorAll("img")` then count by `string.IsNullOrEmpty(img.GetAttribute("alt"))`
+  - `links.internal` / `external` → `document.QuerySelectorAll("a[href]")` then classify by parsing the source URL's host
+- **Test sizing for the parser layer is the same three sizes as Story 9.7:** ~100 KB / ~500 KB / ~1.5 MB. **Reuse the same captured fixtures** that Story 9.7 will check in from instance `caed201cbc5d4a9eb6a68f1ff6aafb06`'s `conversation-scanner.jsonl`. Do NOT capture new fixtures.
+- **Story 9.6 cooperation preserved:** the byte-stream layer still applies `max_response_bytes` truncation before AngleSharp sees the document. AngleSharp parses whatever bytes the byte-stream layer delivered, and the `truncated_during_parse` flag is set when truncation occurred.
 
 **Quality gate (the trustworthiness gate):** Adam, acting as the reviewer, would be willing to run this workflow against a paying client's live site without supervision and trust the output. This is a subjective gate but it is the gate — the story is not done until the gate is passed.
 
@@ -1306,7 +1353,8 @@ _Decision recorded 2026-04-07: This trustworthiness gate replaces the earlier "s
 
 **Acceptance Criteria:**
 
-**Given** Stories 9.0 (stall fix) and 9.6 (configurable limits) have shipped
+**Given** Stories 9.0 (stall fix), 9.6 (configurable limits), 9.7 (tool result offloading), and 9.1c (first-run UX) have all shipped
+**And** Phase 1 (Option 2 build via AngleSharp) is complete
 **When** Content Quality Audit is run against 3-5 representative real test inputs of Adam's choice (e.g. a small Cogworks page, a Wikipedia article, an Umbraco community blog post, a deliberately problematic page picked to exercise edge cases)
 **Then** the scanner agent completes every run without stalling
 **And** the agent never produces a broken, empty, or obviously degraded report
@@ -1316,7 +1364,9 @@ _Decision recorded 2026-04-07: This trustworthiness gate replaces the earlier "s
 
 **Given** five runs of the workflow against the same real URL
 **When** the outputs are compared
-**Then** the same major issues are flagged in each run (the model's findings are stable, even if the phrasing varies)
+**Then** the extracted *facts* in `scan-results.md` are byte-identical (AngleSharp determinism property: identical input HTML produces identical extracted fields)
+**And** the analyser's flagged issues are consistent across runs (the model's reasoning over deterministic facts is stable, even if the phrasing varies)
+**And** the reporter's structural sections are present and predictably ordered (executive summary → top findings → page-by-page breakdown → prioritised recommendations)
 **And** the report length stays within a reasonable band (~500-2000 words, not pathologically short or long)
 **And** no run produces a structurally broken document (missing executive summary, no findings section, etc.)
 
@@ -1327,44 +1377,168 @@ _Decision recorded 2026-04-07: This trustworthiness gate replaces the earlier "s
 **And** they perceive the recommendations as credible and worth acting on
 **And** they would forward the report to a colleague without embarrassment
 
-**Given** the scanner.md prompt file
-**When** reviewed post-polish
-**Then** it contains explicit instructions preventing the stall observed in instance 642b6c583e3540cda11a8d88938f37e1:
-  - Clear "after receiving fetch_url results, your VERY NEXT action MUST be another tool call (either another fetch_url or write_file)" instruction
-  - Clear "you are NOT done until write_file has been called with artifacts/scan-results.md" instruction
-  - An example sequence showing the expected tool call ordering
-**And** the analyser.md and reporter.md prompts receive equivalent strengthening for their respective completion steps
+**Given** scanner.md is rewritten as part of the Phase 1 Option 2 implementation
+**When** reviewed post-rewrite
+**Then** it correctly consumes the structured return shape from `fetch_url(extract: "structured")` (title, meta_description, headings, word_count, images, links, truncated, truncated_during_parse)
+**And** the five hard invariants from Story 9.1c's partial milestone are preserved verbatim (verbatim opening line, between-fetches rule, sequential-fetch invariant, post-fetch → write_file invariant, standalone-text invariant)
+**And** the contract-defence verbosity (the "defending against context bloat" framing of the current scanner.md) is stripped because the new contract eliminates the failure mode upstream — the polish loop produces simpler prompts than today, not more complex ones
+**And** the analyser.md and reporter.md prompts are updated to consume the structured fields directly rather than re-parsing the agent's text
+**And** the failing instance reference in the original 9.1b draft (`642b6c583e3540cda11a8d88938f37e1`) is corrected — the relevant instance for the 2026-04-07 finding that motivated this reshape is `caed201cbc5d4a9eb6a68f1ff6aafb06`
 
 **Process:**
 
-1. Adam picks 3-5 representative real test inputs (mix of his own pages, public pages with known issues, and at least one deliberately problematic page)
-2. Run the workflow end-to-end against each test input
-3. Review each agent's output critically against the trustworthiness gate
-4. Identify what's weak, generic, hallucinated, or evidence-free
-5. Iterate on the agent prompt markdown files (scanner.md, analyser.md, reporter.md)
-6. Re-run. Repeat until the trustworthiness gate passes for every test input.
-7. Lock the prompts. Record the final versions in git with a clear commit message noting the polish pass is complete.
+**Phase 1 (build) — bounded by parser library, not by iteration cycles:**
+
+1. Add AngleSharp NuGet reference to `AgentRun.Umbraco.csproj`
+2. Add `extract: "raw" | "structured"` optional parameter to `fetch_url`'s schema and `IWorkflowTool` implementation
+3. Implement the `extract: "structured"` code path: stream bytes (preserving Story 9.6 ceiling and truncation), feed AngleSharp the resulting document, build the structured handle from the selector mappings above
+4. Reuse the captured test fixtures from Story 9.7 (~100 KB / ~500 KB / ~1.5 MB from instance `caed201cbc5d4a9eb6a68f1ff6aafb06`); add parser-layer regression tests at the same three sizes
+5. Rewrite scanner.md / analyser.md / reporter.md to consume the structured return shape and strip the contract-defence verbosity. Preserve the five hard invariants from Story 9.1c's partial milestone.
+6. Run `dotnet test AgentRun.Umbraco.slnx` and `npm test`; expect green
+
+**Phase 2 (tune) — bounded by the 5-pass soft cap with architect escalation:**
+
+7. Adam picks 3-5 representative real test inputs (mix of his own pages, public pages with known issues, and at least one deliberately problematic page)
+8. Run the workflow end-to-end against each test input
+9. Review each agent's output critically against the trustworthiness gate
+10. Identify what's weak, generic, hallucinated, or evidence-free
+11. Iterate on the agent prompt markdown files (scanner.md, analyser.md, reporter.md) — note that with deterministic parsing in Phase 1, the iteration target is the model's *reasoning over facts*, not its parsing
+12. Re-run. Repeat until the trustworthiness gate passes for every test input. **5-pass soft cap (polish phase only — does not apply to Phase 1's build work).** If 5 passes do not converge, escalate to Winston for prompt structure rethink.
+13. Sign off in writing at `_bmad-output/qa-signoffs/9-1b-cqa-trustworthiness-signoff.md` (or equivalent — confirm location during formal spec writing). The signoff is the manual E2E artefact and its existence is the AC.
+14. Lock the prompts. Record the final versions in git with a clear commit message noting the polish pass is complete.
 
 **What NOT to Build:**
 
 - Do NOT change the workflow.yaml step structure (keep 3 steps)
-- Do NOT add new tools (scanner/analyser/reporter use only what exists today)
+- Do NOT add new tools as siblings of `fetch_url`. The architect explicitly rejected adding a separate `fetch_url_structured` tool. Option 2 is implemented as a `mode` parameter (`extract: "raw" | "structured"`) on the existing `fetch_url` tool. The scanner/analyser/reporter still declare only `fetch_url` and `write_file` in their step's `tools` list.
 - Do NOT add retry logic at the engine level — that's Story 9.0's scope, not this one
 - Do NOT add tunable values to the workflow YAML — that's Story 9.6's scope, not this one
 - Do NOT generalise the prompts across multiple content types — Content Quality Audit is a single fixed use case for V1
 - Do NOT bundle sample content or pre-fetched HTML — Story 9.1c removed that approach
+- Do NOT capture new test fixtures. Reuse the captured fixtures from Story 9.7 (extracted from instance `caed201cbc5d4a9eb6a68f1ff6aafb06`'s `conversation-scanner.jsonl`).
+- Do NOT re-evaluate the parser choice. AngleSharp is locked. If implementation surfaces a real reason to revisit, escalate to Adam — do not silently substitute another parser.
+- Do NOT regress the five hard invariants in scanner.md. The contract-defence verbosity is what gets stripped; the invariants stay verbatim.
+- Do NOT include a `content` backup field anywhere in the structured return shape. Trust the parser. If parsing fails, the tool errors — it does not silently fall back to inline raw HTML.
+- Do NOT modify Story 9.7's spec, the architectural finding report, the 9-1c spec, the 9-1c SCP, or `v2-future-considerations.md`.
 
 **Failure & Edge Cases:**
 
-- Trustworthiness gate fails after 3+ polish iterations → pause and have an architect/reviewer conversation; the problem may be prompt structure, not prompt content
+- Trustworthiness gate fails after 5 polish iterations (Phase 2 soft cap) → escalate to Winston for prompt structure rethink. The cap is 5 *passes*, not 5 minor edits within a pass.
 - Reports are inconsistent between models or providers → lock to Anthropic Sonnet for the beta (note: already the default in workflow.yaml). Document the recommendation in the workflow authoring guide.
 - The test input set doesn't cover enough variation → expand the input list and re-run the polish loop. The story is not done until all chosen inputs pass.
-- The agent hallucinates issues that don't exist on the page → the polish loop must add explicit "only flag issues you can directly cite from the fetched HTML" instructions to the analyser prompt
-- A test input is so large it pushes against `fetch_url.max_response_bytes` → either raise the value via Story 9.6's `tool_defaults`, or accept the truncation and ensure the scanner records it clearly
+- The agent hallucinates issues that don't exist on the page → with AngleSharp providing deterministic facts, hallucination should drop substantially. If it persists, the polish loop must add explicit "only flag issues you can directly cite from the structured fields returned by `fetch_url(extract: 'structured')`" instructions to the analyser prompt.
+- A test input is so large it pushes against `fetch_url.max_response_bytes` → the byte ceiling still truncates at the byte-stream layer; AngleSharp parses the truncated document and sets `truncated_during_parse: true` in the handle. The analyser must check this flag and mark its findings as "based on partial content" when set. The polish loop must verify this behaviour.
+- AngleSharp encounters genuinely malformed HTML that no browser would render → AngleSharp's behaviour is to recover the way browsers do (HTML5 parsing algorithm). In edge cases where it cannot recover, the structured fields may be sparse (`title: null`, empty heading lists, etc.). The analyser must handle null/empty fields gracefully and the prompt iteration loop must verify this.
+- A page returns a content type that AngleSharp does not parse (e.g. PDF, JSON, image) → the existing 9-1c failure-bucketing logic in scanner.md applies — the page goes under "Skipped — non-HTML content" in `scan-results.md` and is not passed to AngleSharp at all. The `extract: "structured"` mode requires `text/html` content; for other content types, fall back to `extract: "raw"` (which Story 9.7 ships) or skip parsing entirely. The formal spec writing pass should clarify which.
+- **Sonnet 4.6 parallel-tool-call stall (originally observed 2026-04-07 during 9.1c manual E2E, instances `c6072f5f569948e69c47e9becbe67bd4` and earlier)** → When given a multi-URL batch, Sonnet 4.6 may issue all `fetch_url` calls in parallel within a single assistant turn, then produce an empty turn after the batch returns, tripping `StallDetectedException`. _**[2026-04-08 annotation: This failure mode is now defended in two upstream layers — (i) the sequential-fetch invariant in scanner.md from Story 9.1c's partial milestone, and (ii) the offloaded handle pattern from Story 9.7 which eliminates the context-bloat trigger. The Phase 2 polish loop only needs to spot-check that both defences hold across the trustworthiness gate test set. The two original escalation paths (switch scanner to Opus, revisit Story 9.0's fail-fast decision and add retry-with-nudge) are no longer needed.]**_
+- **Retry-replay degeneration (originally observed 2026-04-07, same instance)** → When a step fails mid-tool-loop and the user retries, the conversation history is replayed including all completed `fetch_url` results from the failed attempt. The model then sees a state where "all tools have run, only `write_file` is left" — and stalls again, because there is nothing for it to *do* except produce text or call `write_file`, and it sometimes produces text. This is **not a prompt-fixable bug**: the retry context window starts in a degenerate state. _**[2026-04-08 annotation: This finding is being promoted to its own story and is no longer Story 9.1b's responsibility. Working name: Story 9.8 — Retry-Replay Degeneration Recovery (final name TBD by Bob). Adam will run `bmad-create-story` after the 9.1b course-correction ceremony completes. The retry-replay degeneration is an engine-state-machine bug in the ToolLoop / ConversationStore retry path; it is NOT fixable by Story 9.7 (offloading), Story 9.1b's Option 2 reshape (structured extraction), or polish-loop iteration on prompts. It needs its own story.]**_ → tracked as **Story 10.6 — Retry-Replay Degeneration Recovery** (Epic 10 fast-follower, with explicit beta-blocker escalation criteria) — see [10-6-retry-replay-degeneration-recovery.md](../implementation-artifacts/10-6-retry-replay-degeneration-recovery.md). Bob's recommendation grounded in source reading: Option 3 (restart from scratch leveraging 9.7's `.fetch-cache/`); architect (Winston) to lock the design before Amelia implements.
 
-_Full story spec to be created by SM before development begins._
+_Full story spec to be created by SM via `bmad-create-story` after Story 9.7 and Story 9.1c are both `done`._
+
+### Story 9.7: Tool Result Offloading for `fetch_url` (BETA BLOCKER)
+
+_Added 2026-04-08 via [Sprint Change Proposal 2026-04-08 — Story 9-1c Pause](sprint-change-proposal-2026-04-08-9-1c-pause.md). Authorised after the architectural finding from Story 9.1c's manual E2E (2026-04-07 evening) proved the prompt-only ceiling has been reached: `FetchUrlTool` returns raw HTTP response bodies directly into LLM conversation context, which causes a context-bloat-induced empty turn from Sonnet 4.6 after multi-fetch sequences against real-world pages. The full diagnosis lives in [_bmad-output/planning-artifacts/9-1c-architectural-finding-fetch-url-context-bloat.md](9-1c-architectural-finding-fetch-url-context-bloat.md). This story implements the architect's locked decision: **offloaded raw response (Option 1)**. Story 9.1b's pending course correction will land Option 2 (server-side AngleSharp extraction) — that is NOT this story's scope._
+
+_**Dependency position:** 9.6 (done) → 9.0 (done) → **9.7 (this story)** → 9.1c (paused — resumes once 9.7 ships) → 9.1b (re-scope pending). Also blocks 9.4 (Accessibility Quick-Scan, which fetches URLs and inherits the same fix)._
+
+_**DoD amended 2026-04-08** via [SCP 2026-04-08 — Story 9.7 DoD Amendment](sprint-change-proposal-2026-04-08-9-7-dod-amendment.md). Story moved to `done`. The DoD was scoped down to the fetch_url phase only (every `tool_result` is a JSON handle < 1 KB, zero raw HTML in conversation context). The full scanner workflow-completion gate (write_file → step Complete) moved to the combined release of **9.7 + 9.1b + 9.9**, gated on the [read_file bloat finding](9-7-architectural-finding-read-file-bloat.md)._
+
+As the AgentRun engine,
+I want `fetch_url` to write large response bodies to a workspace-scoped scratch path and return a small structured handle to the LLM instead of inlining the body,
+So that multi-fetch workflows do not poison their own conversation context with hundreds of kilobytes of HTML and degrade into empty-turn stalls — while preserving SSRF protection, the configurable response-size ceiling from Story 9.6, the timeout behaviour, the cancellation plumbing, and the existing error string contract for HTTP failures.
+
+**Pattern (locked by Winston):** "Tool result offloading" / "scratchpad handle". `fetch_url` writes the response body to `{instanceFolder}/.fetch-cache/{sha256(url)}.html` and returns a small JSON handle. The agent reads the cached file via the existing `read_file` tool only if it actually needs the content. This is the standard pattern used by Claude Code, Anthropic Computer Use, and the Claude Agent SDK.
+
+**Architect's locked decisions (do not relitigate):**
+
+1. **Scratch path location:** inside the instance folder at `{instanceFolder}/.fetch-cache/{sha256(url)}.html`. Reuses existing `PathSandbox` coverage; cleanup handled by instance deletion; dot-prefix conventionally hides from agent `list_files` output. **No new sandbox surface introduced.**
+2. **Hash function:** SHA-256 (NOT SHA-1, NOT MD5). Standing rule: no weakened cryptographic primitives even in non-security contexts.
+3. **Handle shape returned to the LLM:**
+   ```json
+   {
+     "url": "https://example.com/page",
+     "status": 200,
+     "content_type": "text/html",
+     "size_bytes": 1394712,
+     "saved_to": ".fetch-cache/abc123def456.html",
+     "truncated": false
+   }
+   ```
+   Returned as a JSON-serialised string. **Must be < 1 KB**, asserted in unit tests.
+4. **`truncated` flag is mandatory** even on successful fetches — cooperates with Story 9.6's `max_response_bytes` ceiling and surfaces whether the cached file is the complete response or has the truncation marker appended.
+5. **NO `content` backup field in the handle.** If the file write fails the tool errors — it does NOT silently inline the body as a fallback.
+6. **No-body responses** (3xx redirects, 204 No Content, HTTP 200 with `Content-Length: 0`) → handle is `saved_to: null`, `size_bytes: 0`. **No empty file written.** Decision on the empty-200 case confirmed by Adam 2026-04-08.
+7. **HTTP 4xx / 5xx errors:** existing string return contract (`HTTP {status}: {reason}`) preserved exactly. No handle, no file write.
+8. **Story 9.6 cooperation:** `fetch_url.max_response_bytes` is preserved as the upstream truncation guard. This story composes with the ceiling, it does not replace it.
+9. **scanner.md update is in scope** — minimal contract bridge only (≤ 6 sentences). The five hard invariants stay exactly as committed in Story 9.1c's partial milestone.
+
+**Acceptance Criteria (high level — full BDD ACs in the story spec):**
+
+1. Successful HTTP 200 with non-empty body → response written to `.fetch-cache/{sha256}.html`, JSON handle returned, handle < 1 KB.
+2. Truncation cooperation: when the body exceeds `max_response_bytes`, the truncated bytes (with the existing marker) are written to disk and the handle's `truncated` field is `true`.
+3. No-body responses (204 / zero-length 200) → handle with `saved_to: null`, `size_bytes: 0`, no file written. HTTP errors → existing string contract preserved.
+4. Race-safe directory creation; concurrent calls in the same instance succeed.
+5. PathSandbox reachability: the agent can `read_file` the dotted-directory path returned by the handle.
+6. **Mandatory regression tests at three captured payload sizes** (~100 KB / ~500 KB / ~1.5 MB), extracted from the failing instance `caed201cbc5d4a9eb6a68f1ff6aafb06`'s `conversation-scanner.jsonl`. These three tests are the regression-protection gate.
+7. File write failure → `ToolExecutionException` thrown, NO inline body fallback.
+8. `dotnet test AgentRun.Umbraco.slnx` is green (note: always specify `.slnx`, never bare `dotnet test`).
+9. **Manual E2E gate:** re-run the failing scenario from instance `caed201cbc5d4a9eb6a68f1ff6aafb06` against the new tool contract; scanner step completes without `StallDetectedException`; conversation log contains handles, not raw HTML.
+10. **Production smoke test:** install the unmerged branch into a fresh TestSite, run Content Quality Audit against a real-world 5-URL batch including BBC News, confirm `artifacts/scan-results.md` is written.
+
+**What NOT to Build:**
+
+- Do NOT touch SSRF protection, the Story 9.6 `max_response_bytes` resolution chain, the timeout behaviour, the cancellation token plumbing, or the HTTP error string contract — all preserved exactly.
+- Do NOT include a `content` backup field in the handle.
+- Do NOT add a cleanup pass / TTL / LRU / background sweeper for `.fetch-cache/` files — per-instance cleanup is handled by instance deletion.
+- Do NOT introduce a new sandbox surface, a new allowed root, a new sandbox class, or a parallel path validator. Reuse existing `PathSandbox`.
+- Do NOT use SHA-1, MD5, or any weaker hash for filename derivation.
+- Do NOT rewrite scanner.md — minimal contract bridge only. Five hard invariants and all existing prompt content stay exactly as committed.
+- Do NOT change the `IWorkflowTool` interface or `ToolExecutionContext` shape.
+- Do NOT add a new tool registration — there is no `fetch_url_handle` or `fetch_url_v2`. The existing tool's contract changes; that is the entire change.
+- Do NOT modify Story 9.1c's spec, the architectural finding report, or `v2-future-considerations.md`.
+
+**Failure & Edge Cases:** SHA-256 hash collision (deny by default, second write overwrites), file write failure (surface as `ToolExecutionException`, no fallback), `.fetch-cache/` directory creation race (idempotent `Directory.CreateDirectory`), stale cache files from interrupted runs (overwrite, no error), URL with non-portable characters (eliminated by SHA-256 hashing), cached file deleted between fetch and `read_file` (normal "file not found" from `read_file`), 3xx redirect chains (HttpClient follows by default; final status reported in handle), `.fetch-cache/` rejected by PathSandbox (should not happen — Task 2 verifies; if it does, fix PathSandbox before shipping). **Deny-by-default statement:** unrecognised or unspecified inputs (malformed URLs, paths escaping the instance folder, write targets outside `.fetch-cache/`) MUST be denied/rejected, never silently coerced.
+
+**Pre-implementation architect review gate:** Winston explicitly requested to eyeball the PathSandbox interaction section before code is written. Amelia does not start implementation until Adam hands the spec to Winston and the architect-review checkbox at the bottom of the story spec is ticked.
+
+_Full story spec lives at [_bmad-output/implementation-artifacts/9-7-tool-result-offloading-fetch-url.md](../implementation-artifacts/9-7-tool-result-offloading-fetch-url.md)._
+
+### Story 9.9: `read_file` Size Guard with Truncation Marker (BETA BLOCKER)
+
+_Added 2026-04-08 (Ceremony 3) via the read_file context bloat finding cycle. Authorising artefact: [9-7-architectural-finding-read-file-bloat.md](9-7-architectural-finding-read-file-bloat.md). This story is the **defence-in-depth half of Option E** from Winston's review of Amelia's finding. Story 9.7 disciplined the **write end** of tool-result offloading; Story 9.1b will discipline the **read end** with server-side AngleSharp structured extraction; Story 9.9 is the safety net underneath both — a configurable per-call byte cap on `read_file` with a verbatim truncation marker, so any future workflow that falls back to raw `read_file` against cached HTML cannot silently re-introduce the same context-bloat failure mode by accident._
+
+_**Dependency position:** 9.6 (done — provides resolution chain) and 9.7 (done — establishes the offloading pattern this defends in depth) → **9.9 (this story)** + 9.1b (parallel sibling — primary fix; no order dependency, 9.9 modifies `ReadFileTool.cs`, 9.1b modifies `FetchUrlTool.cs`). Both must ship before Story 9.1c's manual E2E gate can be re-attempted (per the [9.1c pause addendum](sprint-change-proposal-2026-04-08-9-1c-pause-addendum-2026-04-08-readfile.md))._
+
+As the AgentRun engine,
+I want `read_file` to enforce a configurable per-call byte limit and append a truncation marker when a file exceeds it,
+So that no agent can silently dump hundreds of kilobytes of cached HTML (or any other oversized file) into LLM conversation context — preserving the symmetry of the tool-result-offloading pattern that Story 9.7 introduced and Story 9.1b builds on, while leaving the existing happy path for small artifact files completely unchanged.
+
+**Pattern (locked by Winston):** hard truncation with mandatory marker. NOT chunking, NOT sliced reads, NOT throw-on-overflow. Mirrors `fetch_url`'s existing truncation pattern at the contract level as well as the architectural level.
+
+**Architect's locked decisions (do not relitigate):**
+
+1. **Resolution chain reuses Story 9.6's `ToolLimitResolver`.** New tunable `read_file.max_response_bytes`. Same step → workflow → site default → engine default chain. Same site-level hard cap via `AgentRun:ToolLimits:ReadFile:MaxResponseBytesCeiling`. Mechanically identical to 9.6's `fetch_url.max_response_bytes` pattern.
+2. **Default value: 256 KB (262144 bytes).** Deliberately conservative — admits typical artifact files (~10 KB to ~100 KB) without truncation, forces truncation on cached HTML pages (typically 100 KB+). The forcing function is intentional.
+3. **Truncation marker text — locked verbatim:** `[Response truncated at {limit} bytes — full file is {totalBytes} bytes. Use a structured extraction tool (e.g. fetch_url with extract: "structured" once Story 9.1b ships) or override read_file.max_response_bytes in your workflow configuration to read the rest.]`
+4. **Size check BEFORE the read** via `new FileInfo(canonicalPath).Length` (cheap, no contents read). If under limit → existing `File.ReadAllTextAsync` path unchanged (regression-safe). If over limit → bounded read via `FileStream.ReadAsync` with a `byte[limit]` buffer. Do **NOT** allocate the full file.
+5. **No agent-side `max_bytes` parameter.** Workflow-author-configured only.
+6. **No automatic chunking, streaming, or partial-read semantics.** Truncation is final per call.
+7. **Existing behaviour for files under the limit is preserved unchanged.** Guard is purely additive.
+8. **`PathSandbox.ValidatePath` continues unchanged.** Size guard layers on top.
+
+**Files in scope:** `AgentRun.Umbraco/Tools/ReadFileTool.cs` (the size guard), `AgentRun.Umbraco/Engine/ToolLimitResolver.cs` + `IToolLimitResolver.cs` (new resolver method mirroring `ResolveFetchUrlMaxResponseBytes`), `AgentRun.Umbraco/Configuration/AgentRunOptions.cs` (new `ReadFile` sub-records on `ToolDefaultsOptions` / `ToolLimitsOptions`), `StepDefinition.ToolOverrides` and `WorkflowDefinition.ToolDefaults` (new `ReadFile` sub-records), `WorkflowValidator` (new validation rule mirroring 9.6's), `ReadFileToolTests.cs` + `ToolLimitResolverTests.cs` + `WorkflowValidatorTests.cs`. **Explicitly NOT touched:** `FetchUrlTool.cs`, `WriteFileTool.cs`, `ListFilesTool.cs`, `ToolLoop.cs`, any agent prompt file, any workflow YAML.
+
+**Failure & Edge Cases:** file does not exist (preserve existing behaviour); `FileInfo.Length` permission error → `ToolExecutionException`; empty file → reads as today, no marker; bounded read fails partway → `ToolExecutionException`, no partial truncated string; workflow declares `read_file.max_response_bytes: 0` or negative → validation error at workflow load; workflow declares above the site ceiling → validation error mirroring 9.6; malformed `appsettings.json` → reuse 9.6's `SafeOptions()` pattern, log once, fall back to engine defaults; agent ignores the marker → same architectural limitation as `fetch_url`'s marker, out of scope; UTF-8 multi-byte sequence split at the truncation boundary → decode with replacement character or trim partial bytes (documented in Dev Notes); file shrinks between size snapshot and bounded read → no marker appended (avoid false positive). **Deny-by-default statement:** unrecognised or unspecified inputs (malformed paths, paths escaping the instance folder, files that do not exist, files with permission errors, files with sizes that fail to compute) MUST be rejected by the existing `PathSandbox.ValidatePath` check or fail loud — never silently coerced into a default, never silently truncated without the marker.
+
+**Pre-implementation architect review gate:** Winston explicitly requested to eyeball the resolution chain integration and the 256 KB default before code is written. Amelia does not start implementation until Adam hands the spec to Winston and the architect-review checkbox at the bottom of the story spec is ticked.
+
+**Forward dependency (NOT a blocker on 9.9):** Story 9.2 must add the new `read_file.max_response_bytes` workflow key to the JSON Schema for `workflow.yaml`. Picked up by 9.2 in one pass alongside any other keys added since 9.6.
+
+_Full story spec lives at [_bmad-output/implementation-artifacts/9-9-read-file-size-guard.md](../implementation-artifacts/9-9-read-file-size-guard.md)._
 
 ### Story 9.1c: First-Run UX — User-Provided URL Input Handling
+
+_**Status: PAUSED 2026-04-08** pending Stories 9.7 (done via DoD amendment), 9.1b (Option A — server-side AngleSharp structured extraction), and 9.9 (Option D — read_file size guard). The original pause was on 9.7 only; tonight's manual E2E of 9.7 surfaced a downstream context-bloat gap on read_file's code path, which expanded the dependency chain. See [sprint-change-proposal-2026-04-08-9-1c-pause-addendum-2026-04-08-readfile.md](sprint-change-proposal-2026-04-08-9-1c-pause-addendum-2026-04-08-readfile.md) and [9-7-architectural-finding-read-file-bloat.md](9-7-architectural-finding-read-file-bloat.md). The dev-agent-ready spec is the source of truth for AC annotations and remains unchanged._
 
 _Rewritten 2026-04-07 after product owner challenged the canned-dataset premise. Original framing assumed the example needed bundled sample content to make the first run work out-of-the-box. Product owner pushed back: faking the data does not provide confidence; the user should be asked for a URL to scan. This is architecturally simpler (no engine changes, no hosting, no spike) and product-honest (the example demonstrates real auditing, not a magic trick). Recorded as a beta scope decision._
 
@@ -1610,6 +1784,32 @@ So that the package can be published with clear licensing.
 _Note: This is a product/legal decision, not a code task. Zero code dependency — it's a LICENSE file and PackageProjectUrl in the .csproj._
 
 _Full story spec to be created by SM before development begins._
+
+### Story 10.6: Retry-Replay Degeneration Recovery
+
+_Added 2026-04-08 via [Sprint Change Proposal 2026-04-08 — Story 9.1b Rescope](sprint-change-proposal-2026-04-08-9-1b-rescope.md). Promoted from a Story 9.1b Failure & Edge Cases bullet to its own story because the bug is engine-state-machine territory (the `StepExecutor` / `ConversationStore` retry path) and is not fixable by Story 9.7 (offloading), Story 9.1b's Option 2 (structured extraction), Story 9.0 (the upstream stall *detector*), or any prompt iteration. Broader context for the 2026-04-07 manual E2E session that surfaced both this finding and its sibling (the context-bloat finding) is in [SCP 2026-04-08 — 9.1c Pause](sprint-change-proposal-2026-04-08-9-1c-pause.md)._
+
+_**Dependency position:** depends on 9.7 (must ship first; the recovery design depends on the `.fetch-cache/` handle pattern) and 7.2 (done; this story extends 7.2's retry path). Cooperates with 9.0 (upstream stall detector). Slotted in Epic 10 as a fast-follower; **explicit beta-blocker escalation criteria are recorded in the spec** — pull forward into Epic 9 if private-beta telemetry shows the failure mode firing more than rarely._
+
+As a developer who has just hit a step failure mid-tool-loop and clicked retry,
+I want the engine to reshape the replayed conversation so the model does not see a degenerate "all my tools have already run" state,
+So that retries actually recover the workflow instead of stalling again on the same path that just failed.
+
+**The bug being fixed:** When a step fails mid-tool-loop and the user retries via the existing Story 7.2 retry flow, [`StepExecutor.ExecuteStepAsync`](../../AgentRun.Umbraco/Engine/StepExecutor.cs) reloads the JSONL conversation history via `IConversationStore.GetHistoryAsync` and replays the **entire** conversation including all completed `fetch_url` tool_call/tool_result pairs from the failed attempt. The model resumes seeing a tail that looks like "I have already issued N fetches; the last one is done; what should I do next?" — and sometimes produces text instead of calling `write_file`. Story 9.0's `StallDetector` then correctly fires on the retry, and the user's recovery affordance fails silently in front of them. This is **not** fixed by Story 9.7 (handles reduce stall *frequency* but the replayed *shape* is unchanged), **not** fixed by Story 9.1b's Option 2 (same reason), and **not** fixed by Story 9.0 (which is the detector — this story is the recovery layer underneath it). The existing Story 9.0 fix in [`ConversationStore.TruncateLastAssistantEntryAsync`](../../AgentRun.Umbraco/Instances/ConversationStore.cs) at line 136 (skip-truncate when the conversation is at a clean tool_use→tool_result boundary) is **correct** and stays — it prevents a different bug (orphaned tool_result → 400 from the provider). This story adds a new recovery primitive *alongside* it, not as a replacement.
+
+**Three viable design alternatives** are surfaced in the spec for architect lock (Winston) before implementation begins:
+
+1. **Option 1 — Trim the replayed history** at the last clean restart point (last user message). Pros: smallest mental-model change. Cons: on the scanner step's normal conversation shape (one user message at the start, then a long tool-call chain), Option 1 collapses to Option 3 with extra book-keeping.
+2. **Option 2 — Inject a system reminder** at retry time explaining the resumption context. Pros: 5-line change, easy revert. Cons: prompt-engineered recovery for a non-prompt-fixable bug; fragile against Sonnet 4.6 non-determinism (see `memory/project_sonnet_46_scanner_nondeterminism.md`); the same layering Story 9.0 explicitly rejected (retry-with-nudge).
+3. **Option 3 — Restart from scratch**, wiping the conversation and leveraging Story 9.7's `.fetch-cache/{sha256(url)}.html` cache so the re-issued `fetch_url` calls return existing handles instantly (assuming 9.7's cache lookup is cache-on-hit — flagged for Winston confirmation). Pros: structurally prevents the bug; robust against model non-determinism; composes naturally with 9.7. Cons: discards conversation history (mitigation: archive as `.failed-{timestamp}.jsonl`); hard dependency on 9.7 being on `main`.
+
+**Bob's recommendation:** Option 3, conditional on Winston confirming Story 9.7's cache lookup is cache-on-hit. This is the only option that *prevents* the bug rather than *detecting* or *papering over* it. The total surgery is small (one new `WipeHistoryAsync` primitive on `IConversationStore`, one retry-mode branch in `StepExecutor`). Lock is Winston's call.
+
+**Bob's epic-placement view (fast-follower vs beta-blocker):** Bob agrees with Adam's instinct of fast-follower (Epic 10), reasoning grounded in the source: post-9.7, the dominant trigger for the upstream stall (context bloat) is eliminated, so the retry path will be hit substantially less often. The replayed-degenerate-state failure mode requires a specific shape (several successful tool_call/tool_result pairs followed by a step failure), which post-9.7 is genuinely uncommon. The user has a manual workaround (re-click retry; each attempt is independent and usually succeeds within 1–2 tries). The fix is non-trivial and three viable design alternatives exist — doing the design work under beta-release pressure is the wrong forcing function. **However**, the spec records explicit **Beta-Blocker Escalation Criteria** — if the rate is higher than 1 in 10, or if the workaround fails more than 10% of the time, or if it produces silent data corruption, or if any private beta tester reports the symptom on a happy-path workflow within the first week, this story is escalated via `bmad-correct-course` to be moved into Epic 9 and re-prioritised.
+
+**Pre-implementation gate:** the spec includes a Pre-Implementation Architect Review checkbox at the bottom that **must** be ticked by Winston (with a one-line note recording the locked design alternative) before Amelia starts coding.
+
+_Full story spec lives at [_bmad-output/implementation-artifacts/10-6-retry-replay-degeneration-recovery.md](../implementation-artifacts/10-6-retry-replay-degeneration-recovery.md)._
 
 ### Story 10.5: Marketplace Listing & Community Launch
 

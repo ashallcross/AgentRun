@@ -17,6 +17,7 @@ steps:
     agent: agents/scanner.md
     tools:
       - fetch_url
+      - read_file
       - write_file
     writes_to:
       - artifacts/scan-results.md
