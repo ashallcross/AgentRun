@@ -28,6 +28,16 @@ public class FetchUrlTool : IWorkflowTool
 
     private static readonly char[] WhitespaceChars = { ' ', '\t', '\n', '\r', '\f', '\v' };
 
+    // Story 9.1b Phase 1 carve-out (manual E2E gate, 2026-04-09): without an
+    // explicit User-Agent, many WAFs / CDNs (Cloudflare, Fastly, AWS WAF) and
+    // sites with bot protection (Wikipedia, GitHub, news sites) return 403 to
+    // requests with no UA, treating them as suspicious script traffic. A sane
+    // generic engine default unblocks any workflow that fetches arbitrary
+    // public URLs. NOT workflow-specific — this is a property of fetch_url.
+    // If a future workflow needs a custom UA, that becomes a Story 9.6-style
+    // ToolLimitResolver / workflow-YAML tunable, not a hardcoded change here.
+    private const string DefaultUserAgent = "AgentRun/1.0";
+
     private static readonly JsonSerializerOptions HandleJsonOptions = new()
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.Never
@@ -118,6 +128,7 @@ public class FetchUrlTool : IWorkflowTool
                     await _ssrfProtection.ValidateUrlAsync(currentUri, timeoutCts.Token);
 
                 using var request = new HttpRequestMessage(HttpMethod.Get, currentUri);
+                request.Headers.UserAgent.ParseAdd(DefaultUserAgent);
                 var hopResponse = await client.SendAsync(
                     request,
                     HttpCompletionOption.ResponseHeadersRead,

@@ -968,6 +968,64 @@ public class FetchUrlToolTests
         Assert.That(h.title, Is.Null);
     }
 
+    // ---------- Phase 1 manual E2E carve-out: default User-Agent ----------
+
+    [Test]
+    public async Task UserAgent_DefaultHeaderSetOnOutgoingRequest()
+    {
+        // Story 9.1b Phase 1 manual E2E carve-out (2026-04-09): bare-UA
+        // requests are 403'd by Wikipedia / Cloudflare / Fastly / GitHub etc.
+        // The tool sets a generic AgentRun/1.0 default on every outgoing
+        // request so workflows that fetch arbitrary public URLs are not
+        // broken-by-default by bot-protection layers.
+        string? observedUserAgent = null;
+        SetupHttpClient((req, _) =>
+        {
+            observedUserAgent = req.Headers.UserAgent.ToString();
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("ok", Encoding.UTF8, "text/html")
+            });
+        });
+
+        var args = new Dictionary<string, object?> { ["url"] = "https://example.com/" };
+        await _tool.ExecuteAsync(args, _context, CancellationToken.None);
+
+        Assert.That(observedUserAgent, Is.EqualTo("AgentRun/1.0"));
+    }
+
+    [Test]
+    public async Task UserAgent_DefaultHeaderSetOnEveryRedirectHop()
+    {
+        // The UA must be set on each hop's HttpRequestMessage, not just the
+        // initial request — otherwise a redirect target sees the same bare-UA
+        // 403 the initial request was avoiding.
+        var observedUas = new List<string?>();
+        var hits = 0;
+        SetupHttpClient((req, _) =>
+        {
+            observedUas.Add(req.Headers.UserAgent.ToString());
+            hits++;
+            if (hits == 1)
+            {
+                var resp = new HttpResponseMessage(HttpStatusCode.Found);
+                resp.Headers.Location = new Uri("https://example.com/final");
+                return Task.FromResult(resp);
+            }
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("ok", Encoding.UTF8, "text/html")
+            });
+        });
+
+        var args = new Dictionary<string, object?> { ["url"] = "https://example.com/start" };
+        await _tool.ExecuteAsync(args, _context, CancellationToken.None);
+
+        Assert.That(observedUas, Has.Count.EqualTo(2));
+        Assert.That(observedUas[0], Is.EqualTo("AgentRun/1.0"));
+        Assert.That(observedUas[1], Is.EqualTo("AgentRun/1.0"));
+    }
+
     // ---------- D2 / Locked Decision #11: manual redirect loop with per-hop SSRF ----------
 
     [Test]
