@@ -116,6 +116,27 @@ public static class ToolLoop
 
             if (functionCalls.Count == 0)
             {
+                // Permanent structured engine telemetry: capture the API
+                // FinishReason (Anthropic stop_reason equivalent) on every
+                // empty assistant turn. Established as permanent in Story
+                // 9.1b Phase 1 carve-out #3 (2026-04-09) after this exact
+                // instrumentation reclassified the CQA scanner stall from
+                // a workflow rhythm regression to a MaxOutputTokens ceiling
+                // bug (FinishReason=length, accumulatedTextLength=0). This
+                // class of failure (silent truncation presenting as "model
+                // stalled") is nearly invisible without instrumentation
+                // and trivially diagnosable with it — the cost of keeping
+                // the log line is one entry per stall (rare by definition),
+                // and it protects every future workflow from the same
+                // silent-truncation footgun.
+                //
+                // Event name: engine.empty_turn.finish_reason
+                var finishReason = updates.Select(u => u.FinishReason).LastOrDefault(r => r is not null);
+                logger.LogWarning(
+                    "engine.empty_turn.finish_reason for step {StepId} in workflow {WorkflowAlias} instance {InstanceId}: {FinishReason} (accumulatedTextLength={Len}, updateCount={Updates})",
+                    context.StepId, context.WorkflowAlias, context.InstanceId,
+                    finishReason?.Value ?? "<null>", accumulatedText.Length, updates.Count);
+
                 // Story 9.0: classify the empty-tool-call turn before deciding
                 // whether to wait for user input. Detection is pure; recovery
                 // (the throw below) is the only line a future strategy would
