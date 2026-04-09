@@ -959,11 +959,14 @@ public class ToolLoopTests
     }
 
     [Test]
-    public void Stall_Interactive_NarrationAndCompletionCheckFails_StillThrowsStall()
+    public void Stall_Interactive_NarrationAndCompletionCheckFails_NudgesOnceThenThrows()
     {
-        // Same shape as the success case above but completionCheck returns false —
-        // the narration is genuinely a stall and must still throw. This guards against
-        // the completion-check short-circuit being too permissive.
+        // Story 9.1b Phase 1 carve-out: when narration stall hits AND completion
+        // check fails, the engine now injects a one-shot synthetic user nudge
+        // before throwing. This test asserts: (a) the nudge fires (3 LLM calls
+        // observed), (b) if the nudge ALSO stalls, StallDetectedException still
+        // throws as before. Guards against the recovery being either silently
+        // disabled or going into an infinite retry loop.
         var tool = Substitute.For<IWorkflowTool>();
         tool.Name.Returns("write_file");
         tool.Description.Returns("Writes a file");
@@ -983,6 +986,8 @@ public class ToolLoopTests
                 callSequence++;
                 if (callSequence == 1)
                     return MakeStreamingToolCalls(("call-1", "write_file", null));
+                // Both the original stall and the post-nudge retry produce
+                // narration with no tool call — model is genuinely stuck.
                 return MakeStreamingTextResponse("Let me think about this for a moment.");
             });
 
@@ -996,6 +1001,87 @@ public class ToolLoopTests
                 userMessageReader: channel.Reader,
                 completionCheck: completionCheck,
                 userMessageTimeoutOverride: _userMessageTimeout));
+
+        // 3 LLM calls: tool round-trip (1) + first stalling turn (2) + post-nudge retry that ALSO stalls (3).
+        _chatClient.Received(3).GetStreamingResponseAsync(
+            Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Stall_Interactive_EmptyTurnAndCompletionCheckFails_NudgeRecoversWithToolCall()
+    {
+        // Story 9.1b Phase 1 carve-out: the success case for the nudge-and-retry
+        // path. Sonnet 4.6 stalls after the final fetch_url in a multi-URL batch,
+        // then recovers when given a directive synthetic user message and emits
+        // the missing write_file call. This test asserts: (a) no exception is
+        // thrown, (b) the post-nudge tool call is executed, (c) exactly 3 LLM
+        // calls are observed (initial tool round-trip + stall + post-nudge
+        // tool call). Diagnosed via the CQA 5-URL batch manual E2E gate
+        // (instance e7e7dfc50bec4d4a8f7db76a5cd6328a).
+        var fileWritten = false;
+        var tool = Substitute.For<IWorkflowTool>();
+        tool.Name.Returns("write_file");
+        tool.Description.Returns("Writes a file");
+        tool.ExecuteAsync(Arg.Any<IDictionary<string, object?>>(), Arg.Any<ToolExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                fileWritten = true;
+                return Task.FromResult<object>("ok");
+            });
+
+        var declaredTools = new Dictionary<string, IWorkflowTool>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["write_file"] = tool
+        };
+
+        var channel = Channel.CreateUnbounded<string>();
+        var callSequence = 0;
+        // Completion check toggles once write_file has been called — mirrors the
+        // real workflow scenario where the file's existence is the success signal.
+        Func<CancellationToken, Task<bool>> completionCheck = _ => Task.FromResult(fileWritten);
+
+        // The scenario needs the loop to enter the stall classification path,
+        // which requires a preceding tool result in the conversation. We seed
+        // that with a fetch_url-style tool result already in the messages list
+        // below, so the first LLM call IS the empty stall turn (not a tool
+        // round-trip).
+        _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                callSequence++;
+                return callSequence switch
+                {
+                    // Turn 1: model emits an empty turn (no text, no tool call) —
+                    // simulates the post-batch stall.
+                    1 => MakeEmptyStreamingResponse(),
+                    // Turn 2: after the synthetic nudge, model calls write_file.
+                    2 => MakeStreamingToolCalls(("call-1", "write_file", null)),
+                    // Turn 3: model narrates "done" — completion check now passes
+                    // (file was written) so this short-circuits to success.
+                    _ => MakeStreamingTextResponse("Done.")
+                };
+            });
+
+        // Seed a prior tool result so the empty turn is correctly classified as
+        // a post-tool-call stall (not a fresh-start input wait).
+        var messages = new List<ChatMessage>
+        {
+            new(ChatRole.System, "test"),
+            new(ChatRole.Assistant, [new FunctionCallContent("seed-call", "fetch_url", null)]),
+            new(ChatRole.Tool, [new FunctionResultContent("seed-call", "{\"status\":200}")])
+        };
+
+        var response = await ToolLoop.RunAsync(
+            _chatClient, messages, new ChatOptions(), declaredTools, _context, _logger, CancellationToken.None,
+            userMessageReader: channel.Reader,
+            completionCheck: completionCheck,
+            userMessageTimeoutOverride: _userMessageTimeout);
+
+        Assert.That(response, Is.Not.Null);
+        Assert.That(fileWritten, Is.True, "post-nudge write_file must have been executed");
+        // 3 LLM calls: empty stall (1) + post-nudge write_file tool call (2) + final narration (3).
+        _chatClient.Received(3).GetStreamingResponseAsync(
+            Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>());
     }
 
     [Test]

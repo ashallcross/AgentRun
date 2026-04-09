@@ -31,6 +31,22 @@ public static class ToolLoop
         // Step/Workflow context is a wiring bug — fail loud.
         TimeSpan? userMessageTimeout = userMessageTimeoutOverride;
 
+        // Story 9.1b Phase 1 carve-out (manual E2E gate, 2026-04-09):
+        // single-shot stall recovery via synthetic user nudge. When the model
+        // loses track mid-batch and emits an empty turn after a tool round-trip
+        // before the workflow is structurally complete (completionCheck fails),
+        // give it ONE more turn with a directive synthetic user message before
+        // throwing StallDetectedException. Diagnosed via the CQA 5-URL batch:
+        // Sonnet 4.6 reliably stalls after the final fetch_url at N=5 but not
+        // at N=1. The 1-URL canary proved the model can do the fetch→write
+        // transition; it's the cumulative turn count that loses it. This is the
+        // missing sibling to Story 9.0's completion-check-on-stall recovery
+        // (which handled "model finished but went silent"; this handles "model
+        // lost track and needs a nudge to finish"). Single attempt — if the
+        // nudge also stalls, the exception throws as before. Generic wording
+        // so it does not bake any workflow-specific tool name into the engine.
+        var nudgeAttempted = false;
+
         var iteration = 0;
         while (true)
         {
@@ -115,6 +131,38 @@ public static class ToolLoop
                         ?? new ChatMessage(ChatRole.Assistant, accumulatedText));
                 }
 
+                // Story 9.1b Phase 1 carve-out: post-nudge confirmed-stall
+                // throw. If we've already injected the synthetic recovery
+                // nudge once and we're back in the no-tool-call branch, the
+                // model has burned its second chance. The classifier will NOT
+                // fire as a stall on this turn (the most recent non-assistant
+                // message is now the synthetic user nudge, not a tool result),
+                // so we cannot rely on the classification path below — we have
+                // to throw directly. The success-path check still wins if the
+                // model called the recovery tool on the post-nudge turn AND
+                // the completion check now passes (e.g. write_file in turn 2,
+                // narration in turn 3) — that path is reached because the
+                // tool-call turn does not enter this branch at all.
+                if (nudgeAttempted)
+                {
+                    if (completionCheck is not null && await completionCheck(cancellationToken))
+                    {
+                        logger.LogInformation(
+                            "Completion check passed on post-nudge turn for step {StepId} in workflow {WorkflowAlias} instance {InstanceId} — treating as successful recovery",
+                            context.StepId, context.WorkflowAlias, context.InstanceId);
+                        return new ChatResponse(messages.Where(m => m.Role == ChatRole.Assistant).LastOrDefault()
+                            ?? new ChatMessage(ChatRole.Assistant, accumulatedText));
+                    }
+
+                    var lastToolCallNamePostNudge = ExtractLastToolCallName(messages);
+                    logger.LogWarning(
+                        "Post-nudge turn produced no tool call for step {StepId} in workflow {WorkflowAlias} instance {InstanceId} after tool call {LastToolCall} — synthetic nudge already attempted, failing the run",
+                        context.StepId, context.WorkflowAlias, context.InstanceId, lastToolCallNamePostNudge);
+
+                    throw new StallDetectedException(
+                        lastToolCallNamePostNudge, context.StepId, context.InstanceId, context.WorkflowAlias);
+                }
+
                 if (stallClassification == StallClassification.StallEmptyContent
                     || stallClassification == StallClassification.StallNarration)
                 {
@@ -136,13 +184,38 @@ public static class ToolLoop
                             ?? new ChatMessage(ChatRole.Assistant, accumulatedText));
                     }
 
+                    // Story 9.1b Phase 1 carve-out: single-shot stall recovery
+                    // via synthetic user nudge. See the comment at the top of
+                    // RunAsync for the diagnosis and rationale. Gated on
+                    // `completionCheck is not null` so the engine only attempts
+                    // recovery when the workflow has supplied a verifiable
+                    // success signal — otherwise we have no way to know if the
+                    // post-nudge turn produced real progress and the safer
+                    // behaviour is to throw immediately as before. The nudge
+                    // fires before the throw so the model gets exactly one
+                    // chance to recover from a "lost track mid-batch" stall
+                    // before we hard-fail. If the nudge also stalls, the throw
+                    // below executes on the next loop iteration's classify
+                    // path with nudgeAttempted == true.
+                    if (completionCheck is not null && !nudgeAttempted)
+                    {
+                        nudgeAttempted = true;
+                        var nudge = "Continue with the next required action — your previous turn was empty and the task is not yet complete.";
+                        messages.Add(new ChatMessage(ChatRole.User, nudge));
+                        await (recorder?.RecordUserMessageAsync(nudge, cancellationToken) ?? Task.CompletedTask);
+                        logger.LogInformation(
+                            "Empty/narrative stall detected with completion check failing for step {StepId} in workflow {WorkflowAlias} instance {InstanceId} — injecting one-shot synthetic user nudge before failing",
+                            context.StepId, context.WorkflowAlias, context.InstanceId);
+                        continue;
+                    }
+
                     var lastToolCallName = ExtractLastToolCallName(messages);
                     var stallType = stallClassification == StallClassification.StallEmptyContent
                         ? "empty"
                         : "narration";
 
                     logger.LogWarning(
-                        "ToolLoop stall detected ({StallType}) for step {StepId} in workflow {WorkflowAlias} instance {InstanceId} after tool call {LastToolCall}",
+                        "ToolLoop stall detected ({StallType}) for step {StepId} in workflow {WorkflowAlias} instance {InstanceId} after tool call {LastToolCall} — synthetic nudge already attempted, failing the run",
                         stallType, context.StepId, context.WorkflowAlias, context.InstanceId, lastToolCallName);
 
                     throw new StallDetectedException(
