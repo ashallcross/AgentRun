@@ -60,7 +60,15 @@ public class AgentRunComposer : IComposer
         builder.Services.AddSingleton<SsrfProtection>();
         // FetchUrl HttpClient — timeout is applied per-request via IToolLimitResolver
         // (Story 9.6), NOT via HttpClient.Timeout.
-        builder.Services.AddHttpClient("FetchUrl");
+        // Auto-redirect is disabled (Story 9.1b Locked Decision #11): FetchUrlTool
+        // implements a manual redirect loop that re-runs SsrfProtection.ValidateUrlAsync
+        // against every Location target, closing a pre-existing SSRF redirect bypass.
+        // Do NOT switch this back to AllowAutoRedirect = true under any circumstances.
+        builder.Services.AddHttpClient("FetchUrl")
+            .ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.HttpClientHandler
+            {
+                AllowAutoRedirect = false
+            });
         builder.Services.AddSingleton<IWorkflowTool, FetchUrlTool>();
     }
 }

@@ -592,6 +592,505 @@ public class FetchUrlToolTests
         Assert.That(Encoding.UTF8.GetString(written), Does.EndWith("[Response truncated at 10000 bytes]"));
     }
 
+    // ============================================================================
+    // Story 9.1b — extract: "structured" tests
+    // ============================================================================
+
+    private sealed record StructuredHandle(
+        string url,
+        int status,
+        string? title,
+        string? meta_description,
+        StructuredHeadings headings,
+        int word_count,
+        StructuredImages images,
+        StructuredLinks links,
+        bool truncated);
+
+    private sealed record StructuredHeadings(List<string> h1, List<string> h2, int h3_h6_count);
+    private sealed record StructuredImages(int total, int with_alt, int missing_alt);
+    private sealed record StructuredLinks(int @internal, int external);
+
+    private static StructuredHandle ParseStructured(object result)
+    {
+        Assert.That(result, Is.InstanceOf<string>());
+        var json = (string)result;
+        return JsonSerializer.Deserialize<StructuredHandle>(json,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+    }
+
+    private void SetupHttpClientHtml(byte[] body, string contentType = "text/html")
+    {
+        SetupHttpClient((_, _) =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(body)
+            };
+            response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(contentType);
+            return Task.FromResult(response);
+        });
+    }
+
+    [Test]
+    public async Task Extract_Raw_DefaultBehaviour_PreservesStory97Handle()
+    {
+        // AC #3: omitted parameter == raw behaviour, byte-for-byte.
+        var body = "<html><body>hi</body></html>";
+        SetupHttpClient((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(body, Encoding.UTF8, "text/html")
+        }));
+
+        var args = new Dictionary<string, object?> { ["url"] = "https://example.com/raw-default" };
+        var handle = Parse(await _tool.ExecuteAsync(args, _context, CancellationToken.None));
+
+        Assert.That(handle.saved_to, Is.Not.Null);
+        Assert.That(handle.size_bytes, Is.EqualTo(Encoding.UTF8.GetByteCount(body)));
+    }
+
+    [Test]
+    public async Task Extract_Raw_ExplicitParameter_PreservesStory97Handle()
+    {
+        // AC #3: extract: "raw" explicit == raw behaviour.
+        var body = "<html><body>hi</body></html>";
+        SetupHttpClient((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(body, Encoding.UTF8, "text/html")
+        }));
+
+        var args = new Dictionary<string, object?>
+        {
+            ["url"] = "https://example.com/raw-explicit",
+            ["extract"] = "raw"
+        };
+        var handle = Parse(await _tool.ExecuteAsync(args, _context, CancellationToken.None));
+
+        Assert.That(handle.saved_to, Is.Not.Null);
+        // P8 (Story 9.1b code-review fix pass): mirror the byte-count assertion
+        // from the default-behaviour test so the two raw-mode regression guards
+        // are symmetric.
+        Assert.That(handle.size_bytes, Is.EqualTo(Encoding.UTF8.GetByteCount(body)));
+    }
+
+    [Test]
+    public async Task Extract_Structured_100kb_ProducesLockedShape()
+    {
+        // AC #4
+        var bytes = LoadFixture("fetch-url-100kb.html");
+        _resolver.MaxBytes = bytes.Length + 10_000;
+        SetupHttpClientHtml(bytes);
+
+        var args = new Dictionary<string, object?>
+        {
+            ["url"] = "https://wearecogworks.com/",
+            ["extract"] = "structured"
+        };
+        var result = await _tool.ExecuteAsync(args, _context, CancellationToken.None);
+        var json = (string)result;
+
+        // Top-level field check
+        using (var doc = JsonDocument.Parse(json))
+        {
+            var props = doc.RootElement.EnumerateObject().Select(p => p.Name).ToHashSet();
+            Assert.That(props, Is.EquivalentTo(new[]
+            {
+                "url", "status", "title", "meta_description",
+                "headings", "word_count", "images", "links",
+                "truncated"
+            }));
+        }
+
+        var h = ParseStructured(result);
+        Assert.That(h.url, Is.EqualTo("https://wearecogworks.com/"));
+        Assert.That(h.status, Is.EqualTo(200));
+        Assert.That(h.headings, Is.Not.Null);
+        Assert.That(h.images, Is.Not.Null);
+        Assert.That(h.links, Is.Not.Null);
+        Assert.That(h.truncated, Is.False);
+        Assert.That(h.images.total, Is.EqualTo(h.images.with_alt + h.images.missing_alt));
+        // No cache write in structured mode (Q1 = a)
+        Assert.That(Directory.Exists(Path.Combine(_instanceRoot, ".fetch-cache")), Is.False);
+    }
+
+    [Test]
+    public async Task Extract_Structured_207kb_PopulatesMetaAndWordCount()
+    {
+        // AC #5
+        var bytes = LoadFixture("fetch-url-500kb.html");
+        _resolver.MaxBytes = bytes.Length + 10_000;
+        SetupHttpClientHtml(bytes);
+
+        var args = new Dictionary<string, object?>
+        {
+            ["url"] = "https://umbraco.com/products/cms/",
+            ["extract"] = "structured"
+        };
+        var h = ParseStructured(await _tool.ExecuteAsync(args, _context, CancellationToken.None));
+
+        Assert.That(h.word_count, Is.GreaterThan(0));
+        Assert.That(h.truncated, Is.False);
+        // P7 (Story 9.1b code-review fix pass): the test is named
+        // PopulatesMetaAndWordCount — actually assert the meta_description
+        // field is populated rather than leaving a comment.
+        Assert.That(h.meta_description, Is.Not.Null.And.Not.Empty);
+    }
+
+    [Test]
+    public async Task Extract_Structured_1mb_ParsesAtProductionScale()
+    {
+        // AC #6
+        var bytes = LoadFixture("fetch-url-1500kb.html");
+        _resolver.MaxBytes = 2_097_152; // CQA workflow default
+        SetupHttpClientHtml(bytes);
+
+        var args = new Dictionary<string, object?>
+        {
+            ["url"] = "https://www.bbc.co.uk/news",
+            ["extract"] = "structured"
+        };
+        var h = ParseStructured(await _tool.ExecuteAsync(args, _context, CancellationToken.None));
+
+        Assert.That(h.truncated, Is.False);
+        Assert.That(h.word_count, Is.GreaterThan(0));
+    }
+
+    [Test]
+    public async Task Extract_Structured_DeterministicAcrossTwoParses()
+    {
+        // AC #4: byte-identical determinism
+        var bytes = LoadFixture("fetch-url-100kb.html");
+        _resolver.MaxBytes = bytes.Length + 10_000;
+        SetupHttpClientHtml(bytes);
+
+        var args = new Dictionary<string, object?>
+        {
+            ["url"] = "https://wearecogworks.com/",
+            ["extract"] = "structured"
+        };
+        var first = (string)await _tool.ExecuteAsync(args, _context, CancellationToken.None);
+        var second = (string)await _tool.ExecuteAsync(args, _context, CancellationToken.None);
+
+        Assert.That(second, Is.EqualTo(first));
+    }
+
+    [Test]
+    public async Task Extract_Structured_TruncatedDuringParse_FlagSetCorrectly()
+    {
+        // AC #7
+        var bytes = LoadFixture("fetch-url-1500kb.html");
+        _resolver.MaxBytes = 65_536;
+        SetupHttpClientHtml(bytes);
+
+        var args = new Dictionary<string, object?>
+        {
+            ["url"] = "https://www.bbc.co.uk/news",
+            ["extract"] = "structured"
+        };
+        var result = (string)await _tool.ExecuteAsync(args, _context, CancellationToken.None);
+        var h = ParseStructured(result);
+
+        Assert.That(h.truncated, Is.True);
+        // Marker text MUST NOT have been parsed as HTML content
+        Assert.That(result, Does.Not.Contain("Response truncated at"));
+        // No cache write in structured mode
+        Assert.That(Directory.Exists(Path.Combine(_instanceRoot, ".fetch-cache")), Is.False);
+    }
+
+    [Test]
+    public async Task Extract_Structured_NotInvokedOn_HttpError()
+    {
+        // AC #8
+        SetupHttpClient((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound)
+        {
+            ReasonPhrase = "Not Found"
+        }));
+
+        var args = new Dictionary<string, object?>
+        {
+            ["url"] = "https://example.com/missing",
+            ["extract"] = "structured"
+        };
+        var result = await _tool.ExecuteAsync(args, _context, CancellationToken.None);
+
+        Assert.That(result, Is.EqualTo("HTTP 404: Not Found"));
+    }
+
+    [Test]
+    public async Task Extract_Structured_NotInvokedOn_EmptyBody()
+    {
+        // AC #8 + P5 (Story 9.1b code-review fix pass): structured mode on
+        // empty body returns the structured shape with empty fields, NOT the
+        // raw FetchUrlHandle shape. Schema drift would otherwise break the
+        // analyser when it sees raw-shape JSON keys for an empty page.
+        SetupHttpClient((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.NoContent)
+        {
+            Content = new ByteArrayContent(Array.Empty<byte>())
+        }));
+
+        var args = new Dictionary<string, object?>
+        {
+            ["url"] = "https://example.com/empty",
+            ["extract"] = "structured"
+        };
+        var h = ParseStructured(await _tool.ExecuteAsync(args, _context, CancellationToken.None));
+
+        Assert.That(h.status, Is.EqualTo(204));
+        Assert.That(h.url, Is.EqualTo("https://example.com/empty"));
+        Assert.That(h.title, Is.Null);
+        Assert.That(h.meta_description, Is.Null);
+        Assert.That(h.headings.h1, Is.Empty);
+        Assert.That(h.headings.h2, Is.Empty);
+        Assert.That(h.headings.h3_h6_count, Is.Zero);
+        Assert.That(h.word_count, Is.Zero);
+        Assert.That(h.images.total, Is.Zero);
+        Assert.That(h.links.@internal, Is.Zero);
+        Assert.That(h.links.external, Is.Zero);
+        Assert.That(h.truncated, Is.False);
+    }
+
+    [Test]
+    public void Extract_Structured_NonHtmlContentType_ThrowsToolExecutionException()
+    {
+        // AC #9
+        SetupHttpClientHtml(Encoding.UTF8.GetBytes("%PDF-1.4 fake"), contentType: "application/pdf");
+
+        var args = new Dictionary<string, object?>
+        {
+            ["url"] = "https://example.com/file.pdf",
+            ["extract"] = "structured"
+        };
+        var ex = Assert.ThrowsAsync<ToolExecutionException>(
+            () => _tool.ExecuteAsync(args, _context, CancellationToken.None));
+        Assert.That(ex!.Message, Is.EqualTo(
+            "Cannot extract structured fields from content type 'application/pdf'. Use extract: 'raw' instead."));
+    }
+
+    [Test]
+    public void Extract_InvalidValue_ThrowsToolExecutionException()
+    {
+        SetupHttpClient((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("x", Encoding.UTF8, "text/html")
+        }));
+        var args = new Dictionary<string, object?>
+        {
+            ["url"] = "https://example.com",
+            ["extract"] = "json"
+        };
+        var ex = Assert.ThrowsAsync<ToolExecutionException>(
+            () => _tool.ExecuteAsync(args, _context, CancellationToken.None));
+        Assert.That(ex!.Message, Is.EqualTo("Invalid extract value: 'json'. Must be 'raw' or 'structured'."));
+    }
+
+    [Test]
+    public void Extract_NonStringType_ThrowsToolExecutionException()
+    {
+        SetupHttpClient((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("x", Encoding.UTF8, "text/html")
+        }));
+        var args = new Dictionary<string, object?>
+        {
+            ["url"] = "https://example.com",
+            ["extract"] = 42
+        };
+        Assert.ThrowsAsync<ToolExecutionException>(
+            () => _tool.ExecuteAsync(args, _context, CancellationToken.None));
+    }
+
+    [Test]
+    public async Task Extract_Structured_HandcraftedFixture_ImagesAccountingAndLinkClassification()
+    {
+        // AC #4 invariants — uses a hand-crafted fixture so the assertions are deterministic
+        // regardless of which captured fixture changes.
+        var html = """
+            <!DOCTYPE html>
+            <html><head>
+              <title>  Hello World  </title>
+              <meta name="description" content="A test page">
+            </head><body>
+              <h1>Top Heading</h1>
+              <h1>Second H1</h1>
+              <h2>Sub</h2>
+              <h3>Sub-sub</h3>
+              <h4>4</h4>
+              <p>One two three four five.</p>
+              <img src="a.png" alt="present">
+              <img src="b.png" alt="">
+              <img src="c.png">
+              <a href="/internal-relative">x</a>
+              <a href="https://example.com/internal-abs">x</a>
+              <a href="https://other.example.com/external">x</a>
+              <a href="mailto:foo@bar.com">x</a>
+            </body></html>
+            """;
+        SetupHttpClientHtml(Encoding.UTF8.GetBytes(html));
+
+        var args = new Dictionary<string, object?>
+        {
+            ["url"] = "https://example.com/page",
+            ["extract"] = "structured"
+        };
+        var h = ParseStructured(await _tool.ExecuteAsync(args, _context, CancellationToken.None));
+
+        Assert.That(h.title, Is.EqualTo("Hello World"));
+        Assert.That(h.meta_description, Is.EqualTo("A test page"));
+        Assert.That(h.headings.h1, Is.EqualTo(new[] { "Top Heading", "Second H1" }));
+        Assert.That(h.headings.h2, Is.EqualTo(new[] { "Sub" }));
+        Assert.That(h.headings.h3_h6_count, Is.EqualTo(2)); // h3 + h4
+        Assert.That(h.word_count, Is.GreaterThan(0));
+
+        Assert.That(h.images.total, Is.EqualTo(3));
+        Assert.That(h.images.with_alt, Is.EqualTo(2)); // present + empty alt
+        Assert.That(h.images.missing_alt, Is.EqualTo(1));
+
+        // /internal-relative + https://example.com/internal-abs == 2 internal
+        // https://other.example.com/external + mailto: == 2 external (mailto classified as external)
+        Assert.That(h.links.@internal, Is.EqualTo(2));
+        Assert.That(h.links.external, Is.EqualTo(2));
+    }
+
+    [Test]
+    public async Task Extract_Structured_EmptyTitle_NormalisedToNull()
+    {
+        // Architect-locked: AngleSharp's empty-string title becomes null in the handle.
+        var html = "<html><head></head><body><p>x</p></body></html>";
+        SetupHttpClientHtml(Encoding.UTF8.GetBytes(html));
+
+        var args = new Dictionary<string, object?>
+        {
+            ["url"] = "https://example.com/notitle",
+            ["extract"] = "structured"
+        };
+        var h = ParseStructured(await _tool.ExecuteAsync(args, _context, CancellationToken.None));
+
+        Assert.That(h.title, Is.Null);
+    }
+
+    // ---------- D2 / Locked Decision #11: manual redirect loop with per-hop SSRF ----------
+
+    [Test]
+    public void Redirect_ToPrivateIp_RejectedBySsrf()
+    {
+        // Locked Decision #11: each Location target is re-validated through
+        // SsrfProtection.ValidateUrlAsync. A 302 to a link-local / metadata
+        // service URL must be rejected, not silently followed.
+        var policy = Substitute.For<INetworkAccessPolicy>();
+        // The initial example.com host is allowed; the redirect target's IP is not.
+        policy.IsAddressAllowed(IPAddress.Parse("93.184.216.34")).Returns(true);
+        policy.IsAddressAllowed(IPAddress.Parse("169.254.169.254")).Returns(false);
+
+        var dnsResolver = Substitute.For<IDnsResolver>();
+        dnsResolver.ResolveAsync("example.com", Arg.Any<CancellationToken>())
+            .Returns(new[] { IPAddress.Parse("93.184.216.34") });
+        dnsResolver.ResolveAsync("169.254.169.254", Arg.Any<CancellationToken>())
+            .Returns(new[] { IPAddress.Parse("169.254.169.254") });
+
+        var ssrf = new SsrfProtection(policy, dnsResolver);
+        var tool = new FetchUrlTool(ssrf, _httpClientFactory, _resolver);
+
+        SetupHttpClient((req, _) =>
+        {
+            var resp = new HttpResponseMessage(HttpStatusCode.Found);
+            resp.Headers.Location = new Uri("http://169.254.169.254/latest/meta-data/");
+            return Task.FromResult(resp);
+        });
+
+        var args = new Dictionary<string, object?> { ["url"] = "https://example.com/start" };
+        Assert.ThrowsAsync<ToolExecutionException>(
+            () => tool.ExecuteAsync(args, _context, CancellationToken.None));
+    }
+
+    [Test]
+    public void Redirect_ChainExceedsCap_ThrowsTooManyRedirects()
+    {
+        // Locked Decision #11: 5-redirect cap matches HttpClientHandler.MaxAutomaticRedirections.
+        // 6 chained 302s must trip the cap on the 6th hop.
+        var hits = 0;
+        SetupHttpClient((_, _) =>
+        {
+            hits++;
+            var resp = new HttpResponseMessage(HttpStatusCode.Found);
+            // Each hop redirects to a fresh path on the same host so the SSRF
+            // re-validation passes (same already-allowed IP).
+            resp.Headers.Location = new Uri($"https://example.com/hop-{hits}");
+            return Task.FromResult(resp);
+        });
+
+        var args = new Dictionary<string, object?> { ["url"] = "https://example.com/start" };
+        var ex = Assert.ThrowsAsync<ToolExecutionException>(
+            () => _tool.ExecuteAsync(args, _context, CancellationToken.None));
+        Assert.That(ex!.Message, Is.EqualTo("Too many redirects (max 5)"));
+        // 6 total HTTP requests = initial + 5 redirects, then the 6th redirect attempt trips the cap.
+        // The loop runs hop=0..5 (6 SendAsync calls), and the 6th hop (hop == maxRedirects) throws
+        // before resolving the next Location. So the handler is hit 6 times.
+        Assert.That(hits, Is.EqualTo(6));
+    }
+
+    [Test]
+    public async Task Redirect_ToPublicUrl_FollowsAndReturnsBody()
+    {
+        // Locked Decision #11 negative test: a legitimate cross-host redirect
+        // to a different allowed host still works after manual following.
+        var hits = 0;
+        SetupHttpClient((req, _) =>
+        {
+            hits++;
+            if (hits == 1)
+            {
+                var resp = new HttpResponseMessage(HttpStatusCode.MovedPermanently);
+                resp.Headers.Location = new Uri("https://example.com/final");
+                return Task.FromResult(resp);
+            }
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("hello", Encoding.UTF8, "text/html")
+            });
+        });
+
+        var args = new Dictionary<string, object?> { ["url"] = "https://example.com/start" };
+        var handle = Parse(await _tool.ExecuteAsync(args, _context, CancellationToken.None));
+
+        Assert.That(handle.size_bytes, Is.EqualTo(5));
+        Assert.That(handle.saved_to, Is.Not.Null);
+        Assert.That(hits, Is.EqualTo(2));
+    }
+
+    [Test]
+    public async Task Redirect_RelativeLocation_ResolvesAgainstCurrentRequestUri()
+    {
+        // Locked Decision #11: relative Location values are resolved against
+        // the current request URI per RFC 7231 §7.1.2 — `Location: /new` from
+        // https://example.com/old must produce https://example.com/new.
+        var seenUris = new List<Uri>();
+        var hits = 0;
+        SetupHttpClient((req, _) =>
+        {
+            seenUris.Add(req.RequestUri!);
+            hits++;
+            if (hits == 1)
+            {
+                var resp = new HttpResponseMessage(HttpStatusCode.Found);
+                // Relative Location header — must resolve against current request URI.
+                resp.Headers.Location = new Uri("/new", UriKind.Relative);
+                return Task.FromResult(resp);
+            }
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("ok", Encoding.UTF8, "text/html")
+            });
+        });
+
+        var args = new Dictionary<string, object?> { ["url"] = "https://example.com/old" };
+        var handle = Parse(await _tool.ExecuteAsync(args, _context, CancellationToken.None));
+
+        Assert.That(handle.saved_to, Is.Not.Null);
+        Assert.That(seenUris, Has.Count.EqualTo(2));
+        Assert.That(seenUris[0], Is.EqualTo(new Uri("https://example.com/old")));
+        Assert.That(seenUris[1], Is.EqualTo(new Uri("https://example.com/new")));
+    }
+
     private class MockHttpHandler : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> _handler;

@@ -14,11 +14,14 @@ This workflow runs in interactive mode. Any text you produce WITHOUT a tool call
 ## Instructions
 
 1. Immediately call `read_file` to read `artifacts/scan-results.md`. Do not produce any text first.
-2. For each scanned page, score it on a 1-10 scale across four dimensions using the rubric below.
-3. Provide a brief one-line justification for each score.
-4. Calculate an overall quality score per page (average of the four dimension scores, rounded to one decimal).
-5. If scan-results.md is incomplete or malformed, score only the pages you can extract data for and note any issues.
-6. Use `write_file` to write results to `artifacts/quality-scores.md` using the output template below.
+2. The scanner sources its facts directly from `fetch_url(extract: "structured")`, so the page entries in `scan-results.md` are deterministic parser facts (title, meta_description, headings, word_count, images, links). Treat them as ground truth — do not re-parse, do not invent facts that are not in the file.
+3. **Only flag issues you can directly cite from the structured fields recorded in `scan-results.md`.** For example: "5 missing alt-text images" must come from the recorded `images.missing_alt` count, not from a guess.
+4. If a field is missing or empty (e.g. `Title: Not found`, no H1, zero links), the page may be malformed or non-HTML — note it in the analysis and do not invent values.
+5. For each scanned page, score it on a 1-10 scale across four dimensions using the rubric below.
+6. Provide a brief one-line justification for each score, citing the structured field that supports it.
+7. Calculate an overall quality score per page (average of the four dimension scores, rounded to one decimal).
+8. If scan-results.md is incomplete or malformed, score only the pages you can extract data for and note any issues.
+9. Use `write_file` to write results to `artifacts/quality-scores.md` using the output template below.
 
 ## Scoring Rubric
 

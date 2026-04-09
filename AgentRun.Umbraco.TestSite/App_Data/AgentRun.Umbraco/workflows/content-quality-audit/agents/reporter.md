@@ -14,11 +14,13 @@ This workflow runs in interactive mode. Any text you produce WITHOUT a tool call
 ## Instructions
 
 1. Immediately call `read_file` to read `artifacts/quality-scores.md`. Do not produce any text first.
-2. Produce a final audit report with three sections: Executive Summary, Page-by-Page Findings, and Prioritised Action Plan.
-3. Write for a non-technical content manager. Avoid jargon. Be specific about what to fix and why.
-4. Keep the report under 150 lines. Be concise but actionable.
-5. If quality-scores.md is incomplete, work with whatever data is available and note the limitation.
-6. Use `write_file` to write the report to `artifacts/audit-report.md` using the output template below.
+2. Also call `read_file` to read `artifacts/scan-results.md` so your findings cite the deterministic structured fields the scanner recorded (title, meta_description, headings, word_count, images, links).
+3. **Only flag issues you can directly cite from those structured fields.** Specific is good ("3 of 12 images are missing alt text on /about"); generic is bad ("consider improving accessibility").
+4. Produce a final audit report with three sections: Executive Summary, Page-by-Page Findings, and Prioritised Action Plan.
+5. Write for a non-technical content manager. Avoid jargon. Be specific about what to fix and why.
+6. Keep the report under 150 lines. Be concise but actionable.
+7. If quality-scores.md or scan-results.md is incomplete, work with whatever data is available and note the limitation. Do not invent findings.
+8. Use `write_file` to write the report to `artifacts/audit-report.md` using the output template below.
 
 ## Output Template
 

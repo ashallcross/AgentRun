@@ -44,7 +44,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-30
-last_updated: 2026-04-08 (story 9-9 done)
+last_updated: 2026-04-08 (story 9-1b ready-for-dev)
 project: AgentRun.Umbraco
 project_key: NOKEY
 tracking_system: file-system
@@ -127,7 +127,7 @@ development_status:
   9-7-tool-result-offloading-fetch-url: done                    # done 2026-04-08 — DoD amended via SCP, workflow-completion gate deferred to 9.1b + 9.9; see sprint-change-proposal-2026-04-08-9-7-dod-amendment.md
   9-9-read-file-size-guard: done                         # done 2026-04-08 — defence-in-depth size guard for read_file; manual E2E verified; post-impl code review fixes (D1 single bounded-read path closes TOCTOU; D2 ToolContextMissingException + FetchUrlTool spillover) applied
   9-1c-first-run-ux-url-input: paused                        # paused 2026-04-08 pending 9.7 (done) + 9.1b + 9.9; chain extended after 9.7 manual E2E surfaced read_file bloat — see sprint-change-proposal-2026-04-08-9-1c-pause-addendum-2026-04-08-readfile.md
-  9-1b-content-quality-audit-polish-and-quality: backlog        # depends on 9-7 (done) + 9-1c + 9-9 (and on 9-0, 9-6 transitively); reframed as second reliability gate 2026-04-08 — see sprint-change-proposal-2026-04-08-9-1b-rescope-addendum-2026-04-08-readfile.md
+  9-1b-content-quality-audit-polish-and-quality: review         # Phase 1 build code-complete 2026-04-09 (435/435 tests green); manual E2E Task 8 + Phase 2 polish Tasks 9–10 still owned by Adam — see 9-1b-content-quality-audit-polish-and-quality.md (Phase 1 build + Phase 2 polish, BETA BLOCKER, pre-impl architect review gate pending Winston for AngleSharp shape eyeball + Q1–Q5)
   9-4-accessibility-quick-scan-workflow: backlog                # depends on 9-1c patterns being in place
   9-2-json-schema-for-workflow-yaml: backlog                    # needs 9-6 keys (tool_defaults, tool_overrides) included
   9-3-documentation-and-nuget-packaging: backlog                # needs 9-6 (resolution chain section) and 9-1c (first-run framing)

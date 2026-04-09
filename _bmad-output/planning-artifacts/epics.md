@@ -1294,6 +1294,8 @@ So that I can see multi-agent orchestration in action without writing any workfl
 
 ### Story 9.1b: Content Quality Audit — Polish & Quality
 
+> **Formal dev-agent-ready spec: [`_bmad-output/implementation-artifacts/9-1b-content-quality-audit-polish-and-quality.md`](../implementation-artifacts/9-1b-content-quality-audit-polish-and-quality.md)** — created 2026-04-08 by Bob via `bmad-create-story`. Status: `ready-for-dev`, pending Pre-Implementation Architect Review gate (Winston eyeballs the structured return shape against AngleSharp's actual API + resolves Q1–Q5). The locked design content below is preserved as the epic-level outline; the formal spec is the source of truth for ACs, tasks, and Dev Notes from this point forward.
+
 _Added 2026-04-07 — this story is the iterative "make the output undeniable" work that turns a technically-working example into a showcase-quality one._
 
 _**Scope reshaped 2026-04-08** via [Sprint Change Proposal 2026-04-08 — Story 9.1b Rescope](sprint-change-proposal-2026-04-08-9-1b-rescope.md). Was: pure prompt iteration loop ("iterate prompts until trustworthy"). Now: two-phase build-and-tune sequence — Phase 1 lands Option 2 (server-side structured extraction via AngleSharp), Phase 2 iterates prompts on top of the new contract. The reshape was triggered by the same architectural finding ([9-1c-architectural-finding-fetch-url-context-bloat.md](9-1c-architectural-finding-fetch-url-context-bloat.md)) that paused Story 9.1c. The trustworthiness gate criterion, the 5-pass soft cap, and the signoff artefact location are all unchanged. AngleSharp is the locked parser choice (MIT-licensed)._
