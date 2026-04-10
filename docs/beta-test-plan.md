@@ -30,15 +30,18 @@ choose SQLite). Stop the site after setup completes.
 ### 3. Install AgentRun and an Umbraco.AI Provider
 
 ```bash
-dotnet add package AgentRun.Umbraco --version 1.0.0-beta.1 --source /path/to/Umbraco-AI/nupkg
+dotnet add package Umbraco.AI
 dotnet add package Umbraco.AI.Anthropic
+dotnet add package AgentRun.Umbraco --version 1.0.0-beta.1 --source /path/to/Umbraco-AI/nupkg
 ```
 
 Replace `/path/to/Umbraco-AI/` with the absolute path to the repo root (e.g.,
 `/Users/adamshallcross/Documents/Umbraco AI/`). Relative paths resolve from the consumer
 project directory, not the repo root.
 
-Both packages auto-register via Umbraco's composer system -- no `Program.cs` changes needed.
+All three packages auto-register via Umbraco's composer system -- no `Program.cs` changes needed.
+Installing `Umbraco.AI` as a direct dependency ensures it survives if you later remove AgentRun
+(see uninstall step).
 
 **Important:** Install these packages *after* the Umbraco install wizard has run. Umbraco.AI
 runs database migrations on startup and will crash if no database is configured yet.
@@ -59,13 +62,27 @@ cp -r ~/.nuget/packages/agentrun.umbraco/1.0.0-beta.1/contentFiles/any/any/App_D
 dotnet run
 ```
 
-### 6. Configure an AI Profile
+### 6. Grant User Group Permissions
 
-1. Go to **Settings > AI** in the backoffice
-2. Create a profile for your provider (e.g., Anthropic with your API key)
-3. Note the profile alias
+Neither the AI section nor Agent Workflows will work until permissions are granted:
 
-### 7. Update Workflow Profiles
+1. Go to **Users > User Groups > Administrators**
+2. Grant both the **AI** section and the **AgentRun** section permissions
+3. Save, then **log out and back in** (the auth token needs refreshing)
+
+### 7. Create a Connection
+
+1. Go to the **AI** section in the backoffice
+2. Click **Connections > Create Connection**
+3. Select the Anthropic provider, give it a name and alias, and enter your API key
+
+### 8. Create a Profile
+
+1. Click **Profiles > Create Profile**
+2. Select the connection you just created, choose a model, and set an alias
+3. Note the profile alias -- this is what goes in `workflow.yaml`
+
+### 9. Update Workflow Profiles
 
 Edit the `default_profile` field in both workflow files to match your profile alias:
 
@@ -74,12 +91,12 @@ Edit the `default_profile` field in both workflow files to match your profile al
 
 Restart the site after editing (or wait for the manifest cache to refresh).
 
-### 8. Verify Workflows Appear
+### 10. Verify Workflows Appear
 
 1. Navigate to the **Agent Workflows** section in the backoffice
 2. **Check:** Both "Content Quality Audit" and "Accessibility Quick-Scan" appear in the list
 
-### 9. Run a Workflow
+### 11. Run a Workflow
 
 1. Click **Content Quality Audit**
 2. Click **Start**
@@ -88,21 +105,16 @@ Restart the site after editing (or wait for the manifest cache to refresh).
 5. **Check:** The workflow progresses through all three steps (scanner, analyser, reporter)
 6. **Check:** A final report artifact is produced
 
-### 10. Verify User Permissions
-
-If the Agent Workflows section is not visible:
-
-1. Go to **Users > User Groups > Administrators**
-2. Check that the AgentRun section permission is granted
-3. Save and refresh
-
-### 11. Uninstall the Package
+### 12. Uninstall AgentRun
 
 ```bash
 dotnet remove package AgentRun.Umbraco
 ```
 
-### 12. Verify Clean Uninstall
+Since `Umbraco.AI` was installed as a direct dependency in step 3, it remains after removing
+AgentRun. The site should continue to work without AgentRun.
+
+### 13. Verify Clean Uninstall
 
 1. Run the site: `dotnet run`
 2. **Check:** Site starts without errors related to AgentRun

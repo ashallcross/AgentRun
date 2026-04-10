@@ -88,6 +88,22 @@ API changes are unlikely. The main risk is:
 - The `Umbraco.AI.Agent` package (used in TestSite only, not in AgentRun itself) may have
   a new version requirement.
 
+## Additional Finding: Transitive Dependency Removal on Uninstall
+
+AgentRun.Umbraco declares `Umbraco.AI` as a package dependency. NuGet treats it as transitive
+for the consumer. When the consumer runs `dotnet remove package AgentRun.Umbraco`, NuGet also
+removes the transitive `Umbraco.AI`, which breaks `Umbraco.AI.Anthropic` (it depends on
+`Umbraco.AI.Core` provided by `Umbraco.AI`).
+
+**Options:**
+1. **README guidance** -- tell consumers to install `Umbraco.AI` as a direct dependency
+   alongside AgentRun (they need the AI section anyway for profile configuration)
+2. **Packaging change** -- evaluate whether `Umbraco.AI` should be a peer dependency rather
+   than a direct dependency of AgentRun, so consumers always own it explicitly
+
+The simplest fix is option 1: add `dotnet add package Umbraco.AI` to the README install steps
+so consumers own it directly and it survives an AgentRun uninstall.
+
 ## Additional Finding: Umbraco.AI Startup Order Bug
 
 During testing, we discovered that `Umbraco.AI` crashes on startup if installed before the

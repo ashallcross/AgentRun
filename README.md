@@ -27,11 +27,13 @@ startup and needs an existing database.
 ### 2. Install the packages
 
 ```bash
-dotnet add package AgentRun.Umbraco --version 1.0.0-beta.1
+dotnet add package Umbraco.AI
 dotnet add package Umbraco.AI.Anthropic
+dotnet add package AgentRun.Umbraco --version 1.0.0-beta.1
 ```
 
-Both packages auto-register via Umbraco's composer system -- no `Program.cs` changes needed.
+All three packages auto-register via Umbraco's composer system -- no `Program.cs` changes needed.
+Installing `Umbraco.AI` as a direct dependency ensures it survives if you later remove AgentRun.
 
 ### 3. Copy the example workflows
 
@@ -60,14 +62,22 @@ This gives you two ready-to-run workflows:
 | **Content Quality Audit** | Scanner, Analyser, Reporter | Fetches pages, scores content quality, generates an audit report |
 | **Accessibility Quick-Scan** | Scanner, Reporter | Fetches pages, identifies WCAG 2.1 AA issues, produces a prioritised fix list |
 
-### 4. Configure an Umbraco.AI profile
+### 4. Grant section permissions
 
-Run the site, then in the backoffice go to **Settings > AI** and create a profile for your
-chosen provider. Note the profile alias -- each workflow's `default_profile` field in
-`workflow.yaml` must match it. The shipped examples use `anthropic-sonnet-4-6`; update this
-to your profile alias.
+Go to **Users > User Groups > Administrators** and grant both the **AI** and **AgentRun**
+section permissions. Save, then log out and back in.
 
-### 5. Open Agent Workflows
+### 5. Configure Umbraco.AI
+
+In the backoffice, go to the **AI** section:
+
+1. **Create a Connection** -- select your provider (e.g., Anthropic), enter your API key
+2. **Create a Profile** -- select the connection, choose a model, set an alias
+
+The profile alias is what goes in each workflow's `default_profile` field in `workflow.yaml`.
+The shipped examples use `anthropic-sonnet-4-6`; update this to your profile alias.
+
+### 6. Open Agent Workflows
 
 Navigate to the **Agent Workflows** section in the backoffice. Both example workflows should
 appear. Click one, click **Start**, and paste one or more URLs when prompted.
