@@ -23,9 +23,20 @@ public sealed class ArtifactValidator : IArtifactValidator
 
         var missingFiles = new List<string>();
 
+        var canonicalInstanceFolder = Path.GetFullPath(instanceFolderPath);
+
         foreach (var file in step.ReadsFrom)
         {
             var fullPath = Path.Combine(instanceFolderPath, file);
+            var canonicalPath = Path.GetFullPath(fullPath);
+            if (!canonicalPath.StartsWith(
+                    canonicalInstanceFolder.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar,
+                    StringComparison.Ordinal))
+            {
+                throw new UnauthorizedAccessException(
+                    $"Access denied: artifact path '{file}' resolves outside the instance folder");
+            }
+
             _logger.LogDebug("Checking input artifact: {FilePath}", fullPath);
 
             if (!File.Exists(fullPath))

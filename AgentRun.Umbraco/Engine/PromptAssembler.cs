@@ -25,6 +25,16 @@ public sealed class PromptAssembler : IPromptAssembler
         }
 
         var agentPath = Path.Combine(context.WorkflowFolderPath, context.Step.Agent);
+        var canonicalAgentPath = Path.GetFullPath(agentPath);
+        var canonicalWorkflowFolder = Path.GetFullPath(context.WorkflowFolderPath);
+        if (!canonicalAgentPath.StartsWith(
+                canonicalWorkflowFolder.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar,
+                StringComparison.Ordinal))
+        {
+            throw new UnauthorizedAccessException(
+                $"Access denied: agent path '{context.Step.Agent}' resolves outside the workflow folder");
+        }
+
         if (!File.Exists(agentPath))
         {
             throw new AgentFileNotFoundException(agentPath);
@@ -39,6 +49,14 @@ public sealed class PromptAssembler : IPromptAssembler
         // Section 2: Sidecar instructions (optional)
         var sidecarPath = Path.Combine(
             context.WorkflowFolderPath, "sidecars", context.Step.Id, "instructions.md");
+        var canonicalSidecarPath = Path.GetFullPath(sidecarPath);
+        if (!canonicalSidecarPath.StartsWith(
+                canonicalWorkflowFolder.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar,
+                StringComparison.Ordinal))
+        {
+            throw new UnauthorizedAccessException(
+                $"Access denied: sidecar path for step '{context.Step.Id}' resolves outside the workflow folder");
+        }
 
         if (File.Exists(sidecarPath))
         {
@@ -136,6 +154,7 @@ public sealed class PromptAssembler : IPromptAssembler
             foreach (var artifactPath in stepDef.WritesTo)
             {
                 var fullPath = Path.Combine(context.InstanceFolderPath, artifactPath);
+                ValidateWithinInstanceFolder(fullPath, context.InstanceFolderPath, artifactPath);
                 var existsFlag = File.Exists(fullPath) ? "exists" : "missing";
                 builder.AppendLine($"- {artifactPath} (from step \"{stepDef.Name}\"): {existsFlag}");
                 hasArtifacts = true;
@@ -163,6 +182,7 @@ public sealed class PromptAssembler : IPromptAssembler
         foreach (var artifactPath in context.Step.ReadsFrom)
         {
             var fullPath = Path.Combine(context.InstanceFolderPath, artifactPath);
+            ValidateWithinInstanceFolder(fullPath, context.InstanceFolderPath, artifactPath);
             var existsFlag = File.Exists(fullPath) ? "exists" : "missing";
             builder.AppendLine($"- {artifactPath}: {existsFlag}");
         }
@@ -183,6 +203,19 @@ public sealed class PromptAssembler : IPromptAssembler
         foreach (var artifactPath in context.Step.WritesTo)
         {
             builder.AppendLine($"- {artifactPath}");
+        }
+    }
+
+    private static void ValidateWithinInstanceFolder(string fullPath, string instanceFolderPath, string artifactPath)
+    {
+        var canonicalPath = Path.GetFullPath(fullPath);
+        var canonicalInstanceFolder = Path.GetFullPath(instanceFolderPath);
+        if (!canonicalPath.StartsWith(
+                canonicalInstanceFolder.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar,
+                StringComparison.Ordinal))
+        {
+            throw new UnauthorizedAccessException(
+                $"Access denied: artifact path '{artifactPath}' resolves outside the instance folder");
         }
     }
 

@@ -94,4 +94,21 @@ public class ArtifactValidatorTests
         Assert.That(result.Passed, Is.True);
         Assert.That(result.MissingFiles, Is.Empty);
     }
+
+    // --- Defence-in-depth path traversal (Story 9.10) ---
+
+    [Test]
+    public void ReadsFromOutsideInstanceFolder_ThrowsUnauthorizedAccess()
+    {
+        var step = new StepDefinition
+        {
+            Id = "analyse", Name = "Analyse", Agent = "agents/test.md",
+            ReadsFrom = ["../../escape.txt"]
+        };
+
+        var ex = Assert.ThrowsAsync<UnauthorizedAccessException>(
+            async () => await _validator.ValidateInputArtifactsAsync(step, _tempDir, CancellationToken.None));
+
+        Assert.That(ex!.Message, Does.Contain("resolves outside the instance folder"));
+    }
 }

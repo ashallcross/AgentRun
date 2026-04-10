@@ -374,4 +374,33 @@ public class PromptAssemblerTests
         Assert.That(result, Does.Contain("- analysis-report.md"));
         Assert.That(result, Does.Contain("- quality-scores.md"));
     }
+
+    // --- Defence-in-depth path traversal (Story 9.10) ---
+
+    [Test]
+    public void AgentPathOutsideWorkflowFolder_ThrowsUnauthorizedAccess()
+    {
+        var step = MakeStep("gather", "Gather", agent: "../../escape.md");
+        var context = MakeContext(step);
+
+        var ex = Assert.ThrowsAsync<UnauthorizedAccessException>(
+            async () => await _assembler.AssemblePromptAsync(context, CancellationToken.None));
+
+        Assert.That(ex!.Message, Does.Contain("resolves outside the workflow folder"));
+    }
+
+    [Test]
+    public void ReadsFromPathOutsideInstanceFolder_ThrowsUnauthorizedAccess()
+    {
+        WriteAgentFile("agents/test.md", "# Agent");
+
+        var step = MakeStep("gather", "Gather",
+            readsFrom: ["../../escape.txt"]);
+        var context = MakeContext(step);
+
+        var ex = Assert.ThrowsAsync<UnauthorizedAccessException>(
+            async () => await _assembler.AssemblePromptAsync(context, CancellationToken.None));
+
+        Assert.That(ex!.Message, Does.Contain("resolves outside the instance folder"));
+    }
 }

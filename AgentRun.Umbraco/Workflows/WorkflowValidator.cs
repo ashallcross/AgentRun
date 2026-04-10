@@ -235,9 +235,14 @@ public sealed class WorkflowValidator : IWorkflowValidator
         {
             errors.Add(new WorkflowValidationError($"steps[{index}].id", $"Step at index {index} is missing required field 'id'"));
         }
-        else if (!seenIds.Add(stepId))
+        else
         {
-            errors.Add(new WorkflowValidationError($"steps[{index}].id", $"Duplicate step id '{stepId}' found at index {index}"));
+            ValidatePathSafety(stepId, $"steps[{index}].id", errors, allowPathSeparators: false);
+
+            if (!seenIds.Add(stepId))
+            {
+                errors.Add(new WorkflowValidationError($"steps[{index}].id", $"Duplicate step id '{stepId}' found at index {index}"));
+            }
         }
 
         if (!stepDict.TryGetValue("name", out var nameValue) || nameValue is not string || string.IsNullOrWhiteSpace((string)nameValue))
@@ -248,6 +253,50 @@ public sealed class WorkflowValidator : IWorkflowValidator
         if (!stepDict.TryGetValue("agent", out var agentValue) || agentValue is not string || string.IsNullOrWhiteSpace((string)agentValue))
         {
             errors.Add(new WorkflowValidationError($"steps[{index}].agent", $"Step '{stepLabel}' is missing required field 'agent'"));
+        }
+        else
+        {
+            ValidatePathSafety((string)agentValue, $"steps[{index}].agent", errors, allowPathSeparators: true);
+        }
+
+        // Validate reads_from entries for path safety
+        if (stepDict.TryGetValue("reads_from", out var readsFromValue) && readsFromValue is List<object> readsFromList)
+        {
+            for (var j = 0; j < readsFromList.Count; j++)
+            {
+                if (readsFromList[j] is string readsFromEntry)
+                {
+                    if (!string.IsNullOrWhiteSpace(readsFromEntry))
+                    {
+                        ValidatePathSafety(readsFromEntry, $"steps[{index}].reads_from[{j}]", errors, allowPathSeparators: true);
+                    }
+                }
+                else
+                {
+                    errors.Add(new WorkflowValidationError($"steps[{index}].reads_from[{j}]",
+                        $"Step '{stepLabel}' reads_from[{j}] must be a string, got {readsFromList[j]?.GetType().Name ?? "null"}"));
+                }
+            }
+        }
+
+        // Validate writes_to entries for path safety
+        if (stepDict.TryGetValue("writes_to", out var writesToValue) && writesToValue is List<object> writesToList)
+        {
+            for (var j = 0; j < writesToList.Count; j++)
+            {
+                if (writesToList[j] is string writesToEntry)
+                {
+                    if (!string.IsNullOrWhiteSpace(writesToEntry))
+                    {
+                        ValidatePathSafety(writesToEntry, $"steps[{index}].writes_to[{j}]", errors, allowPathSeparators: true);
+                    }
+                }
+                else
+                {
+                    errors.Add(new WorkflowValidationError($"steps[{index}].writes_to[{j}]",
+                        $"Step '{stepLabel}' writes_to[{j}] must be a string, got {writesToList[j]?.GetType().Name ?? "null"}"));
+                }
+            }
         }
 
         ValidateToolTuningBlock(stepDict, "tool_overrides", $"steps[{stepLabel}].tool_overrides", errors);
@@ -269,6 +318,24 @@ public sealed class WorkflowValidator : IWorkflowValidator
                 else if (filesExist is not List<object> filesList || filesList.Count == 0)
                 {
                     errors.Add(new WorkflowValidationError($"steps[{index}].completion_check.files_exist", $"Step '{stepLabel}' completion_check 'files_exist' must be a non-empty list"));
+                }
+                else
+                {
+                    for (var j = 0; j < filesList.Count; j++)
+                    {
+                        if (filesList[j] is string fileEntry)
+                        {
+                            if (!string.IsNullOrWhiteSpace(fileEntry))
+                            {
+                                ValidatePathSafety(fileEntry, $"steps[{index}].completion_check.files_exist[{j}]", errors, allowPathSeparators: true);
+                            }
+                        }
+                        else
+                        {
+                            errors.Add(new WorkflowValidationError($"steps[{index}].completion_check.files_exist[{j}]",
+                                $"Step '{stepLabel}' completion_check.files_exist[{j}] must be a string, got {filesList[j]?.GetType().Name ?? "null"}"));
+                        }
+                    }
                 }
             }
         }
@@ -353,6 +420,54 @@ public sealed class WorkflowValidator : IWorkflowValidator
             throw new WorkflowConfigurationException(
                 $"Workflow '{workflowAlias}' {fieldPath} = {declaredValue.Value} exceeds the site-level ceiling of {ceiling.Value}. " +
                 $"Lower the workflow value or raise AgentRun:ToolLimits:{ceilingKey}.");
+        }
+    }
+
+    private static void ValidatePathSafety(
+        string value,
+        string fieldPath,
+        List<WorkflowValidationError> errors,
+        bool allowPathSeparators)
+    {
+        if (value.Contains('\0'))
+        {
+            var sanitised = value.Replace("\0", "\\0");
+            errors.Add(new WorkflowValidationError(fieldPath,
+                $"Field '{fieldPath}' contains an unsafe path value '{sanitised}': null byte detected"));
+            return;
+        }
+
+        if (value.StartsWith('/') || value.StartsWith('\\'))
+        {
+            errors.Add(new WorkflowValidationError(fieldPath,
+                $"Field '{fieldPath}' contains an unsafe path value '{value}': absolute path not allowed"));
+            return;
+        }
+
+        // Windows drive letter pattern: e.g. C: or D:\
+        if (value.Length >= 2 && char.IsLetter(value[0]) && value[1] == ':')
+        {
+            errors.Add(new WorkflowValidationError(fieldPath,
+                $"Field '{fieldPath}' contains an unsafe path value '{value}': absolute path not allowed"));
+            return;
+        }
+
+        // Check for .. as a path segment (split on both / and \)
+        var segments = value.Split('/', '\\');
+        foreach (var segment in segments)
+        {
+            if (segment == "..")
+            {
+                errors.Add(new WorkflowValidationError(fieldPath,
+                    $"Field '{fieldPath}' contains an unsafe path value '{value}': path traversal segment '..' not allowed"));
+                return;
+            }
+        }
+
+        if (!allowPathSeparators && (value.Contains('/') || value.Contains('\\')))
+        {
+            errors.Add(new WorkflowValidationError(fieldPath,
+                $"Field '{fieldPath}' contains an unsafe path value '{value}': path separators not allowed in identifiers"));
         }
     }
 

@@ -169,6 +169,12 @@ public sealed class ConversationStore : IConversationStore
             instanceFolder = Path.Combine(_dataRootPath, workflowAlias, instanceId);
         }
 
+        if (stepId.Contains('/') || stepId.Contains('\\') || stepId.Contains('\0'))
+        {
+            throw new ArgumentException(
+                $"Step ID '{stepId}' contains illegal characters (path separators or null bytes)", nameof(stepId));
+        }
+
         return Path.Combine(instanceFolder, $"conversation-{stepId}.jsonl");
     }
 }

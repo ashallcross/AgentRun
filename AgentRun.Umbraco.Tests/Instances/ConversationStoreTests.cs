@@ -353,6 +353,38 @@ public class ConversationStoreTests
         Assert.That(history[1].Content, Is.EqualTo("Second"));
     }
 
+    // --- Defence-in-depth path traversal (Story 9.10) ---
+
+    [Test]
+    public void StepIdWithForwardSlash_ThrowsArgumentException()
+    {
+        var ex = Assert.ThrowsAsync<ArgumentException>(
+            async () => await _store.AppendAsync("test-workflow", "inst-001", "foo/bar",
+                CreateTestEntry(), CancellationToken.None));
+
+        Assert.That(ex!.Message, Does.Contain("illegal characters"));
+    }
+
+    [Test]
+    public void StepIdWithBackslash_ThrowsArgumentException()
+    {
+        var ex = Assert.ThrowsAsync<ArgumentException>(
+            async () => await _store.AppendAsync("test-workflow", "inst-001", "foo\\bar",
+                CreateTestEntry(), CancellationToken.None));
+
+        Assert.That(ex!.Message, Does.Contain("illegal characters"));
+    }
+
+    [Test]
+    public void StepIdWithNullByte_ThrowsArgumentException()
+    {
+        var ex = Assert.ThrowsAsync<ArgumentException>(
+            async () => await _store.AppendAsync("test-workflow", "inst-001", "step\0one",
+                CreateTestEntry(), CancellationToken.None));
+
+        Assert.That(ex!.Message, Does.Contain("illegal characters"));
+    }
+
     [Test]
     public async Task ToolCallEntry_RoundTripsCorrectly()
     {

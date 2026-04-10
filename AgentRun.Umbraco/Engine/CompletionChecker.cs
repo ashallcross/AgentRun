@@ -22,10 +22,20 @@ public sealed class CompletionChecker : ICompletionChecker
         }
 
         var missingFiles = new List<string>();
+        var canonicalInstanceFolder = Path.GetFullPath(instanceFolderPath);
 
         foreach (var file in check.FilesExist)
         {
             var fullPath = Path.Combine(instanceFolderPath, file);
+            var canonicalPath = Path.GetFullPath(fullPath);
+            if (!canonicalPath.StartsWith(
+                    canonicalInstanceFolder.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar,
+                    StringComparison.Ordinal))
+            {
+                throw new UnauthorizedAccessException(
+                    $"Access denied: completion check path '{file}' resolves outside the instance folder");
+            }
+
             _logger.LogDebug("Checking completion file: {FilePath}", fullPath);
 
             if (!File.Exists(fullPath))

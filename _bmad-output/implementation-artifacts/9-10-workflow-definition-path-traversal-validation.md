@@ -1,6 +1,6 @@
 # Story 9.10: Workflow Definition Path Traversal Validation — BETA BLOCKER (security)
 
-Status: ready-for-dev
+Status: done
 
 **Depends on:** 9.6 (done), 9.0 (done), 9.1a (done), 9.1b (done), 9.1c (done), 9.4 (done), 9.2 (done), 9.3 (in-progress — no conflict, 9.3 is documentation/NuGet packaging)
 **Blocks:** 9.5 (Private Beta Distribution Plan — beta cannot ship with this file-exfiltration vector open)
@@ -286,7 +286,76 @@ Run `dotnet test AgentRun.Umbraco.slnx`. All tests pass (465+). Verify the two s
 ## Dev Agent Record
 
 ### Agent Model Used
+Claude Opus 4.6 (1M context)
 
 ### Completion Notes
 
+**Task 1 — Structural validation in `WorkflowValidator.ValidateStep()` (AC1–AC6):**
+- Added `ValidatePathSafety` private static helper with all rejection rules: null bytes, absolute paths (Unix `/`, Windows `\`, drive letters), `..` traversal segments, and optional path separator rejection for identifiers.
+- Wired into `ValidateStep()` for: step `id` (allowPathSeparators: false), `agent`, `reads_from` entries, `writes_to` entries, and `completion_check.files_exist` entries (all allowPathSeparators: true).
+
+**Task 2 — Defence-in-depth canonicalisation in consumers (AC8–AC11):**
+- `PromptAssembler`: agent path canonicalised and verified within workflow folder; artifact paths (both `reads_from` in `AppendInputArtifactsSection` and `writes_to` in `AppendArtifactsSection`) canonicalised and verified within instance folder via `ValidateWithinInstanceFolder` helper.
+- `ArtifactValidator`: canonicalisation + containment check added before `File.Exists`.
+- `CompletionChecker`: same pattern as ArtifactValidator.
+- `ConversationStore`: step ID validated for `/`, `\`, `\0` in `GetConversationFilePath` before filename construction.
+
+**Task 3 — Tests (AC1–AC12):**
+- 14 new tests in `WorkflowValidatorTests.cs`: agent traversal, agent absolute Unix, agent absolute Windows, agent nested traversal, reads_from traversal, writes_to absolute, completion_check.files_exist traversal, step ID traversal, step ID forward slash, valid paths regression guard, dot-prefixed directory accepted, null byte, and 2 shipped workflow canary tests (CQA + Accessibility).
+- 2 new tests in `PromptAssemblerTests.cs`: agent path outside workflow folder, reads_from outside instance folder.
+- 1 new test in `ArtifactValidatorTests.cs`: reads_from outside instance folder.
+- 1 new test in `CompletionCheckerTests.cs`: files_exist outside instance folder.
+- 2 new tests in `ConversationStoreTests.cs`: step ID with forward slash, step ID with backslash.
+
+**Task 4 — Regression check:** 485 tests passed (baseline 465 + 20 new), 0 failures.
+
+**Code review fixes (post-implementation):**
+- Sidecar path in `PromptAssembler` now has defence-in-depth canonicalisation + containment check (was missing).
+- Non-string entries in `reads_from`/`writes_to`/`files_exist` lists now emit type validation errors instead of being silently skipped.
+- Null-byte values sanitised to `\0` literal in `ValidatePathSafety` error messages to prevent log corruption.
+- `ValidatePathSafety` return type changed from `bool` to `void` — no caller used the return value.
+- Added `StepIdWithNullByte_ThrowsArgumentException` test to `ConversationStoreTests` (AC11 coverage gap).
+- Final regression: 486 tests passed (485 + 1 new null-byte test), 0 failures.
+
+### Tasks Completed
+- [x] 1.1 — Add ValidatePathSafety helper
+- [x] 1.2 — Validate agent field
+- [x] 1.3 — Validate reads_from entries
+- [x] 1.4 — Validate writes_to entries
+- [x] 1.5 — Validate completion_check.files_exist entries
+- [x] 1.6 — Validate step id
+- [x] 2.1 — PromptAssembler agent path canonicalisation
+- [x] 2.2 — PromptAssembler artifact path canonicalisation
+- [x] 2.3 — ArtifactValidator canonicalisation
+- [x] 2.4 — CompletionChecker canonicalisation
+- [x] 2.5 — ConversationStore step ID check
+- [x] 3.1 — WorkflowValidatorTests path traversal tests
+- [x] 3.2 — Consumer defence-in-depth tests
+- [x] 3.3 — Shipped workflow canary tests
+- [x] 4 — Full regression pass (485/485)
+
 ### File List
+- `AgentRun.Umbraco/Workflows/WorkflowValidator.cs` — added `ValidatePathSafety` helper, wired into `ValidateStep()` for id, agent, reads_from, writes_to, files_exist
+- `AgentRun.Umbraco/Engine/PromptAssembler.cs` — agent path canonicalisation, `ValidateWithinInstanceFolder` helper, artifact path checks
+- `AgentRun.Umbraco/Engine/ArtifactValidator.cs` — canonicalisation + containment check
+- `AgentRun.Umbraco/Engine/CompletionChecker.cs` — canonicalisation + containment check
+- `AgentRun.Umbraco/Instances/ConversationStore.cs` — step ID character validation in `GetConversationFilePath`
+- `AgentRun.Umbraco.Tests/Instances/ConversationStoreTests.cs` — 3 defence-in-depth tests (forward slash, backslash, null byte)
+- `_bmad-output/implementation-artifacts/deferred-work.md` — 4 deferred review findings (Windows-specific)
+
+### Review Findings
+
+- [x] [Review][Decision] Sidecar path in PromptAssembler not validated for containment — patched: added `GetFullPath` + `StartsWith` containment check on sidecar path [PromptAssembler.cs:50]
+- [x] [Review][Patch] Non-string entries in reads_from/writes_to/files_exist silently skipped — patched: added `else` branches emitting type validation errors [WorkflowValidator.cs:267,279,310]
+- [x] [Review][Patch] ConversationStore null-byte stepId test missing — patched: added `StepIdWithNullByte_ThrowsArgumentException` [ConversationStoreTests.cs]
+- [x] [Review][Patch] ValidatePathSafety embeds raw value (potentially containing null byte) in error message — patched: null bytes sanitised to `\0` literal before embedding [WorkflowValidator.cs:434]
+- [x] [Review][Patch] ValidatePathSafety return value unused by all callers — patched: changed return type to void, replaced `return false/true` with `return` [WorkflowValidator.cs:426]
+- [x] [Review][Defer] StringComparison.Ordinal in defence-in-depth StartsWith checks is case-sensitive — incorrect on Windows (NTFS case-insensitive). Should use OrdinalIgnoreCase on Windows. [PromptAssembler.cs:32, ArtifactValidator.cs:34, CompletionChecker.cs:33] — deferred, cross-platform concern not blocking macOS/Linux beta
+- [x] [Review][Defer] Windows reserved device names (CON, NUL, AUX) and ADS colons not rejected — Low severity, Windows-specific. [WorkflowValidator.cs:402-450] — deferred, not applicable to current macOS/Linux target
+- [x] [Review][Defer] Windows-illegal filename chars (<, >, ", |, *, ?) not blocked in ConversationStore stepId check — Low severity, Windows-specific. [ConversationStore.cs:172] — deferred, not applicable to current target
+- [x] [Review][Defer] TrimEnd on root path "/" produces empty string allowing all paths to pass containment — theoretical edge case, instance/workflow folders should never be root. [PromptAssembler.cs:31, ArtifactValidator.cs:33] — deferred, no practical risk
+- `AgentRun.Umbraco.Tests/Workflows/WorkflowValidatorTests.cs` — 14 new path traversal tests + `FindRepositoryRoot` helper
+- `AgentRun.Umbraco.Tests/Engine/PromptAssemblerTests.cs` — 2 new defence-in-depth tests
+- `AgentRun.Umbraco.Tests/Engine/ArtifactValidatorTests.cs` — 1 new defence-in-depth test
+- `AgentRun.Umbraco.Tests/Engine/CompletionCheckerTests.cs` — 1 new defence-in-depth test
+- `AgentRun.Umbraco.Tests/Instances/ConversationStoreTests.cs` — 2 new defence-in-depth tests

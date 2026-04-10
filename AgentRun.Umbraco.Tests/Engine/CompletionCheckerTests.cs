@@ -79,4 +79,17 @@ public class CompletionCheckerTests
         Assert.That(result.Passed, Is.True);
         Assert.That(result.MissingFiles, Is.Empty);
     }
+
+    // --- Defence-in-depth path traversal (Story 9.10) ---
+
+    [Test]
+    public void FilesExistOutsideInstanceFolder_ThrowsUnauthorizedAccess()
+    {
+        var check = new CompletionCheckDefinition { FilesExist = ["../../escape.txt"] };
+
+        var ex = Assert.ThrowsAsync<UnauthorizedAccessException>(
+            async () => await _checker.CheckAsync(check, _tempDir, CancellationToken.None));
+
+        Assert.That(ex!.Message, Does.Contain("resolves outside the instance folder"));
+    }
 }
