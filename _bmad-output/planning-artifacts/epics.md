@@ -1713,6 +1713,104 @@ So that I can see the engine handle a different kind of task than content qualit
 
 _Full story spec to be created by SM after Stories 9.0, 9.1c, and 9.6 are complete (or in flight)._
 
+### Story 9.10: Workflow Definition Path Traversal Validation (BETA BLOCKER — security)
+
+_Added 2026-04-10 — identified by pre-launch code review (Codex). The runtime tool layer (`ReadFileTool`, `WriteFileTool`, `ListFilesTool`) correctly uses `PathSandbox.ValidatePath()` to canonicalise paths and reject traversal. However, workflow-defined values — `agent`, `reads_from`, `writes_to`, `completion_check.files_exist`, and step IDs — enter the system through `WorkflowValidator` and are consumed by `PromptAssembler`, `ArtifactValidator`, `CompletionChecker`, and `ConversationStore` without any path-safety validation. A malicious or malformed workflow YAML can use `../../` values to read arbitrary host files into an LLM system prompt, probe file existence outside the instance folder, or inject path separators via step IDs into conversation filenames. In a package that sends host content to third-party LLM providers, this is a launch-blocking file-exfiltration risk._
+
+As the AgentRun engine,
+I want all workflow-defined path values and identifiers validated for path safety at workflow-load time,
+So that no workflow definition — whether authored by a package consumer, a community contributor, or an attacker — can escape its intended sandbox boundaries through the definition layer.
+
+**Scope — what needs validating:**
+
+| Field | Consumed by | Current validation | Required validation |
+|-------|------------|-------------------|-------------------|
+| `agent` | `PromptAssembler.cs` (`Path.Combine` + `File.ReadAllTextAsync`) | Non-empty string | Relative path, no traversal, no absolute, must resolve within workflow folder |
+| `reads_from[]` | `ArtifactValidator.cs`, `PromptAssembler.cs` (`Path.Combine` + `File.Exists`) | None | Relative path, no traversal, no absolute, must resolve within instance folder |
+| `writes_to[]` | `ArtifactValidator.cs` | None | Relative path, no traversal, no absolute, must resolve within instance folder |
+| `completion_check.files_exist[]` | `CompletionChecker.cs` (`Path.Combine` + `File.Exists`) | Non-empty list | Relative path, no traversal, no absolute, must resolve within instance folder |
+| Step `id` | `ConversationStore.cs` (embedded in `conversation-{stepId}.jsonl` filename) | Non-empty string | No path separators (`/`, `\`), no traversal segments (`..`), no null bytes |
+
+**Validation rules (architect's locked decisions):**
+
+1. **Reject absolute paths** — any value starting with `/`, `\`, or a drive letter (e.g. `C:`) fails validation at workflow load.
+2. **Reject traversal segments** — any value containing `..` as a path segment (i.e. `../`, `..\`, or standalone `..`) fails validation.
+3. **Reject path separators in step IDs** — step `id` values must not contain `/`, `\`, or null bytes. They are used as filename components, not paths.
+4. **Validation lives in `WorkflowValidator`** — this is the existing gatekeeper; all path-safety rules are additions to the existing `ValidateStep()` method. No new classes needed.
+5. **Validation runs at workflow-load time** — broken workflows fail registration in `WorkflowRegistry`, never appear in the UI, never reach execution.
+6. **`PathSandbox` is NOT called from the validator** — the validator doesn't have runtime folder paths (instance folder doesn't exist yet at load time). Instead, apply structural checks (no absolute paths, no traversal segments, no separators in IDs). The runtime consumers (`PromptAssembler`, `ArtifactValidator`, `CompletionChecker`) should additionally canonicalise against their runtime root as a defence-in-depth layer.
+7. **Defence-in-depth canonicalisation in consumers** — after the validator structural checks, each consumer that resolves a workflow-defined path must call `Path.GetFullPath()` and verify the result starts with the expected root (workflow folder for `agent`, instance folder for artifacts). This mirrors what `PathSandbox.ValidatePath()` does for tool arguments but uses the appropriate root per context.
+
+**Files in scope:** `WorkflowValidator.cs` (structural validation rules), `PromptAssembler.cs` (defence-in-depth canonicalisation for `agent` and `reads_from`), `ArtifactValidator.cs` (defence-in-depth canonicalisation for `reads_from`), `CompletionChecker.cs` (defence-in-depth canonicalisation for `files_exist`), `ConversationStore.cs` (defence-in-depth check on step ID), `WorkflowValidatorTests.cs` (new tests for every rejection rule), existing consumer test files (canonicalisation tests).
+
+**Failure & Edge Cases:**
+
+- `agent: "../../etc/passwd"` → rejected at workflow load with clear error message naming the offending field and value
+- `reads_from: ["../../../appsettings.json"]` → rejected at workflow load
+- Step `id: "../escape"` → rejected at workflow load (contains path separator)
+- Step `id: "valid-step"` with `writes_to: ["/etc/crontab"]` → rejected (absolute path)
+- Workflow with one valid step and one invalid step → entire workflow fails registration (fail-fast, not partial)
+- Nested traversal like `foo/../../bar` → rejected (contains `..` segment)
+- Consumer receives a value that passed validation but still escapes after `Path.GetFullPath()` resolution (e.g. via symlink) → defence-in-depth canonicalisation catches it and throws `UnauthorizedAccessException`
+- **Deny-by-default statement:** unrecognised or structurally suspect path patterns (encoded separators, null bytes, unicode normalization tricks) MUST be rejected. If in doubt, reject.
+
+**What NOT to Build:**
+
+- Do NOT modify `PathSandbox.cs` — the existing runtime tool validation is correct; this story adds the definition-layer validation that was missing
+- Do NOT add path validation to the JSON Schema (`workflow-schema.json`) — JSON Schema `pattern` constraints are too weak for proper path validation; this is code-level validation
+- Do NOT modify any tool implementation (`ReadFileTool`, `WriteFileTool`, `ListFilesTool`, `FetchUrlTool`) — those are already correctly sandboxed
+- Do NOT modify any workflow YAML files or agent prompt files
+- Do NOT add new configuration options — these are unconditional security rules, not tunables
+
+_Full story spec to be created by SM before development begins._
+
+### Story 9.11: Fail Workflow Registration on Missing Agent Files
+
+_Added 2026-04-10 — identified by pre-launch code review (Codex). `WorkflowRegistry.VerifyAgentFiles()` logs a warning when an agent file referenced by a step is missing, but returns `void` and does not block registration. The workflow appears in the UI and is selectable, but execution is guaranteed to fail later in `PromptAssembler` when it tries to read the missing file. By contrast, `VerifyToolReferences()` already returns `bool` and blocks registration on unknown tools — the inconsistency is clear. This is a first-impression issue: a beta tester who selects a workflow and immediately gets an error will question the package's quality._
+
+As a backoffice user,
+I want workflows with missing agent files to be rejected at registration time,
+So that only workflows that can actually execute appear in the UI.
+
+**Acceptance Criteria:**
+
+**Given** a workflow folder contains a `workflow.yaml` that references an agent file (e.g. `agents/scanner.md`)
+**When** the agent file does not exist on disk
+**Then** the workflow is NOT registered in the `WorkflowRegistry`
+**And** a warning is logged identifying the workflow alias, the step ID, and the missing agent file path
+**And** the workflow does NOT appear in the workflow list API or the dashboard UI
+
+**Given** a workflow has multiple steps and only one step references a missing agent file
+**When** the workflow is loaded
+**Then** the entire workflow fails registration (not partial — consistent with how `VerifyToolReferences` works)
+
+**Given** a workflow has all agent files present
+**When** the workflow is loaded
+**Then** registration succeeds as it does today (no regression)
+
+**Implementation notes:**
+
+- Change `VerifyAgentFiles()` in `WorkflowRegistry.cs` to return `bool` (matching `VerifyToolReferences()`)
+- Return `false` if any agent file is missing
+- Add a registration-blocking check in `LoadSingleWorkflowAsync()` after the call, matching the existing pattern for tool references
+- Update or add tests in `WorkflowRegistryTests.cs` to verify that missing agent files block registration
+
+**Failure & Edge Cases:**
+
+- All agent files missing → workflow not registered, all missing files listed in log
+- Agent path is empty/whitespace → already handled by `WorkflowValidator` (required field); `VerifyAgentFiles` skips these with `continue` — preserve that behaviour
+- Agent file exists at load time but is deleted later → out of scope; `PromptAssembler` already throws `AgentFileNotFoundException` at execution time
+- Workflow folder itself is missing or inaccessible → already handled by existing registry error handling
+- **Deny-by-default statement:** if the agent file cannot be confirmed as present and readable, the workflow must not register
+
+**What NOT to Build:**
+
+- Do NOT add agent file content validation (e.g. checking markdown structure) — presence check only
+- Do NOT add hot-reload of agent files — if a file is added later, the registry reloads on app restart as it does today
+- Do NOT change `VerifyToolReferences` — it's already correct; this story makes `VerifyAgentFiles` match it
+
+_Full story spec to be created by SM before development begins._
+
 ### Story 9.5: Private Beta Distribution Plan
 
 _Added 2026-04-07 — defines the beta release milestone explicitly. Previously there was no distinction between "beta" and "public launch" in the epic plan, which created ambiguity about when Epic 9 was "done"._
@@ -1723,7 +1821,7 @@ So that real users exercise the package before public launch.
 
 **Acceptance Criteria:**
 
-**Given** Stories 9.6, 9.0, 9.1a, 9.1b, 9.1c, 9.2, 9.3, and 9.4 are all complete
+**Given** Stories 9.6, 9.0, 9.1a, 9.1b, 9.1c, 9.2, 9.3, 9.4, 9.10, and 9.11 are all complete
 **When** the beta is packaged
 **Then** the NuGet package is built with version `1.0.0-beta.1`
 **And** it is pushed to NuGet.org as a pre-release package (NOT listed on Umbraco Marketplace)

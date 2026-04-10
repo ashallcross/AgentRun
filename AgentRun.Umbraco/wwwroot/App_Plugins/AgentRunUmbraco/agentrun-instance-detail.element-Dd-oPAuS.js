@@ -2,7 +2,7 @@ import { UmbLitElement as M } from "@umbraco-cms/backoffice/lit-element";
 import { css as I, property as d, state as c, customElement as z, html as r, nothing as p } from "@umbraco-cms/backoffice/external/lit";
 import { UMB_AUTH_CONTEXT as F } from "@umbraco-cms/backoffice/auth";
 import { umbConfirmModal as U } from "@umbraco-cms/backoffice/modal";
-import { s as W, b as j, a as V, d as T, m as P, e as q, r as K, f as J, h as O, i as G } from "./index-CVjODUoS.js";
+import { s as W, b as j, a as V, d as T, m as P, e as q, r as K, f as J, h as O, i as G } from "./index-BHPGdLBM.js";
 import { n as X } from "./instance-list-helpers-Cp7Qb08Y.js";
 var Y = Object.defineProperty, Q = Object.getOwnPropertyDescriptor, k = (t, e, s, i) => {
   for (var a = i > 1 ? void 0 : i ? Q(e, s) : e, o = t.length - 1, n; o >= 0; o--)
@@ -1396,4 +1396,4 @@ export {
   u as AgentRunInstanceDetailElement,
   ft as default
 };
-//# sourceMappingURL=agentrun-instance-detail.element-BP_-FB3j.js.map
+//# sourceMappingURL=agentrun-instance-detail.element-Dd-oPAuS.js.map

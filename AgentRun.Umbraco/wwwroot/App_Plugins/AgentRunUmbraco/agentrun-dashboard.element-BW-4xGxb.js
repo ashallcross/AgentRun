@@ -10,19 +10,19 @@ let e = class extends l {
     super(...arguments), this._routes = [
       {
         path: "workflows/:alias",
-        component: () => import("./agentrun-instance-list.element-CLeDTlYM.js"),
+        component: () => import("./agentrun-instance-list.element-Dk50xD-L.js"),
         setup: () => {
         }
       },
       {
         path: "workflows",
-        component: () => import("./agentrun-workflow-list.element-D7Fnv1HL.js"),
+        component: () => import("./agentrun-workflow-list.element-BRcT9EFJ.js"),
         setup: () => {
         }
       },
       {
         path: "instances/:id",
-        component: () => import("./agentrun-instance-detail.element-BP_-FB3j.js"),
+        component: () => import("./agentrun-instance-detail.element-Dd-oPAuS.js"),
         setup: () => {
         }
       },
@@ -53,4 +53,4 @@ export {
   e as AgentRunDashboardElement,
   f as default
 };
-//# sourceMappingURL=agentrun-dashboard.element-Bww_aLCz.js.map
+//# sourceMappingURL=agentrun-dashboard.element-BW-4xGxb.js.map

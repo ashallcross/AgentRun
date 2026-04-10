@@ -1,7 +1,7 @@
-import { UmbLitElement as C } from "@umbraco-cms/backoffice/lit-element";
-import { css as A, property as g, customElement as z, html as l, state as w, nothing as k } from "@umbraco-cms/backoffice/external/lit";
+import { UmbLitElement as A } from "@umbraco-cms/backoffice/lit-element";
+import { css as C, property as g, customElement as z, html as c, state as _, nothing as k } from "@umbraco-cms/backoffice/external/lit";
 import { UMB_AUTH_CONTEXT as D } from "@umbraco-cms/backoffice/auth";
-const nt = [
+const ot = [
   {
     type: "section",
     alias: "AgentRun.Umbraco.Section",
@@ -42,7 +42,7 @@ const nt = [
     type: "sectionView",
     alias: "AgentRun.Umbraco.SectionView.Dashboard",
     name: "Agent Workflows Dashboard View",
-    element: () => import("./agentrun-dashboard.element-Bww_aLCz.js"),
+    element: () => import("./agentrun-dashboard.element-BW-4xGxb.js"),
     meta: {
       label: "Overview",
       pathname: "overview",
@@ -86,62 +86,62 @@ function N(t) {
   return B(e);
 }
 function L(t) {
-  const e = [], n = t.replace(/```[\s\S]*?```/g, (i) => {
-    const u = e.length, d = i.replace(/^```[^\n]*\n?/, "").replace(/\n?```$/, "");
-    return e.push(`<pre><code>${x(d)}</code></pre>`), `\0CB${u}\0`;
+  const e = [], o = t.replace(/```[\s\S]*?```/g, (a) => {
+    const u = e.length, f = a.replace(/^```[^\n]*\n?/, "").replace(/\n?```$/, "");
+    return e.push(`<pre><code>${x(f)}</code></pre>`), `\0CB${u}\0`;
   }).split(`
 `), r = [];
-  let a = 0;
-  for (; a < n.length; ) {
-    const i = n[a], u = i.match(/^\x00CB(\d+)\x00$/);
+  let i = 0;
+  for (; i < o.length; ) {
+    const a = o[i], u = a.match(/^\x00CB(\d+)\x00$/);
     if (u) {
-      r.push(e[parseInt(u[1], 10)]), a++;
+      r.push(e[parseInt(u[1], 10)]), i++;
       continue;
     }
-    if (/^(---+|\*\*\*+|___+)\s*$/.test(i)) {
-      r.push("<hr>"), a++;
+    if (/^(---+|\*\*\*+|___+)\s*$/.test(a)) {
+      r.push("<hr>"), i++;
       continue;
     }
-    const d = i.match(/^(#{1,6})\s+(.+)$/);
-    if (d) {
-      const s = d[1].length;
-      r.push(`<h${s}>${h(d[2])}</h${s}>`), a++;
+    const f = a.match(/^(#{1,6})\s+(.+)$/);
+    if (f) {
+      const s = f[1].length;
+      r.push(`<h${s}>${h(f[2])}</h${s}>`), i++;
       continue;
     }
-    if (i.startsWith("> ")) {
+    if (a.startsWith("> ")) {
       const s = [];
-      for (; a < n.length && n[a].startsWith("> "); )
-        s.push(n[a].slice(2)), a++;
+      for (; i < o.length && o[i].startsWith("> "); )
+        s.push(o[i].slice(2)), i++;
       r.push(`<blockquote>${h(s.join("<br>"))}</blockquote>`);
       continue;
     }
-    if (/^[-*]\s+/.test(i)) {
+    if (/^[-*]\s+/.test(a)) {
       const s = [];
-      for (; a < n.length && /^[-*]\s+/.test(n[a]); )
-        s.push(n[a].replace(/^[-*]\s+/, "")), a++;
+      for (; i < o.length && /^[-*]\s+/.test(o[i]); )
+        s.push(o[i].replace(/^[-*]\s+/, "")), i++;
       r.push("<ul>" + s.map(($) => `<li>${h($)}</li>`).join("") + "</ul>");
       continue;
     }
-    if (/^\d+\.\s+/.test(i)) {
+    if (/^\d+\.\s+/.test(a)) {
       const s = [];
-      for (; a < n.length && /^\d+\.\s+/.test(n[a]); )
-        s.push(n[a].replace(/^\d+\.\s+/, "")), a++;
+      for (; i < o.length && /^\d+\.\s+/.test(o[i]); )
+        s.push(o[i].replace(/^\d+\.\s+/, "")), i++;
       r.push("<ol>" + s.map(($) => `<li>${h($)}</li>`).join("") + "</ol>");
       continue;
     }
-    if (i.trim() === "") {
-      a++;
+    if (a.trim() === "") {
+      i++;
       continue;
     }
-    const y = [];
-    for (; a < n.length && n[a].trim() !== "" && !/^(#{1,6}\s|[-*]\s|>\s|\d+\.\s|---+|___+|\*\*\*+|\x00CB)/.test(n[a]); )
-      y.push(n[a]), a++;
-    y.length > 0 && r.push(`<p>${h(y.join("<br>"))}</p>`);
+    const b = [];
+    for (; i < o.length && o[i].trim() !== "" && !/^(#{1,6}\s|[-*]\s|>\s|\d+\.\s|---+|___+|\*\*\*+|\x00CB)/.test(o[i]); )
+      b.push(o[i]), i++;
+    b.length > 0 && r.push(`<p>${h(b.join("<br>"))}</p>`);
   }
   return r.join("");
 }
 function h(t) {
-  return t = t.replace(/`([^`]+)`/g, (e, o) => `<code>${x(o)}</code>`), t = t.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>"), t = t.replace(/__(.+?)__/g, "<strong>$1</strong>"), t = t.replace(/\*(.+?)\*/g, "<em>$1</em>"), t = t.replace(/_(.+?)_/g, "<em>$1</em>"), t = t.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (e, o, n) => /^https?:\/\//i.test(n) ? `<a href="${M(n)}" target="_blank" rel="noopener">${x(o)}</a>` : o), t;
+  return t = t.replace(/`([^`]+)`/g, (e, n) => `<code>${x(n)}</code>`), t = t.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>"), t = t.replace(/__(.+?)__/g, "<strong>$1</strong>"), t = t.replace(/\*(.+?)\*/g, "<em>$1</em>"), t = t.replace(/_(.+?)_/g, "<em>$1</em>"), t = t.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (e, n, o) => /^https?:\/\//i.test(o) ? `<a href="${M(o)}" target="_blank" rel="noopener">${x(n)}</a>` : n), t;
 }
 function x(t) {
   return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -151,45 +151,45 @@ function M(t) {
 }
 function B(t) {
   const e = document.createElement("template");
-  e.innerHTML = t, E(e.content);
-  const o = document.createElement("div");
-  return o.appendChild(e.content.cloneNode(!0)), o.innerHTML;
+  e.innerHTML = t, T(e.content);
+  const n = document.createElement("div");
+  return n.appendChild(e.content.cloneNode(!0)), n.innerHTML;
 }
-function E(t) {
+function T(t) {
   const e = Array.from(t.childNodes);
-  for (const o of e)
-    if (o.nodeType === Node.ELEMENT_NODE) {
-      const n = o, r = n.tagName.toLowerCase();
+  for (const n of e)
+    if (n.nodeType === Node.ELEMENT_NODE) {
+      const o = n, r = o.tagName.toLowerCase();
       if (j.has(r)) {
-        const a = Array.from(n.attributes);
-        for (const i of a)
-          r === "a" && (i.name === "href" || i.name === "target" || i.name === "rel") || n.removeAttribute(i.name);
+        const i = Array.from(o.attributes);
+        for (const a of i)
+          r === "a" && (a.name === "href" || a.name === "target" || a.name === "rel") || o.removeAttribute(a.name);
         if (r === "a") {
-          const i = n.getAttribute("href") ?? "";
-          /^https?:\/\//i.test(i) || n.removeAttribute("href"), n.setAttribute("target", "_blank"), n.setAttribute("rel", "noopener");
+          const a = o.getAttribute("href") ?? "";
+          /^https?:\/\//i.test(a) || o.removeAttribute("href"), o.setAttribute("target", "_blank"), o.setAttribute("rel", "noopener");
         }
-        E(n);
+        T(o);
       } else {
-        const a = document.createTextNode(n.textContent ?? "");
-        t.replaceChild(a, o);
+        const i = document.createTextNode(o.textContent ?? "");
+        t.replaceChild(i, n);
       }
-    } else o.nodeType !== Node.TEXT_NODE && t.removeChild(o);
+    } else n.nodeType !== Node.TEXT_NODE && t.removeChild(n);
 }
-var W = Object.defineProperty, q = Object.getOwnPropertyDescriptor, T = (t, e, o, n) => {
-  for (var r = n > 1 ? void 0 : n ? q(e, o) : e, a = t.length - 1, i; a >= 0; a--)
-    (i = t[a]) && (r = (n ? i(e, o, r) : i(r)) || r);
-  return n && r && W(e, o, r), r;
+var W = Object.defineProperty, q = Object.getOwnPropertyDescriptor, S = (t, e, n, o) => {
+  for (var r = o > 1 ? void 0 : o ? q(e, n) : e, i = t.length - 1, a; i >= 0; i--)
+    (a = t[i]) && (r = (o ? a(e, n, r) : a(r)) || r);
+  return o && r && W(e, n, r), r;
 };
-let v = class extends C {
+let v = class extends A {
   constructor() {
     super(...arguments), this.content = "";
   }
   render() {
     const t = N(this.content);
-    return l`<div class="markdown-body" .innerHTML=${t}></div>`;
+    return c`<div class="markdown-body" .innerHTML=${t}></div>`;
   }
 };
-v.styles = A`
+v.styles = C`
     :host {
       display: block;
       font-family: var(--uui-font-family);
@@ -228,27 +228,27 @@ v.styles = A`
     hr { border: none; border-top: 1px solid var(--uui-color-border); margin: var(--uui-size-space-4) 0; }
     strong { font-weight: 700; }
   `;
-T([
+S([
   g({ type: String })
 ], v.prototype, "content", 2);
-v = T([
+v = S([
   z("agentrun-markdown-renderer")
 ], v);
-var G = Object.defineProperty, H = Object.getOwnPropertyDescriptor, P = (t, e, o, n) => {
-  for (var r = n > 1 ? void 0 : n ? H(e, o) : e, a = t.length - 1, i; a >= 0; a--)
-    (i = t[a]) && (r = (n ? i(e, o, r) : i(r)) || r);
-  return n && r && G(e, o, r), r;
+var G = Object.defineProperty, H = Object.getOwnPropertyDescriptor, P = (t, e, n, o) => {
+  for (var r = o > 1 ? void 0 : o ? H(e, n) : e, i = t.length - 1, a; i >= 0; i--)
+    (a = t[i]) && (r = (o ? a(e, n, r) : a(r)) || r);
+  return o && r && G(e, n, r), r;
 };
-let b = class extends C {
+let w = class extends A {
   constructor() {
     super(...arguments), this.steps = [];
   }
   _deriveArtifacts() {
     const t = [];
     for (const e of this.steps)
-      if (!(!e.writesTo || e.writesTo.length === 0))
-        for (const o of e.writesTo)
-          t.push({ path: o, stepName: e.name, stepStatus: e.status });
+      if (!(!e.writesTo || e.writesTo.length === 0) && e.status === "Complete")
+        for (const n of e.writesTo)
+          t.push({ path: n, stepName: e.name, stepStatus: e.status });
     return t;
   }
   _getFilename(t) {
@@ -256,7 +256,7 @@ let b = class extends C {
     return e[e.length - 1];
   }
   _onArtifactClick(t) {
-    t.stepStatus === "Complete" && this.dispatchEvent(
+    this.dispatchEvent(
       new CustomEvent("artifact-selected", {
         detail: { path: t.path, stepName: t.stepName },
         bubbles: !0,
@@ -265,30 +265,29 @@ let b = class extends C {
     );
   }
   _onKeyDown(t, e) {
-    e.stepStatus === "Complete" && (t.key === "Enter" || t.key === " ") && (t.preventDefault(), this._onArtifactClick(e));
+    (t.key === "Enter" || t.key === " ") && (t.preventDefault(), this._onArtifactClick(e));
   }
   render() {
     const t = this._deriveArtifacts();
-    return l`
+    return c`
       <h4 class="heading">Artifacts</h4>
-      ${t.length === 0 ? l`<p class="empty-state">No artifacts yet.</p>` : l`
+      ${t.length === 0 ? c`<p class="empty-state">No artifacts yet.</p>` : c`
             <div class="artifact-list" role="list">
               ${t.map(
-      (e) => l`
+      (e) => c`
                   <div
-                    class="artifact-item ${e.stepStatus !== "Complete" ? "disabled" : ""}"
+                    class="artifact-item"
                     role="listitem"
                   >
                     <uui-icon class="file-icon" name="icon-document"></uui-icon>
                     <div class="artifact-text">
                       <span
                         class="artifact-name"
-                        role="${e.stepStatus === "Complete" ? "button" : "text"}"
-                        tabindex="${e.stepStatus === "Complete" ? "0" : "-1"}"
+                        role="button"
+                        tabindex="0"
                         aria-label="${this._getFilename(e.path)} from ${e.stepName}"
-                        aria-disabled="${e.stepStatus !== "Complete"}"
                         @click=${() => this._onArtifactClick(e)}
-                        @keydown=${(o) => this._onKeyDown(o, e)}
+                        @keydown=${(n) => this._onKeyDown(n, e)}
                       >${this._getFilename(e.path)}</span>
                       <span class="artifact-step">${e.stepName}</span>
                     </div>
@@ -300,7 +299,7 @@ let b = class extends C {
     `;
   }
 };
-b.styles = A`
+w.styles = C`
     :host {
       display: block;
     }
@@ -332,18 +331,10 @@ b.styles = A`
       gap: var(--uui-size-space-3);
     }
 
-    .artifact-item.disabled {
-      color: var(--uui-color-disabled);
-    }
-
     .file-icon {
       flex-shrink: 0;
       margin-top: 2px;
       color: var(--uui-color-text-alt);
-    }
-
-    .artifact-item.disabled .file-icon {
-      color: var(--uui-color-disabled);
     }
 
     .artifact-text {
@@ -370,64 +361,56 @@ b.styles = A`
       border-radius: 2px;
     }
 
-    .artifact-item.disabled .artifact-name {
-      color: var(--uui-color-disabled);
-      cursor: default;
-    }
-
     .artifact-step {
       color: var(--uui-color-text-alt);
       font-size: var(--uui-type-small-size);
     }
 
-    .artifact-item.disabled .artifact-step {
-      color: var(--uui-color-disabled);
-    }
   `;
 P([
   g({ attribute: !1 })
-], b.prototype, "steps", 2);
-b = P([
+], w.prototype, "steps", 2);
+w = P([
   z("agentrun-artifact-list")
-], b);
+], w);
 function F(t, e) {
   if (!e) return t;
   if (typeof e.path == "string") {
-    const o = e.path.split("/");
-    return o[o.length - 1] || t;
+    const n = e.path.split("/");
+    return n[n.length - 1] || t;
   }
   if (typeof e.url == "string")
     return e.url.length > 60 ? e.url.slice(0, 60) + "…" : e.url;
-  for (const o of Object.values(e))
-    if (typeof o == "string") return o;
+  for (const n of Object.values(e))
+    if (typeof n == "string") return n;
   return t;
 }
-const f = "/umbraco/api/agentrun";
-async function _(t, e) {
-  const o = { Accept: "application/json" };
-  e && (o.Authorization = `Bearer ${e}`);
-  const n = await fetch(`${f}${t}`, { headers: o });
-  if (!n.ok)
-    throw new Error(`API error: ${n.status} ${n.statusText}`);
-  return n.json();
+const d = "/umbraco/api/agentrun";
+async function y(t, e) {
+  const n = { Accept: "application/json" };
+  e && (n.Authorization = `Bearer ${e}`);
+  const o = await fetch(`${d}${t}`, { headers: n });
+  if (!o.ok)
+    throw new Error(`API error: ${o.status} ${o.statusText}`);
+  return o.json();
 }
 async function J(t, e) {
-  const o = {};
-  e && (o.Authorization = `Bearer ${e}`);
-  const n = await fetch(`${f}${t}`, { headers: o, credentials: "same-origin" });
-  if (!n.ok)
-    throw new Error(`API error: ${n.status} ${n.statusText}`);
-  return n.text();
+  const n = {};
+  e && (n.Authorization = `Bearer ${e}`);
+  const o = await fetch(`${d}${t}`, { headers: n, credentials: "same-origin" });
+  if (!o.ok)
+    throw new Error(`API error: ${o.status} ${o.statusText}`);
+  return o.text();
 }
-async function R(t, e, o) {
-  const n = {
+async function R(t, e, n) {
+  const o = {
     Accept: "application/json",
     "Content-Type": "application/json"
   };
-  o && (n.Authorization = `Bearer ${o}`);
-  const r = await fetch(`${f}${t}`, {
+  n && (o.Authorization = `Bearer ${n}`);
+  const r = await fetch(`${d}${t}`, {
     method: "POST",
-    headers: n,
+    headers: o,
     body: JSON.stringify(e)
   });
   if (!r.ok)
@@ -435,98 +418,98 @@ async function R(t, e, o) {
   return r.json();
 }
 function rt(t) {
-  return _("/workflows", t);
-}
-function at(t, e) {
-  return _(`/instances?workflowAlias=${encodeURIComponent(t)}`, e);
+  return y("/workflows", t);
 }
 function it(t, e) {
+  return y(`/instances?workflowAlias=${encodeURIComponent(t)}`, e);
+}
+function at(t, e) {
   return R("/instances", { workflowAlias: t }, e);
 }
 function st(t, e) {
-  return _(`/instances/${encodeURIComponent(t)}`, e);
+  return y(`/instances/${encodeURIComponent(t)}`, e);
 }
-function lt(t, e) {
+function ct(t, e) {
   return R(`/instances/${encodeURIComponent(t)}/cancel`, {}, e);
 }
-async function ct(t, e, o) {
-  const n = { "Content-Type": "application/json" };
-  o && (n.Authorization = `Bearer ${o}`);
+async function lt(t, e, n) {
+  const o = { "Content-Type": "application/json" };
+  n && (o.Authorization = `Bearer ${n}`);
   const r = await fetch(
-    `${f}/instances/${encodeURIComponent(t)}/message`,
-    { method: "POST", headers: n, body: JSON.stringify({ message: e }) }
+    `${d}/instances/${encodeURIComponent(t)}/message`,
+    { method: "POST", headers: o, body: JSON.stringify({ message: e }) }
   );
   if (!r.ok)
     throw new Error(`API error: ${r.status} ${r.statusText}`);
 }
 async function ut(t, e) {
-  const o = {};
-  return e && (o.Authorization = `Bearer ${e}`), fetch(`${f}/instances/${encodeURIComponent(t)}/start`, {
+  const n = {};
+  return e && (n.Authorization = `Bearer ${e}`), fetch(`${d}/instances/${encodeURIComponent(t)}/start`, {
     method: "POST",
-    headers: o
+    headers: n
   });
 }
 async function pt(t, e) {
-  const o = {};
-  return e && (o.Authorization = `Bearer ${e}`), fetch(`${f}/instances/${encodeURIComponent(t)}/retry`, {
+  const n = {};
+  return e && (n.Authorization = `Bearer ${e}`), fetch(`${d}/instances/${encodeURIComponent(t)}/retry`, {
     method: "POST",
-    headers: o
+    headers: n
   });
 }
-function dt(t, e, o) {
-  return _(
+function ft(t, e, n) {
+  return y(
     `/instances/${encodeURIComponent(t)}/conversation/${encodeURIComponent(e)}`,
-    o
+    n
   );
 }
-function ft(t) {
+function dt(t) {
   const e = [];
-  for (const o of t)
-    if (o.role === "assistant" && o.content != null && !o.toolCallId)
+  for (const n of t)
+    if (n.role === "assistant" && n.content != null && !n.toolCallId)
       e.push({
         role: "agent",
-        content: o.content,
-        timestamp: o.timestamp
+        content: n.content,
+        timestamp: n.timestamp
       });
-    else if (o.role === "assistant" && o.toolCallId) {
-      let n = null;
-      if (o.toolArguments)
+    else if (n.role === "assistant" && n.toolCallId) {
+      let o = null;
+      if (n.toolArguments)
         try {
-          n = JSON.parse(o.toolArguments);
+          o = JSON.parse(n.toolArguments);
         } catch {
-          n = null;
+          o = null;
         }
       const r = {
-        toolCallId: o.toolCallId,
-        toolName: o.toolName ?? "unknown",
-        summary: F(o.toolName ?? "unknown", n),
-        arguments: n,
+        toolCallId: n.toolCallId,
+        toolName: n.toolName ?? "unknown",
+        summary: F(n.toolName ?? "unknown", o),
+        arguments: o,
         result: null,
         status: "complete"
-      }, a = V(e);
-      a ? a.toolCalls = [...a.toolCalls ?? [], r] : e.push({
+      }, i = V(e);
+      i ? i.toolCalls = [...i.toolCalls ?? [], r] : e.push({
         role: "agent",
         content: "",
-        timestamp: o.timestamp,
+        timestamp: n.timestamp,
         toolCalls: [r]
       });
-    } else if (o.role === "tool" && o.toolCallId) {
-      const n = o.toolResult ?? null, r = typeof n == "string" && n.startsWith("Tool '") && (n.includes("error") || n.includes("failed"));
-      for (let a = e.length - 1; a >= 0; a--) {
-        const u = e[a].toolCalls?.find((d) => d.toolCallId === o.toolCallId);
+    } else if (n.role === "tool" && n.toolCallId) {
+      const o = n.toolResult ?? null, r = typeof o == "string" && o.startsWith("Tool '") && (o.includes("error") || o.includes("failed"));
+      for (let i = e.length - 1; i >= 0; i--) {
+        const u = e[i].toolCalls?.find((f) => f.toolCallId === n.toolCallId);
         if (u) {
-          u.result = n, r && (u.status = "error");
+          u.result = o, r && (u.status = "error");
           break;
         }
       }
-    } else o.role === "user" && o.content != null ? e.push({
+    } else n.role === "user" && n.content != null ? e.push({
       role: "user",
-      content: o.content,
-      timestamp: o.timestamp
-    }) : o.role === "system" && o.content != null && e.push({
+      content: n.content,
+      timestamp: n.timestamp
+    }) : n.role === "system" && n.content != null && e.push({
       role: "system",
-      content: o.content,
-      timestamp: o.timestamp
+      content: n.content,
+      timestamp: n.timestamp
     });
   return e;
 }
@@ -538,37 +521,37 @@ function V(t) {
 function K(t) {
   return t.split("/").map(encodeURIComponent).join("/");
 }
-function S(t, e, o) {
+function I(t, e, n) {
   return J(
     `/instances/${encodeURIComponent(t)}/artifacts/${K(e)}`,
-    o
+    n
   );
 }
 var X = Object.defineProperty, Q = Object.getOwnPropertyDescriptor, U = (t) => {
   throw TypeError(t);
-}, p = (t, e, o, n) => {
-  for (var r = n > 1 ? void 0 : n ? Q(e, o) : e, a = t.length - 1, i; a >= 0; a--)
-    (i = t[a]) && (r = (n ? i(e, o, r) : i(r)) || r);
-  return n && r && X(e, o, r), r;
-}, O = (t, e, o) => e.has(t) || U("Cannot " + o), I = (t, e, o) => (O(t, e, "read from private field"), o ? o.call(t) : e.get(t)), Y = (t, e, o) => e.has(t) ? U("Cannot add the same private member more than once") : e instanceof WeakSet ? e.add(t) : e.set(t, o), Z = (t, e, o, n) => (O(t, e, "write to private field"), e.set(t, o), o), m;
-let c = class extends C {
+}, p = (t, e, n, o) => {
+  for (var r = o > 1 ? void 0 : o ? Q(e, n) : e, i = t.length - 1, a; i >= 0; i--)
+    (a = t[i]) && (r = (o ? a(e, n, r) : a(r)) || r);
+  return o && r && X(e, n, r), r;
+}, O = (t, e, n) => e.has(t) || U("Cannot " + n), E = (t, e, n) => (O(t, e, "read from private field"), n ? n.call(t) : e.get(t)), Y = (t, e, n) => e.has(t) ? U("Cannot add the same private member more than once") : e instanceof WeakSet ? e.add(t) : e.set(t, n), Z = (t, e, n, o) => (O(t, e, "write to private field"), e.set(t, n), n), m;
+let l = class extends A {
   constructor() {
     super(), Y(this, m), this.instanceId = "", this.artifactPath = "", this.open = !1, this._content = null, this._loading = !1, this._error = !1, this._downloadError = !1, this._fetchGeneration = 0, this.consumeContext(D, (t) => {
       Z(this, m, t);
     });
   }
   willUpdate(t) {
-    const e = t.has("open") && this.open, o = t.has("artifactPath") && this.open && this.artifactPath;
-    (e || o) && this._fetchArtifact();
+    const e = t.has("open") && this.open, n = t.has("artifactPath") && this.open && this.artifactPath;
+    (e || n) && this._fetchArtifact();
   }
   async _fetchArtifact() {
     if (!this.instanceId || !this.artifactPath) return;
     const t = ++this._fetchGeneration;
     this._loading = !0, this._error = !1, this._content = null;
     try {
-      const e = await I(this, m)?.getLatestToken(), o = await S(this.instanceId, this.artifactPath, e);
+      const e = await E(this, m)?.getLatestToken(), n = await I(this.instanceId, this.artifactPath, e);
       if (t !== this._fetchGeneration) return;
-      this._content = o;
+      this._content = n;
     } catch {
       if (t !== this._fetchGeneration) return;
       this._error = !0;
@@ -598,11 +581,11 @@ let c = class extends C {
       if (this._content !== null)
         t = this._content;
       else {
-        const r = await I(this, m)?.getLatestToken();
-        t = await S(this.instanceId, this.artifactPath, r);
+        const r = await E(this, m)?.getLatestToken();
+        t = await I(this.instanceId, this.artifactPath, r);
       }
-      const e = new Blob([t], { type: "text/plain" }), o = URL.createObjectURL(e), n = document.createElement("a");
-      n.href = o, n.download = this._getFilename(), n.click(), URL.revokeObjectURL(o);
+      const e = new Blob([t], { type: "text/plain" }), n = URL.createObjectURL(e), o = document.createElement("a");
+      o.href = n, o.download = this._getFilename(), o.click(), URL.revokeObjectURL(n);
     } catch {
       this._downloadError = !0;
     }
@@ -611,25 +594,25 @@ let c = class extends C {
     this._fetchArtifact();
   }
   render() {
-    return this.open ? l`
+    return this.open ? c`
       <uui-dialog @close=${this._onDialogClose}>
         <uui-dialog-layout headline=${this._getFilename()}>
           <div class="dialog-body">
-            ${this._loading ? l`<div class="loader-wrapper"><uui-loader></uui-loader></div>` : this._error ? l`
+            ${this._loading ? c`<div class="loader-wrapper"><uui-loader></uui-loader></div>` : this._error ? c`
                     <div class="error-state">
                       <p>Could not load artifact.</p>
                       <a href="#" class="retry-link" @click=${(t) => {
       t.preventDefault(), this._onRetry();
     }}>Retry</a>
                     </div>
-                  ` : l`
+                  ` : c`
                     <uui-scroll-container class="scroll-container">
                       <agentrun-markdown-renderer .content=${this._content ?? ""}></agentrun-markdown-renderer>
                     </uui-scroll-container>
                   `}
           </div>
           <div slot="actions">
-            ${this._downloadError ? l`<span class="download-error">Download failed.</span>` : k}
+            ${this._downloadError ? c`<span class="download-error">Download failed.</span>` : k}
             <uui-button label="Download" look="secondary" @click=${this._onDownload}>Download</uui-button>
             <uui-button label="Close" look="primary" @click=${this._onClose}>Close</uui-button>
           </div>
@@ -639,7 +622,7 @@ let c = class extends C {
   }
 };
 m = /* @__PURE__ */ new WeakMap();
-c.styles = A`
+l.styles = C`
     :host {
       position: fixed;
       top: 0;
@@ -731,41 +714,41 @@ c.styles = A`
   `;
 p([
   g({ type: String })
-], c.prototype, "instanceId", 2);
+], l.prototype, "instanceId", 2);
 p([
   g({ type: String })
-], c.prototype, "artifactPath", 2);
+], l.prototype, "artifactPath", 2);
 p([
   g({ type: Boolean })
-], c.prototype, "open", 2);
+], l.prototype, "open", 2);
 p([
-  w()
-], c.prototype, "_content", 2);
+  _()
+], l.prototype, "_content", 2);
 p([
-  w()
-], c.prototype, "_loading", 2);
+  _()
+], l.prototype, "_loading", 2);
 p([
-  w()
-], c.prototype, "_error", 2);
+  _()
+], l.prototype, "_error", 2);
 p([
-  w()
-], c.prototype, "_downloadError", 2);
-c = p([
+  _()
+], l.prototype, "_downloadError", 2);
+l = p([
   z("agentrun-artifact-popover")
-], c);
+], l);
 export {
-  at as a,
+  it as a,
   st as b,
-  it as c,
-  dt as d,
+  at as c,
+  ft as d,
   ut as e,
   F as f,
   rt as g,
-  ct as h,
-  lt as i,
-  nt as j,
-  ft as m,
+  lt as h,
+  ct as i,
+  ot as j,
+  dt as m,
   pt as r,
   N as s
 };
-//# sourceMappingURL=index-CVjODUoS.js.map
+//# sourceMappingURL=index-BHPGdLBM.js.map

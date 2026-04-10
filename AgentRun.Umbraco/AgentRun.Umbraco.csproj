@@ -10,6 +10,13 @@
     <PackageId>AgentRun.Umbraco</PackageId>
     <Product>AgentRun.Umbraco</Product>
     <Title>AgentRun.Umbraco</Title>
+    <Version>1.0.0-beta.1</Version>
+    <Description>AI-powered workflow engine for Umbraco CMS — define multi-step agent workflows in YAML</Description>
+    <Authors>Adam Shallcross</Authors>
+    <PackageTags>umbraco;ai;workflow;agent;content-quality;accessibility</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <!-- PackageLicenseExpression — deferred to Story 10.4 (licensing decision) -->
+    <!-- PackageProjectUrl / RepositoryUrl — deferred until repo is public -->
   </PropertyGroup>
 
 
@@ -34,6 +41,9 @@
 
     <!-- However make the Umbraco-package.json included for dotnet pack or nuget package and visible to the solution -->
     <None Include="Client\public\umbraco-package.json" Pack="false" />
+
+    <!-- Exclude example workflows from build — they are pack-only content for consumers -->
+    <Content Remove="Workflows\**" />
   </ItemGroup>
 
   <ItemGroup>
@@ -42,6 +52,24 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Schemas\workflow-schema.json" />
+  </ItemGroup>
+
+  <!-- Example workflows: ship as contentFiles so they appear in the consumer's project on install.
+       Files land at App_Data/AgentRun.Umbraco/workflows/ which is the WorkflowRegistry default scan path.
+       Only include the example workflow subdirectories, not C# source files in Workflows/. -->
+  <ItemGroup>
+    <None Include="Workflows\content-quality-audit\**\*" Pack="true" PackagePath="contentFiles\any\any\App_Data\AgentRun.Umbraco\workflows\content-quality-audit" />
+    <None Include="Workflows\accessibility-quick-scan\**\*" Pack="true" PackagePath="contentFiles\any\any\App_Data\AgentRun.Umbraco\workflows\accessibility-quick-scan" />
+  </ItemGroup>
+
+  <!-- README: include in nupkg root for NuGet gallery rendering -->
+  <ItemGroup>
+    <None Include="..\README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <!-- JSON Schema: ship as contentFiles so consumers get the schema on disk for IDE autocomplete -->
+  <ItemGroup>
+    <None Include="Schemas\workflow-schema.json" Pack="true" PackagePath="contentFiles\any\any\App_Data\AgentRun.Umbraco\workflow-schema.json" />
   </ItemGroup>
 
 </Project>

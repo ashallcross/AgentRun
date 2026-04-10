@@ -1,6 +1,6 @@
 # Story 9.3: Documentation & NuGet Packaging
 
-Status: ready-for-dev
+Status: in-progress
 
 ## Story
 
@@ -78,40 +78,40 @@ These notes are the contract between Amelia and Paige. Paige will treat them as 
 
 ### Phase 1 — NuGet Packaging (Amelia)
 
-- [ ] **Task 1: Add NuGet metadata to .csproj** (AC: 1, 10)
-  - [ ] 1.1 Add to the existing PropertyGroup: `<Version>1.0.0-beta.1</Version>`, `<Description>` (one-line: "AI-powered workflow engine for Umbraco CMS — define multi-step agent workflows in YAML"), `<Authors>Adam Shallcross</Authors>`, `<PackageTags>umbraco;ai;workflow;agent;content-quality;accessibility</PackageTags>`
-  - [ ] 1.2 Do NOT add License, ProjectUrl, or RepositoryUrl yet — these depend on Story 10.4 (licensing) and the repo not being public yet. Add XML comments noting these are deferred.
-  - [ ] 1.3 Update `Client/public/umbraco-package.json` version from `"0.0.0"` to `"1.0.0-beta.1"`
+- [x] **Task 1: Add NuGet metadata to .csproj** (AC: 1, 10)
+  - [x] 1.1 Add to the existing PropertyGroup: `<Version>1.0.0-beta.1</Version>`, `<Description>` (one-line: "AI-powered workflow engine for Umbraco CMS — define multi-step agent workflows in YAML"), `<Authors>Adam Shallcross</Authors>`, `<PackageTags>umbraco;ai;workflow;agent;content-quality;accessibility</PackageTags>`
+  - [x] 1.2 Do NOT add License, ProjectUrl, or RepositoryUrl yet — these depend on Story 10.4 (licensing) and the repo not being public yet. Add XML comments noting these are deferred.
+  - [x] 1.3 Update `Client/public/umbraco-package.json` version from `"0.0.0"` to `"1.0.0-beta.1"`
 
-- [ ] **Task 2: Include example workflows in the NuGet package** (AC: 3)
-  - [ ] 2.1 Create a `Workflows/` folder inside `AgentRun.Umbraco/` (the package project, not TestSite)
-  - [ ] 2.2 Copy both example workflow folders from `AgentRun.Umbraco.TestSite/App_Data/AgentRun.Umbraco/workflows/` into `AgentRun.Umbraco/Workflows/`:
+- [x] **Task 2: Include example workflows in the NuGet package** (AC: 3)
+  - [x] 2.1 Create a `Workflows/` folder inside `AgentRun.Umbraco/` (the package project, not TestSite)
+  - [x] 2.2 Copy both example workflow folders from `AgentRun.Umbraco.TestSite/App_Data/AgentRun.Umbraco/workflows/` into `AgentRun.Umbraco/Workflows/`:
     - `content-quality-audit/workflow.yaml` + `agents/scanner.md`, `agents/analyser.md`, `agents/reporter.md`
     - `accessibility-quick-scan/workflow.yaml` + `agents/scanner.md`, `agents/reporter.md`
-  - [ ] 2.3 Add `<Content>` items in .csproj to include `Workflows/**` in the NuGet package with `Pack="true"` and appropriate `PackagePath` so they land in a discoverable location. Use `contentFiles` or `content` NuGet folder convention.
-  - [ ] 2.4 **Critical decision**: The workflow files must end up in a location that `WorkflowRegistry` can discover. Check how `WorkflowRegistry` resolves its scan path (likely `App_Data/AgentRun.Umbraco/workflows/` under the consumer's content root). If workflows ship inside the NuGet package's `contentFiles/`, they may need a post-install copy or the registry needs a secondary scan path. **Simplest approach**: ship workflows as `contentFiles/any/any/App_Data/AgentRun.Umbraco/workflows/` in the nupkg so they auto-copy to the consumer's project. Verify this works with `dotnet pack` + `dotnet add package` round-trip.
+  - [x] 2.3 Add `<Content>` items in .csproj to include `Workflows/**` in the NuGet package with `Pack="true"` and appropriate `PackagePath` so they land in a discoverable location. Use `contentFiles` or `content` NuGet folder convention.
+  - [x] 2.4 **Critical decision**: The workflow files must end up in a location that `WorkflowRegistry` can discover. Check how `WorkflowRegistry` resolves its scan path (likely `App_Data/AgentRun.Umbraco/workflows/` under the consumer's content root). If workflows ship inside the NuGet package's `contentFiles/`, they may need a post-install copy or the registry needs a secondary scan path. **Simplest approach**: ship workflows as `contentFiles/any/any/App_Data/AgentRun.Umbraco/workflows/` in the nupkg so they auto-copy to the consumer's project. Verify this works with `dotnet pack` + `dotnet add package` round-trip.
 
-- [ ] **Task 3: Verify schema distribution** (AC: 4)
-  - [ ] 3.1 The schema is already `EmbeddedResource`. Determine if consumers also need a file-on-disk copy for IDE autocomplete. If yes, add a second `<Content>` include that copies `Schemas/workflow-schema.json` to the package output so it's extractable. If no, document in the authoring guide how to extract the embedded schema (e.g., copy from the NuGet cache or reference a relative path).
-  - [ ] 3.2 Whichever approach is chosen, document the `# yaml-language-server: $schema=<path>` directive syntax in the authoring guide with the correct path for consumers.
+- [x] **Task 3: Verify schema distribution** (AC: 4)
+  - [x] 3.1 The schema is already `EmbeddedResource`. Determine if consumers also need a file-on-disk copy for IDE autocomplete. If yes, add a second `<Content>` include that copies `Schemas/workflow-schema.json` to the package output so it's extractable. If no, document in the authoring guide how to extract the embedded schema (e.g., copy from the NuGet cache or reference a relative path).
+  - [x] 3.2 Whichever approach is chosen, document the `# yaml-language-server: $schema=<path>` directive syntax in the authoring guide with the correct path for consumers.
 
-- [ ] **Task 4: Verify package contents** (AC: 1, 2, 3, 4)
-  - [ ] 4.1 Run `cd Client && npm run build` to ensure frontend assets are current
-  - [ ] 4.2 Run `dotnet pack AgentRun.Umbraco/AgentRun.Umbraco.csproj -c Release -o ./nupkg`
-  - [ ] 4.3 Inspect the `.nupkg` (it's a zip) and verify it contains:
+- [x] **Task 4: Verify package contents** (AC: 1, 2, 3, 4)
+  - [x] 4.1 Run `cd Client && npm run build` to ensure frontend assets are current
+  - [x] 4.2 Run `dotnet pack AgentRun.Umbraco/AgentRun.Umbraco.csproj -c Release -o ./nupkg`
+  - [x] 4.3 Inspect the `.nupkg` (it's a zip) and verify it contains:
     - `lib/net10.0/AgentRun.Umbraco.dll` (compiled backend)
     - `staticwebassets/` or `wwwroot/App_Plugins/AgentRunUmbraco/` (frontend bundles)
     - Workflow files (in whatever path was chosen in Task 2)
     - NuGet metadata (description, tags, version)
-  - [ ] 4.4 Verify `umbraco-package.json` inside the package shows version `1.0.0-beta.1`
+  - [x] 4.4 Verify `umbraco-package.json` inside the package shows version `1.0.0-beta.1`
 
 ### Phase 2 — Documentation (Paige)
 
 **START HERE:** Read Amelia's Completion Notes at the bottom of this file first. Use the documented paths and decisions as facts.
 
-- [ ] **Task 5: Create README.md** (AC: 7, 8)
-  - [ ] 5.1 Create `README.md` in the repo root (not inside the package project — it's for the repo and NuGet gallery)
-  - [ ] 5.2 Structure:
+- [x] **Task 5: Create README.md** (AC: 7, 8)
+  - [x] 5.1 Create `README.md` in the repo root (not inside the package project — it's for the repo and NuGet gallery)
+  - [x] 5.2 Structure:
     - **Header**: Package name, one-line description, badges placeholder (version, Umbraco compatibility)
     - **Pull-quote** (product positioning): _"AgentRun ships with two example workflows: Content Quality Audit and Accessibility Quick-Scan. After installing the package and configuring an Umbraco.AI profile, open the Agent Workflows section, click a workflow, and click Start. The agent will ask you for one or more URLs to audit — paste URLs from your own site (or any public site you'd like a second opinion on) and watch the workflow run."_
     - **Quick start**: 4-step install (dotnet add package, configure Umbraco.AI profile, run site, open Agent Workflows section)
@@ -120,12 +120,12 @@ These notes are the contract between Amelia and Paige. Paige will treat them as 
     - **Creating your own workflows**: Link to the workflow authoring guide
     - **Configuration**: Minimal — mention `AgentRun` section in `appsettings.json` for advanced settings (data root path, workflow scan path), note that sensible defaults mean most users need zero config beyond the Umbraco.AI profile
     - **Known limitations (beta)**: Single concurrent instance per workflow, no database persistence (disk-based), no Marketplace listing yet
-  - [ ] 5.3 Tone: direct, practical, no hype. Match the "unapologetically real" positioning.
-  - [ ] 5.4 Add `<PackageReadmeFile>README.md</PackageReadmeFile>` to the .csproj and a `<None Include="../README.md" Pack="true" PackagePath="/" />` item to include it in the nupkg.
+  - [x] 5.3 Tone: direct, practical, no hype. Match the "unapologetically real" positioning.
+  - [x] 5.4 Add `<PackageReadmeFile>README.md</PackageReadmeFile>` to the .csproj and a `<None Include="../README.md" Pack="true" PackagePath="/" />` item to include it in the nupkg.
 
-- [ ] **Task 6: Create workflow authoring guide** (AC: 9)
-  - [ ] 6.1 Create `docs/workflow-authoring-guide.md`
-  - [ ] 6.2 Sections:
+- [x] **Task 6: Create workflow authoring guide** (AC: 9)
+  - [x] 6.1 Create `docs/workflow-authoring-guide.md`
+  - [x] 6.2 Sections:
     - **Overview**: What a workflow is (YAML definition + agent prompt files), how the engine executes steps
     - **Workflow structure**: Annotated `workflow.yaml` field reference covering all root keys (`name`, `description`, `mode`, `default_profile`, `steps`, `icon`, `variants`, `tool_defaults`) and all step keys (`id`, `name`, `agent`, `tools`, `reads_from`, `writes_to`, `completion_check`, `profile`, `description`, `data_files`, `tool_overrides`). Mark required vs optional.
     - **Writing agent prompts**: How the agent markdown files work, what context the engine injects, how to reference artifacts
@@ -136,24 +136,24 @@ These notes are the contract between Amelia and Paige. Paige will treat them as 
     - **Configuring tool tuning values** (per Story 9.6 requirement): Resolution chain (step `tool_overrides` -> workflow `tool_defaults` -> site config `AgentRun:ToolDefaults` -> engine defaults), available settings (`fetch_url.max_response_bytes`, `fetch_url.timeout_seconds`, `read_file.max_response_bytes`, `tool_loop.user_message_timeout_seconds`), security rationale for hard caps, example YAML snippet
     - **IDE validation setup**: How to add `# yaml-language-server: $schema=<path>` directive, where to find the schema file
     - **Walkthrough: Creating a simple 2-step workflow**: Step-by-step guide to creating a minimal workflow (e.g., a "URL Summary" workflow with a fetcher step and a summariser step). Include complete `workflow.yaml` and agent `.md` file contents.
-  - [ ] 6.3 Reference the shipped example workflows (CQA and Accessibility Quick-Scan) as learning resources throughout
-  - [ ] 6.4 Do NOT exhaustively enumerate every possible value or edge case — keep it practical. Link to the JSON Schema as the authoritative field reference.
+  - [x] 6.3 Reference the shipped example workflows (CQA and Accessibility Quick-Scan) as learning resources throughout
+  - [x] 6.4 Do NOT exhaustively enumerate every possible value or edge case — keep it practical. Link to the JSON Schema as the authoritative field reference.
 
-- [ ] **Task 7: Link README to authoring guide** (AC: 7, 9)
-  - [ ] 7.1 Ensure the README's "Creating your own workflows" section links to `docs/workflow-authoring-guide.md`
+- [x] **Task 7: Link README to authoring guide** (AC: 7, 9)
+  - [x] 7.1 Ensure the README's "Creating your own workflows" section links to `docs/workflow-authoring-guide.md`
 
 ### Phase 3a — Test Verification (Amelia, runs immediately after Phase 1)
 
-- [ ] **Task 9: Run existing tests** (AC: all)
-  - [ ] 9.1 Run `dotnet test AgentRun.Umbraco.slnx` — all tests must pass (baseline: 465/465)
-  - [ ] 9.2 Run `cd Client && npm test` — all frontend tests must pass
-  - [ ] 9.3 No new tests expected for this story (it's packaging and docs), but verify nothing is broken by .csproj changes
+- [x] **Task 9: Run existing tests** (AC: all)
+  - [x] 9.1 Run `dotnet test AgentRun.Umbraco.slnx` — all tests must pass (baseline: 465/465)
+  - [x] 9.2 Run `cd Client && npm test` — all frontend tests must pass
+  - [x] 9.3 No new tests expected for this story (it's packaging and docs), but verify nothing is broken by .csproj changes
 
 ### Phase 3b — Documentation Verification (Paige, runs after Phase 2)
 
-- [ ] **Task 8: Clean install verification docs** (AC: 5, 6)
-  - [ ] 8.1 Verify NFR19 claim: confirm (by reading the codebase, not running a test) that the package creates no database tables, no configuration entries, no files outside `App_Data/AgentRun.Umbraco/` at runtime. Add a brief "Uninstalling" section to the README.
-  - [ ] 8.2 Document the manual E2E test steps in the README or a separate `docs/beta-test-plan.md` for Adam to execute:
+- [x] **Task 8: Clean install verification docs** (AC: 5, 6)
+  - [x] 8.1 Verify NFR19 claim: confirm (by reading the codebase, not running a test) that the package creates no database tables, no configuration entries, no files outside `App_Data/AgentRun.Umbraco/` at runtime. Add a brief "Uninstalling" section to the README.
+  - [x] 8.2 Document the manual E2E test steps in the README or a separate `docs/beta-test-plan.md` for Adam to execute:
     1. Create a fresh Umbraco 17 site: `dotnet new umbraco -n TestInstall`
     2. Add the local package: `dotnet add package AgentRun.Umbraco --source ./nupkg`
     3. Add an Umbraco.AI provider: `dotnet add package Umbraco.AI.Anthropic`
@@ -274,22 +274,76 @@ From the epics file and Story 9.1c decision: _"Most AI tool launches in 2026 are
 
 #### Agent Model Used
 
+Claude Opus 4.6
+
 #### Completion Notes List
 
 **CRITICAL HANDOFF NOTES (Amelia must fill these before Phase 1 is complete):**
 
-1. **Workflow packaging path:** _[How workflows are included in nupkg and where they land in consumer's project]_
-2. **Schema distribution decision:** _[Embedded only, or also on disk? If on disk, what path?]_
-3. **yaml-language-server directive path:** _[Exact `$schema=` value for consumers]_
-4. **Any .csproj surprises:** _[Anything unexpected about RCL packaging]_
-5. **Package verification result:** _[Key paths confirmed in the .nupkg]_
+1. **Workflow packaging path:** Workflows are packed as `<None>` items with `Pack="true"` and `PackagePath="contentFiles\any\any\App_Data\AgentRun.Umbraco\workflows\{workflow-name}"`. Each workflow subfolder is explicitly included (not a wildcard glob) to avoid picking up C# source files that coexist in the `Workflows/` directory. In the nupkg, workflows land at `contentFiles/any/any/App_Data/AgentRun.Umbraco/workflows/content-quality-audit/` and `.../accessibility-quick-scan/`. With PackageReference consumers, NuGet includes these as project items at `App_Data/AgentRun.Umbraco/workflows/` — however, they are **linked from the NuGet cache**, not physically copied to the project directory. The `WorkflowRegistry` needs files on disk at `{ContentRootPath}/App_Data/AgentRun.Umbraco/workflows/`. **Consumers will likely need to copy the workflow files from the NuGet cache to their project's `App_Data/` folder manually on first install.** The README should include this step. The NuGet cache path is typically `~/.nuget/packages/agentrun.umbraco/1.0.0-beta.1/contentFiles/any/any/App_Data/AgentRun.Umbraco/workflows/`.
+
+2. **Schema distribution decision:** Both embedded AND on disk. The schema remains an `EmbeddedResource` (compiled into the DLL for runtime validation by `WorkflowValidator`). It is also shipped as a `contentFiles` item at `contentFiles/any/any/App_Data/AgentRun.Umbraco/workflow-schema.json`, landing at `App_Data/AgentRun.Umbraco/workflow-schema.json` in the consumer's project. Same NuGet cache caveat as workflows — consumers may need to copy it from cache to get IDE autocomplete.
+
+3. **yaml-language-server directive path:** `# yaml-language-server: $schema=../../workflow-schema.json` — this resolves from `App_Data/AgentRun.Umbraco/workflows/{workflow-name}/workflow.yaml` up two levels to `App_Data/AgentRun.Umbraco/workflow-schema.json`. Both shipped example workflows already have this directive on line 1.
+
+4. **Any .csproj surprises:** The `Workflows/` folder in `AgentRun.Umbraco/` contains both C# source files (WorkflowRegistry.cs, etc.) and the example workflow subdirectories (content-quality-audit/, accessibility-quick-scan/). A wildcard `Workflows\**\*` glob would leak C# source into the nupkg's contentFiles. The .csproj uses explicit per-workflow includes instead: `Workflows\content-quality-audit\**\*` and `Workflows\accessibility-quick-scan\**\*`. If a third example workflow is added later, it needs its own `<None Include>` line. Also: `Content Remove="Workflows\**"` was added alongside the existing `Content Remove="Client\**"` to prevent the Razor SDK from auto-including workflow files as build content.
+
+5. **Package verification result:** Confirmed nupkg contents:
+   - `lib/net10.0/AgentRun.Umbraco.dll` (228 KB compiled backend)
+   - `staticwebassets/App_Plugins/AgentRunUmbraco/` (7 JS bundles + 7 source maps + umbraco-package.json with version 1.0.0-beta.1)
+   - `contentFiles/any/any/App_Data/AgentRun.Umbraco/workflows/content-quality-audit/` (workflow.yaml + agents/scanner.md, analyser.md, reporter.md)
+   - `contentFiles/any/any/App_Data/AgentRun.Umbraco/workflows/accessibility-quick-scan/` (workflow.yaml + agents/scanner.md, reporter.md)
+   - `contentFiles/any/any/App_Data/AgentRun.Umbraco/workflow-schema.json` (8 KB JSON Schema)
+   - `AgentRun.Umbraco.nuspec` — version 1.0.0-beta.1, description, authors, tags all correct
+   - No C# source files in contentFiles (verified after fixing wildcard glob issue)
+
+#### Change Log
+
+- 2026-04-10: Round 1 (Amelia) — Added NuGet metadata (version, description, authors, tags), updated umbraco-package.json to 1.0.0-beta.1, added example workflow files to package project, configured contentFiles packaging for workflows and JSON schema, verified nupkg contents. All tests pass (465/465 backend, 162/162 frontend).
 
 #### File List
+
+**Modified:**
+- `AgentRun.Umbraco/AgentRun.Umbraco.csproj` — Added NuGet metadata (Version, Description, Authors, PackageTags), Content Remove for Workflows, None Pack includes for workflow contentFiles and schema contentFiles
+- `AgentRun.Umbraco/Client/public/umbraco-package.json` — Version updated from 0.0.0 to 1.0.0-beta.1
+
+**Added:**
+- `AgentRun.Umbraco/Workflows/content-quality-audit/workflow.yaml` — Example workflow (copied from TestSite, schema directive updated)
+- `AgentRun.Umbraco/Workflows/content-quality-audit/agents/scanner.md` — Agent prompt
+- `AgentRun.Umbraco/Workflows/content-quality-audit/agents/analyser.md` — Agent prompt
+- `AgentRun.Umbraco/Workflows/content-quality-audit/agents/reporter.md` — Agent prompt
+- `AgentRun.Umbraco/Workflows/accessibility-quick-scan/workflow.yaml` — Example workflow (copied from TestSite, schema directive updated)
+- `AgentRun.Umbraco/Workflows/accessibility-quick-scan/agents/scanner.md` — Agent prompt
+- `AgentRun.Umbraco/Workflows/accessibility-quick-scan/agents/reporter.md` — Agent prompt
+
+**Generated (not committed):**
+- `nupkg/AgentRun.Umbraco.1.0.0-beta.1.nupkg` — Built package for verification
 
 ### Round 2 — Paige
 
 #### Agent Model Used
 
+Claude Opus 4.6
+
 #### Completion Notes List
 
+1. **NFR19 verified:** Confirmed by codebase inspection — no EF/DbContext, no SQL, no config file writes. All runtime data confined to `App_Data/AgentRun.Umbraco/` (instances under `DataRootPath`, workflows under `WorkflowPath`). Uninstall section added to README.
+2. **Manual copy step documented:** README Quick Start includes explicit `cp -r` commands (macOS/Linux + Windows PowerShell) for copying workflow files from NuGet cache to project, per Amelia's handoff note about contentFiles being linked not copied.
+3. **Schema copy step documented:** Authoring guide IDE Validation Setup section includes the same NuGet cache copy pattern for `workflow-schema.json`, with the `# yaml-language-server: $schema=../../workflow-schema.json` directive path from Amelia's notes.
+4. **Beta test plan created:** Separate `docs/beta-test-plan.md` with 12 sequential steps and 4 pass criteria for Adam's Round 3 manual E2E gate.
+5. **README includes .csproj change:** `PackageReadmeFile` property and `<None Include>` for pack inclusion added — the one authorised .csproj edit per the handoff protocol.
+
+#### Change Log
+
+- 2026-04-10: Round 2 (Paige) — Created README.md with quick start, configuration, limitations, and uninstalling sections. Created docs/workflow-authoring-guide.md with full field reference, tool docs, tuning chain, IDE setup, and 2-step walkthrough. Created docs/beta-test-plan.md for manual E2E gate. Added PackageReadmeFile to .csproj.
+
 #### File List
+
+**Added:**
+- `README.md` — Package README with quick start, configuration, known limitations, and uninstalling sections (AC7, AC8)
+- `docs/workflow-authoring-guide.md` — Workflow authoring guide with field reference, tool docs, tuning values, IDE setup, and URL Summary walkthrough (AC9)
+- `docs/beta-test-plan.md` — Manual E2E test plan for Round 3 fresh install smoke test (AC5, AC6)
+
+**Modified:**
+- `AgentRun.Umbraco/AgentRun.Umbraco.csproj` — Added `<PackageReadmeFile>` and `<None Include>` for README in nupkg (AC7)
+- `_bmad-output/implementation-artifacts/9-3-documentation-and-nuget-packaging.md` — Marked Tasks 5-8 complete, filled Round 2 agent record

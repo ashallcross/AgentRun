@@ -15,6 +15,8 @@ date: '2026-03-28'
 
 # Architecture Decision Document
 
+> _This document reflects decisions made during initial architecture (2026-03-28). The codebase has evolved through 9 epics of implementation. For current patterns and conventions, refer to `project-context.md`. For the actual state of the code, read the code._
+
 _This document builds collaboratively through step-by-step discovery. Sections are appended as we work through each architectural decision together._
 
 ## Project Context Analysis
