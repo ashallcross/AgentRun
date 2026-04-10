@@ -18,20 +18,29 @@ AI-powered workflow engine for Umbraco CMS -- define multi-step agent workflows 
 - .NET 10
 - At least one Umbraco.AI provider package ([Umbraco.AI.Anthropic](https://www.nuget.org/packages/Umbraco.AI.Anthropic) or [Umbraco.AI.OpenAI](https://www.nuget.org/packages/Umbraco.AI.OpenAI)) with a configured profile
 
-### 1. Install the package
+### 1. Set up Umbraco first
+
+If you're adding AgentRun to a new site, run the Umbraco install wizard first (`dotnet run`,
+complete setup in the browser, then stop the site). Umbraco.AI runs database migrations on
+startup and needs an existing database.
+
+### 2. Install the packages
 
 ```bash
 dotnet add package AgentRun.Umbraco --version 1.0.0-beta.1
+dotnet add package Umbraco.AI.Anthropic
 ```
 
-### 2. Copy the example workflows
+Both packages auto-register via Umbraco's composer system -- no `Program.cs` changes needed.
+
+### 3. Copy the example workflows
 
 NuGet links content files from the package cache rather than copying them into your project.
 The workflow engine discovers workflows on disk at `App_Data/AgentRun.Umbraco/workflows/`,
 so you need to copy them manually on first install:
 
 ```bash
-# Find your NuGet cache path (typically ~/.nuget/packages/)
+mkdir -p App_Data/AgentRun.Umbraco/workflows
 cp -r ~/.nuget/packages/agentrun.umbraco/1.0.0-beta.1/contentFiles/any/any/App_Data/AgentRun.Umbraco/workflows/ \
       App_Data/AgentRun.Umbraco/workflows/
 ```
@@ -39,7 +48,8 @@ cp -r ~/.nuget/packages/agentrun.umbraco/1.0.0-beta.1/contentFiles/any/any/App_D
 On Windows:
 
 ```powershell
-Copy-Item -Recurse "$env:USERPROFILE\.nuget\packages\agentrun.umbraco\1.0.0-beta.1\contentFiles\any\any\App_Data\AgentRun.Umbraco\workflows\" `
+New-Item -ItemType Directory -Force -Path "App_Data\AgentRun.Umbraco\workflows"
+Copy-Item -Recurse "$env:USERPROFILE\.nuget\packages\agentrun.umbraco\1.0.0-beta.1\contentFiles\any\any\App_Data\AgentRun.Umbraco\workflows\*" `
     -Destination "App_Data\AgentRun.Umbraco\workflows\"
 ```
 
@@ -50,16 +60,17 @@ This gives you two ready-to-run workflows:
 | **Content Quality Audit** | Scanner, Analyser, Reporter | Fetches pages, scores content quality, generates an audit report |
 | **Accessibility Quick-Scan** | Scanner, Reporter | Fetches pages, identifies WCAG 2.1 AA issues, produces a prioritised fix list |
 
-### 3. Configure an Umbraco.AI profile
+### 4. Configure an Umbraco.AI profile
 
-In the Umbraco backoffice, go to **Settings > AI** and create a profile for your chosen provider.
-Note the profile alias -- each workflow's `default_profile` field in `workflow.yaml` must match it.
-The shipped examples use `anthropic-sonnet-4-6`; update this to your profile alias.
+Run the site, then in the backoffice go to **Settings > AI** and create a profile for your
+chosen provider. Note the profile alias -- each workflow's `default_profile` field in
+`workflow.yaml` must match it. The shipped examples use `anthropic-sonnet-4-6`; update this
+to your profile alias.
 
-### 4. Run and open Agent Workflows
+### 5. Open Agent Workflows
 
-Start your site and navigate to the **Agent Workflows** section in the backoffice. Both example
-workflows should appear. Click one, click **Start**, and paste one or more URLs when prompted.
+Navigate to the **Agent Workflows** section in the backoffice. Both example workflows should
+appear. Click one, click **Start**, and paste one or more URLs when prompted.
 
 ## Creating Your Own Workflows
 

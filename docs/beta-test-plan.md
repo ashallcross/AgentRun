@@ -18,34 +18,46 @@ dotnet new umbraco -n TestInstall
 cd TestInstall
 ```
 
-### 2. Install AgentRun from Local Package
+### 2. Run the Site and Complete the Install Wizard
 
 ```bash
-dotnet add package AgentRun.Umbraco --version 1.0.0-beta.1 --source ../nupkg
+dotnet run
 ```
 
-### 3. Install an Umbraco.AI Provider
+Open the site in the browser and complete the Umbraco install wizard (create admin account,
+choose SQLite). Stop the site after setup completes.
+
+### 3. Install AgentRun and an Umbraco.AI Provider
 
 ```bash
+dotnet add package AgentRun.Umbraco --version 1.0.0-beta.1 --source /path/to/Umbraco-AI/nupkg
 dotnet add package Umbraco.AI.Anthropic
 ```
+
+Replace `/path/to/Umbraco-AI/` with the absolute path to the repo root (e.g.,
+`/Users/adamshallcross/Documents/Umbraco AI/`). Relative paths resolve from the consumer
+project directory, not the repo root.
+
+Both packages auto-register via Umbraco's composer system -- no `Program.cs` changes needed.
+
+**Important:** Install these packages *after* the Umbraco install wizard has run. Umbraco.AI
+runs database migrations on startup and will crash if no database is configured yet.
 
 ### 4. Copy Example Workflows
 
 NuGet links content files from cache -- copy them to disk so the engine can discover them:
 
 ```bash
+mkdir -p App_Data/AgentRun.Umbraco/workflows
 cp -r ~/.nuget/packages/agentrun.umbraco/1.0.0-beta.1/contentFiles/any/any/App_Data/AgentRun.Umbraco/workflows/ \
       App_Data/AgentRun.Umbraco/workflows/
 ```
 
-### 5. Run the Site
+### 5. Run the Site Again
 
 ```bash
 dotnet run
 ```
-
-Complete the Umbraco install wizard in the browser.
 
 ### 6. Configure an AI Profile
 

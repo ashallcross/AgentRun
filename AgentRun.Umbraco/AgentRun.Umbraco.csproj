@@ -22,11 +22,11 @@
 
   <ItemGroup>
     <PackageReference Include="AngleSharp" Version="1.4.0" />
-    <PackageReference Include="Umbraco.Cms.Web.Website" Version="17.2.2" />
-    <PackageReference Include="Umbraco.Cms.Web.Common" Version="17.2.2" />
-    <PackageReference Include="Umbraco.Cms.Api.Common" Version="17.2.2" />
-    <PackageReference Include="Umbraco.Cms.Api.Management" Version="17.2.2" />
-    <PackageReference Include="Umbraco.AI" Version="1.7.0" />
+    <PackageReference Include="Umbraco.Cms.Web.Website" Version="17.3.2" />
+    <PackageReference Include="Umbraco.Cms.Web.Common" Version="17.3.2" />
+    <PackageReference Include="Umbraco.Cms.Api.Common" Version="17.3.2" />
+    <PackageReference Include="Umbraco.Cms.Api.Management" Version="17.3.2" />
+    <PackageReference Include="Umbraco.AI" Version="1.8.0" />
     <PackageReference Include="YamlDotNet" Version="16.3.0" />
   </ItemGroup>
 
