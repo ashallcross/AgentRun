@@ -44,7 +44,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-30
-last_updated: 2026-04-10 (story 9-10 DONE — path traversal validation + code review patches applied, 486/486 tests)
+last_updated: 2026-04-11 (story 9-11 code review fixes applied — AC7 combined check + AC4 test; 491/491 tests)
 project: AgentRun.Umbraco
 project_key: NOKEY
 tracking_system: file-system
@@ -132,7 +132,7 @@ development_status:
   9-2-json-schema-for-workflow-yaml: done                             # done 2026-04-10 — schema rewritten to mirror WorkflowValidator (tool_defaults, tool_overrides, icon, variants, data_files, description, mode-no-longer-required); WorkflowSchemaTests regression gate (parse-as-draft-2020-12 + shipped-CQA-validates + full-Epic9-surface-validates added during code review to close the ~30% surface-coverage gap); tests 463/463; CQA workflow has yaml-language-server directive; manual VS Code autocomplete smoke confirmed by Adam; two low-severity findings deferred (NormalizeForJson scalar coercion + null-block schema/validator drift) — see deferred-work.md.
   9-3-documentation-and-nuget-packaging: done                      # done 2026-04-10 — Round 1 (Amelia): NuGet packaging, contentFiles for workflows + schema, nupkg verified. Round 2 (Paige): README, workflow authoring guide, beta test plan, .csproj PackageReadmeFile. Round 3 (Adam): fresh install smoke test passed on Umbraco 17.3.2 — both workflows discovered and ran, clean uninstall verified. Key findings fed back into docs: install order (wizard first), section permissions (AI + AgentRun, re-login required), Umbraco.AI as direct dependency, manual workflow copy from NuGet cache. Upgrade to 17.3.2 / Umbraco.AI 1.8.0 applied during testing — see upgrade-report-umbraco-17.3.md.
   9-10-workflow-definition-path-traversal-validation: done              # done 2026-04-10 — BETA BLOCKER cleared; ValidatePathSafety in WorkflowValidator rejects traversal/absolute/null-byte at load time; defence-in-depth canonicalisation in PromptAssembler, ArtifactValidator, CompletionChecker, ConversationStore; code review applied 5 patches (sidecar containment, non-string type errors, null-byte sanitisation, void return, missing test); 486/486 tests; 4 Windows-specific findings deferred
-  9-11-fail-registration-on-missing-agent-files: backlog          # added 2026-04-10 via pre-launch code review; VerifyAgentFiles must block registration like VerifyToolReferences does
+  9-11-fail-registration-on-missing-agent-files: done              # done 2026-04-11 — VerifyAgentFiles returns bool + blocks registration; code review: AC7 combined check + AC4 test; 491/491 tests
   9-5-private-beta-distribution-plan: backlog                   # ships last — distributes everything above
   epic-9-retrospective: optional
 
@@ -146,6 +146,7 @@ development_status:
   10-4-open-source-licence-decision: backlog
   10-5-marketplace-listing-and-community-launch: backlog
   10-6-retry-replay-degeneration-recovery: backlog        # created via SCP 2026-04-08 (9.1b rescope) — promoted from 9.1b edge case to its own story; fast-follower with explicit beta-blocker escalation criteria recorded in the spec
+  10-7-code-shape-cleanup-hotspot-refactoring: backlog    # added 2026-04-10 — architect-triaged hotspot refactoring from Codex bloat review; compound with feature work, not standalone
   epic-10-retrospective: optional
 
   # Epic 11: Adoption Accelerators

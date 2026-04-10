@@ -64,7 +64,7 @@ public class WorkflowRegistryTests
     }
 
     [Test]
-    public async Task LoadWorkflowsAsync_MissingAgentFile_LogsWarningAndLoads()
+    public async Task LoadWorkflowsAsync_MissingAgentFile_WorkflowRejected()
     {
         var yaml = "name: Test";
         CreateWorkflowFolder("test-workflow", yaml);
@@ -83,11 +83,10 @@ public class WorkflowRegistryTests
 
         await _registry.LoadWorkflowsAsync(_tempRoot);
 
-        var workflow = _registry.GetWorkflow("test-workflow");
-        Assert.That(workflow, Is.Not.Null);
+        Assert.That(_registry.GetWorkflow("test-workflow"), Is.Null);
 
         _logger.Received().Log(
-            LogLevel.Warning,
+            LogLevel.Error,
             Arg.Any<EventId>(),
             Arg.Is<object>(o => o.ToString()!.Contains("missing-agent.md")),
             Arg.Any<Exception?>(),
@@ -95,7 +94,7 @@ public class WorkflowRegistryTests
     }
 
     [Test]
-    public async Task LoadWorkflowsAsync_ExistingAgentFile_NoWarning()
+    public async Task LoadWorkflowsAsync_ExistingAgentFile_NoError()
     {
         var yaml = "name: Test";
         var folderPath = CreateWorkflowFolder("test-workflow", yaml);
@@ -118,10 +117,198 @@ public class WorkflowRegistryTests
 
         await _registry.LoadWorkflowsAsync(_tempRoot);
 
+        Assert.That(_registry.GetWorkflow("test-workflow"), Is.Not.Null);
+
         _logger.DidNotReceive().Log(
-            LogLevel.Warning,
+            LogLevel.Error,
             Arg.Any<EventId>(),
-            Arg.Any<object>(),
+            Arg.Is<object>(o => o.ToString()!.Contains("agent file")),
+            Arg.Any<Exception?>(),
+            Arg.Any<Func<object, Exception?, string>>());
+    }
+
+    [Test]
+    public async Task LoadWorkflowsAsync_MultipleMissingAgentFiles_AllErrorsLogged()
+    {
+        var yaml = "name: Test";
+        CreateWorkflowFolder("test-workflow", yaml);
+
+        var definition = new WorkflowDefinition
+        {
+            Name = "Test",
+            Steps =
+            [
+                new StepDefinition { Id = "scanner", Name = "Scanner", Agent = "agents/scanner.md" },
+                new StepDefinition { Id = "analyser", Name = "Analyser", Agent = "agents/analyser.md" },
+                new StepDefinition { Id = "reporter", Name = "Reporter", Agent = "agents/reporter.md" }
+            ]
+        };
+
+        _validator.Validate(yaml).Returns(WorkflowValidationResult.Success());
+        _parser.Parse(yaml).Returns(definition);
+
+        await _registry.LoadWorkflowsAsync(_tempRoot);
+
+        Assert.That(_registry.GetWorkflow("test-workflow"), Is.Null);
+
+        _logger.Received().Log(
+            LogLevel.Error,
+            Arg.Any<EventId>(),
+            Arg.Is<object>(o => o.ToString()!.Contains("scanner.md")),
+            Arg.Any<Exception?>(),
+            Arg.Any<Func<object, Exception?, string>>());
+
+        _logger.Received().Log(
+            LogLevel.Error,
+            Arg.Any<EventId>(),
+            Arg.Is<object>(o => o.ToString()!.Contains("analyser.md")),
+            Arg.Any<Exception?>(),
+            Arg.Any<Func<object, Exception?, string>>());
+
+        _logger.Received().Log(
+            LogLevel.Error,
+            Arg.Any<EventId>(),
+            Arg.Is<object>(o => o.ToString()!.Contains("reporter.md")),
+            Arg.Any<Exception?>(),
+            Arg.Any<Func<object, Exception?, string>>());
+    }
+
+    [Test]
+    public async Task LoadWorkflowsAsync_MixedValidAndMissingAgentFiles_WorkflowRejected()
+    {
+        var yaml = "name: Test";
+        var folderPath = CreateWorkflowFolder("test-workflow", yaml);
+
+        var agentsDir = Path.Combine(folderPath, "agents");
+        Directory.CreateDirectory(agentsDir);
+        await File.WriteAllTextAsync(Path.Combine(agentsDir, "scanner.md"), "# Scanner Agent");
+
+        var definition = new WorkflowDefinition
+        {
+            Name = "Test",
+            Steps =
+            [
+                new StepDefinition { Id = "scanner", Name = "Scanner", Agent = "agents/scanner.md" },
+                new StepDefinition { Id = "analyser", Name = "Analyser", Agent = "agents/missing-analyser.md" }
+            ]
+        };
+
+        _validator.Validate(yaml).Returns(WorkflowValidationResult.Success());
+        _parser.Parse(yaml).Returns(definition);
+
+        await _registry.LoadWorkflowsAsync(_tempRoot);
+
+        Assert.That(_registry.GetWorkflow("test-workflow"), Is.Null);
+    }
+
+    [Test]
+    public async Task LoadWorkflowsAsync_MissingAgentFileWorkflow_DoesNotBlockValidWorkflow()
+    {
+        CreateWorkflowFolder("invalid-wf", "name: Invalid");
+        var validFolder = CreateWorkflowFolder("valid-wf", "name: Valid");
+
+        var agentsDir = Path.Combine(validFolder, "agents");
+        Directory.CreateDirectory(agentsDir);
+        await File.WriteAllTextAsync(Path.Combine(agentsDir, "scanner.md"), "# Scanner Agent");
+
+        var invalidDef = new WorkflowDefinition
+        {
+            Name = "Invalid",
+            Steps =
+            [
+                new StepDefinition { Id = "step1", Name = "Step 1", Agent = "agents/missing.md" }
+            ]
+        };
+        var validDef = new WorkflowDefinition
+        {
+            Name = "Valid",
+            Steps =
+            [
+                new StepDefinition { Id = "step1", Name = "Step 1", Agent = "agents/scanner.md" }
+            ]
+        };
+
+        _validator.Validate("name: Invalid").Returns(WorkflowValidationResult.Success());
+        _parser.Parse("name: Invalid").Returns(invalidDef);
+        _validator.Validate("name: Valid").Returns(WorkflowValidationResult.Success());
+        _parser.Parse("name: Valid").Returns(validDef);
+
+        await _registry.LoadWorkflowsAsync(_tempRoot);
+
+        Assert.That(_registry.GetWorkflow("invalid-wf"), Is.Null);
+        Assert.That(_registry.GetWorkflow("valid-wf"), Is.Not.Null);
+    }
+
+    [Test]
+    public async Task LoadWorkflowsAsync_MissingAgentAndInvalidTool_BothErrorsLogged()
+    {
+        var yaml = "name: Test";
+        CreateWorkflowFolder("test-workflow", yaml);
+
+        var definition = new WorkflowDefinition
+        {
+            Name = "Test",
+            Steps =
+            [
+                new StepDefinition { Id = "step1", Name = "Step 1", Agent = "agents/missing.md", Tools = ["nonexistent_tool"] }
+            ]
+        };
+
+        _validator.Validate(yaml).Returns(WorkflowValidationResult.Success());
+        _parser.Parse(yaml).Returns(definition);
+
+        var registry = CreateRegistryWithTools("read_file");
+        await registry.LoadWorkflowsAsync(_tempRoot);
+
+        Assert.That(registry.GetWorkflow("test-workflow"), Is.Null);
+
+        _logger.Received().Log(
+            LogLevel.Error,
+            Arg.Any<EventId>(),
+            Arg.Is<object>(o => o.ToString()!.Contains("missing.md")),
+            Arg.Any<Exception?>(),
+            Arg.Any<Func<object, Exception?, string>>());
+
+        _logger.Received().Log(
+            LogLevel.Error,
+            Arg.Any<EventId>(),
+            Arg.Is<object>(o => o.ToString()!.Contains("nonexistent_tool")),
+            Arg.Any<Exception?>(),
+            Arg.Any<Func<object, Exception?, string>>());
+    }
+
+    [Test]
+    public async Task LoadWorkflowsAsync_EmptyAgentPath_SkippedNoError()
+    {
+        var yaml = "name: Test";
+        var folderPath = CreateWorkflowFolder("test-workflow", yaml);
+
+        var agentsDir = Path.Combine(folderPath, "agents");
+        Directory.CreateDirectory(agentsDir);
+        await File.WriteAllTextAsync(Path.Combine(agentsDir, "valid.md"), "# Agent");
+
+        var definition = new WorkflowDefinition
+        {
+            Name = "Test",
+            Steps =
+            [
+                new StepDefinition { Id = "step1", Name = "Step 1", Agent = "agents/valid.md" },
+                new StepDefinition { Id = "step2", Name = "Step 2", Agent = "" },
+                new StepDefinition { Id = "step3", Name = "Step 3", Agent = "   " }
+            ]
+        };
+
+        _validator.Validate(yaml).Returns(WorkflowValidationResult.Success());
+        _parser.Parse(yaml).Returns(definition);
+
+        await _registry.LoadWorkflowsAsync(_tempRoot);
+
+        Assert.That(_registry.GetWorkflow("test-workflow"), Is.Not.Null);
+
+        _logger.DidNotReceive().Log(
+            LogLevel.Error,
+            Arg.Any<EventId>(),
+            Arg.Is<object>(o => o.ToString()!.Contains("not found")),
             Arg.Any<Exception?>(),
             Arg.Any<Func<object, Exception?, string>>());
     }

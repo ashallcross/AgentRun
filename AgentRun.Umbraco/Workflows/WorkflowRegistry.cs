@@ -131,9 +131,10 @@ public sealed class WorkflowRegistry : IWorkflowRegistry
             return;
         }
 
-        VerifyAgentFiles(alias, folderPath, definition);
+        var agentFilesValid = VerifyAgentFiles(alias, folderPath, definition);
+        var toolRefsValid = VerifyToolReferences(alias, definition);
 
-        if (!VerifyToolReferences(alias, definition))
+        if (!agentFilesValid || !toolRefsValid)
         {
             return;
         }
@@ -162,8 +163,9 @@ public sealed class WorkflowRegistry : IWorkflowRegistry
         return valid;
     }
 
-    private void VerifyAgentFiles(string alias, string folderPath, WorkflowDefinition definition)
+    private bool VerifyAgentFiles(string alias, string folderPath, WorkflowDefinition definition)
     {
+        var valid = true;
         foreach (var step in definition.Steps)
         {
             if (string.IsNullOrWhiteSpace(step.Agent))
@@ -175,12 +177,14 @@ public sealed class WorkflowRegistry : IWorkflowRegistry
 
             if (!File.Exists(agentPath))
             {
-                _logger.LogWarning(
+                _logger.LogError(
                     "Workflow '{WorkflowAlias}': agent file '{AgentPath}' referenced by step '{StepId}' not found",
                     alias,
                     step.Agent,
                     step.Id);
+                valid = false;
             }
         }
+        return valid;
     }
 }
