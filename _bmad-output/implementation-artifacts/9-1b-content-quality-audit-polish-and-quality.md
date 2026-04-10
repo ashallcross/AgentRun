@@ -209,7 +209,7 @@ Locked by Winston in his 2026-04-08 architect responses. If the dev agent finds 
 **Then** the tool raises `ToolExecutionException` with the verbatim message `"Cannot extract structured fields from content type '<type>'. Use extract: 'raw' instead."`
 **And** AngleSharp is **not** invoked
 **And** the content-type check happens after the existing HTTP-status / empty-body / content sniffing checks but before parser invocation
-**And** Story 9.4 (Accessibility Quick-Scan) may add a sibling `extract` mode later for its own needs — that is **out of scope** for 9.1b. _Locked by architect review 2026-04-09._
+**And** Story 9.4 (Accessibility Quick-Scan) **must not add workflow-specific extract modes or fields** — see 9.4 post-implementation architect re-review 2026-04-10. **Locked by FR23/NFR25.** _Erratum applied 2026-04-10: this clause originally read "may add a sibling extract mode later for its own needs" — that hedge contradicted FR23/NFR25 and the runner-stays-workflow-generic rule. Winston overrode his own 2026-04-09 lock during the 9.4 re-review on 2026-04-10. Tools expose generic HTML/web/filesystem primitives; workflow-domain interpretation lives in agent prompts. The seam is closed._
 
 **AC #10 — Scanner.md is rewritten and consumes the structured shape.**
 

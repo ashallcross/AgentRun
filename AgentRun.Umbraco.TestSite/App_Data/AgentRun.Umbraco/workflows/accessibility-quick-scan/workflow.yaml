@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=../../../../../AgentRun.Umbraco/Schemas/workflow-schema.json
+name: Accessibility Quick-Scan
+description: Scans pages for accessibility issues and produces a prioritised, WCAG 2.1 AA-anchored fix list
+mode: interactive
+# Change this to match your configured Umbraco.AI profile alias
+default_profile: anthropic-sonnet-4-6
+# Story 9.6 / 9.1b: marketing pages routinely exceed the 1 MB engine default
+# in size only marginally — bump to 2 MB and extend the per-request fetch_url
+# timeout to 30s to absorb slow CDNs. Same defaults as Content Quality Audit.
+tool_defaults:
+  fetch_url:
+    max_response_bytes: 2097152
+    timeout_seconds: 30
+steps:
+  - id: scanner
+    name: Accessibility Scanner
+    agent: agents/scanner.md
+    tools:
+      - fetch_url
+      - write_file
+    writes_to:
+      - artifacts/scan-results.md
+    completion_check:
+      files_exist:
+        - artifacts/scan-results.md
+  - id: reporter
+    name: Accessibility Report Generator
+    agent: agents/reporter.md
+    tools:
+      - read_file
+      - write_file
+    reads_from:
+      - artifacts/scan-results.md
+    writes_to:
+      - artifacts/accessibility-report.md
+    completion_check:
+      files_exist:
+        - artifacts/accessibility-report.md

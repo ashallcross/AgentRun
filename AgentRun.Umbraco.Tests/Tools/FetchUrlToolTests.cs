@@ -611,6 +611,42 @@ public class FetchUrlToolTests
     private sealed record StructuredImages(int total, int with_alt, int missing_alt);
     private sealed record StructuredLinks(int @internal, int external);
 
+    // Story 9.4 Task 1.E (re-review patch) — generic-primitives projection for tests.
+    // Maps the post-patch flat-shape `forms`, `semantic_elements`, `lang`, plus
+    // the new `headings.sequence`, `links.anchor_texts`, `links.anchor_texts_truncated`
+    // appended fields. There is no `accessibility { }` namespace in the runner.
+    private sealed record StructuredHandleExt(
+        string url,
+        int status,
+        StructuredHeadingsExt headings,
+        StructuredLinksExt links,
+        StructuredFormsExt forms,
+        StructuredSemanticElementsExt semantic_elements,
+        string? lang,
+        bool truncated);
+    private sealed record StructuredHeadingsExt(List<string> h1, List<string> h2, int h3_h6_count, List<string> sequence);
+    private sealed record StructuredLinksExt(int @internal, int external, List<string> anchor_texts, bool anchor_texts_truncated);
+    private sealed record StructuredFormsExt(int field_count, int fields_with_label, int fields_missing_label);
+    private sealed record StructuredSemanticElementsExt(bool main, bool nav, bool header, bool footer);
+
+    private static StructuredHandleExt ParseExt(object result)
+    {
+        Assert.That(result, Is.InstanceOf<string>());
+        return JsonSerializer.Deserialize<StructuredHandleExt>((string)result,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+    }
+
+    private async Task<StructuredHandleExt> RunExtAsync(string html, string url = "https://example.com/page")
+    {
+        SetupHttpClientHtml(Encoding.UTF8.GetBytes(html));
+        var args = new Dictionary<string, object?>
+        {
+            ["url"] = url,
+            ["extract"] = "structured"
+        };
+        return ParseExt(await _tool.ExecuteAsync(args, _context, CancellationToken.None));
+    }
+
     private static StructuredHandle ParseStructured(object result)
     {
         Assert.That(result, Is.InstanceOf<string>());
@@ -697,6 +733,8 @@ public class FetchUrlToolTests
             {
                 "url", "status", "title", "meta_description",
                 "headings", "word_count", "images", "links",
+                // Story 9.4 Task 1.B (re-review patch): top-level generic primitives
+                "forms", "semantic_elements", "lang",
                 "truncated"
             }));
         }
@@ -847,6 +885,29 @@ public class FetchUrlToolTests
         Assert.That(h.links.@internal, Is.Zero);
         Assert.That(h.links.external, Is.Zero);
         Assert.That(h.truncated, Is.False);
+
+        // Story 9.4 Task 1.D (re-review patch): empty-body short-circuit must
+        // return zero-valued versions of all the new top-level generic blocks.
+        SetupHttpClient((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.NoContent)
+        {
+            Content = new ByteArrayContent(Array.Empty<byte>())
+        }));
+        var ext = ParseExt(await _tool.ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["url"] = "https://example.com/empty",
+            ["extract"] = "structured"
+        }, _context, CancellationToken.None));
+        Assert.That(ext.headings.sequence, Is.Empty);
+        Assert.That(ext.links.anchor_texts, Is.Empty);
+        Assert.That(ext.links.anchor_texts_truncated, Is.False);
+        Assert.That(ext.forms.field_count, Is.Zero);
+        Assert.That(ext.forms.fields_with_label, Is.Zero);
+        Assert.That(ext.forms.fields_missing_label, Is.Zero);
+        Assert.That(ext.semantic_elements.main, Is.False);
+        Assert.That(ext.semantic_elements.nav, Is.False);
+        Assert.That(ext.semantic_elements.header, Is.False);
+        Assert.That(ext.semantic_elements.footer, Is.False);
+        Assert.That(ext.lang, Is.Null);
     }
 
     [Test]
@@ -1147,6 +1208,327 @@ public class FetchUrlToolTests
         Assert.That(seenUris, Has.Count.EqualTo(2));
         Assert.That(seenUris[0], Is.EqualTo(new Uri("https://example.com/old")));
         Assert.That(seenUris[1], Is.EqualTo(new Uri("https://example.com/new")));
+    }
+
+    // ============================================================================
+    // Story 9.4 Task 1.E (re-review patch) — generic HTML primitives parser tests
+    // (FR23/NFR25: runner exposes HTML structural facts; workflow-domain
+    //  interpretation lives in agent prompts, not in this file or in
+    //  FetchUrlTool.cs)
+    // ============================================================================
+
+    [Test]
+    public async Task Generic_HeadingSequence_PresentInDocumentOrder()
+    {
+        var html = "<html><body><h1>a</h1><h2>b</h2><h3>c</h3><h2>d</h2></body></html>";
+        var h = await RunExtAsync(html);
+        Assert.That(h.headings.sequence, Is.EqualTo(new[] { "h1", "h2", "h3", "h2" }));
+    }
+
+    [Test]
+    public async Task Generic_HeadingSequence_CapEnforcedAtTwoHundred()
+    {
+        var sb = new StringBuilder("<html><body>");
+        for (int i = 0; i < 250; i++) sb.Append("<h2>x</h2>");
+        sb.Append("</body></html>");
+        var h = await RunExtAsync(sb.ToString());
+        Assert.That(h.headings.sequence, Has.Count.EqualTo(200));
+        // h1/h2/h3_h6_count tallies are uncapped (CQA contract preserved).
+        Assert.That(h.headings.h2, Has.Count.EqualTo(250));
+    }
+
+    [Test]
+    public async Task Generic_AnchorTexts_CapEnforcedAtOneHundred_InternalExternalUncapped()
+    {
+        var sb = new StringBuilder("<html><body>");
+        for (int i = 0; i < 150; i++) sb.Append($"<a href=\"/p{i}\">Link {i}</a>");
+        sb.Append("</body></html>");
+        var h = await RunExtAsync(sb.ToString());
+        Assert.That(h.links.anchor_texts, Has.Count.EqualTo(100));
+        Assert.That(h.links.anchor_texts_truncated, Is.True);
+        // Invariant from 9.1b: internal + external == document.QuerySelectorAll("a[href]").Length
+        Assert.That(h.links.@internal + h.links.external, Is.EqualTo(150));
+    }
+
+    [Test]
+    public async Task Generic_AnchorTexts_EmptyTextAnchorIsExcludedButStillCountedInLinks()
+    {
+        var html = """
+            <html><body>
+              <a href="/icon"><img src="x.png" alt=""></a>
+              <a href="/text">Read more</a>
+            </body></html>
+            """;
+        var h = await RunExtAsync(html);
+        Assert.That(h.links.anchor_texts, Is.EqualTo(new[] { "Read more" }));
+        Assert.That(h.links.@internal + h.links.external, Is.EqualTo(2));
+    }
+
+    [Test]
+    public async Task Generic_AnchorTexts_WhitespaceCollapsedTrimmed()
+    {
+        var html = "<html><body><a href=\"/g\"> Read\n\tour guide </a></body></html>";
+        var h = await RunExtAsync(html);
+        Assert.That(h.links.anchor_texts, Is.EqualTo(new[] { "Read our guide" }));
+    }
+
+    [Test]
+    public async Task Generic_AnchorTexts_OriginalCasePreserved()
+    {
+        var html = "<html><body><a href=\"/c\">Click Here</a></body></html>";
+        var h = await RunExtAsync(html);
+        Assert.That(h.links.anchor_texts, Is.EqualTo(new[] { "Click Here" }));
+    }
+
+    [Test]
+    public async Task Generic_AnchorTexts_DeterministicAcrossTwoParses()
+    {
+        var html = """
+            <html><body>
+              <a href="/a">Alpha</a>
+              <a href="/b">Beta</a>
+              <a href="/c">Gamma</a>
+            </body></html>
+            """;
+        var h1 = await RunExtAsync(html);
+        var h2 = await RunExtAsync(html);
+        Assert.That(h2.links.anchor_texts, Is.EqualTo(h1.links.anchor_texts));
+    }
+
+    [Test]
+    public async Task Generic_SemanticElements_ElementsToggleIndependently()
+    {
+        var html = "<html><body><main>m</main><nav>n</nav></body></html>";
+        var h = await RunExtAsync(html);
+        Assert.That(h.semantic_elements.main, Is.True);
+        Assert.That(h.semantic_elements.nav, Is.True);
+        Assert.That(h.semantic_elements.header, Is.False);
+        Assert.That(h.semantic_elements.footer, Is.False);
+    }
+
+    [Test]
+    public async Task Generic_SemanticElements_RoleAttributesToggleIndependently()
+    {
+        var html = """
+            <html><body>
+              <div role="main">m</div>
+              <div role="banner">h</div>
+              <div role="contentinfo">f</div>
+            </body></html>
+            """;
+        var h = await RunExtAsync(html);
+        Assert.That(h.semantic_elements.main, Is.True);
+        Assert.That(h.semantic_elements.nav, Is.False);
+        Assert.That(h.semantic_elements.header, Is.True);
+        Assert.That(h.semantic_elements.footer, Is.True);
+    }
+
+    [Test]
+    public async Task Generic_Forms_FieldCountExcludesHiddenAndButtonTypes()
+    {
+        var html = """
+            <html><body>
+              <input type="text" aria-label="name">
+              <input type="hidden" name="h">
+              <input type="submit" value="Go">
+              <input type="button" value="X">
+              <input type="reset" value="X">
+              <input type="image" src="x">
+              <textarea aria-label="bio"></textarea>
+              <select aria-label="country"><option>A</option></select>
+            </body></html>
+            """;
+        var h = await RunExtAsync(html);
+        Assert.That(h.forms.field_count, Is.EqualTo(3));
+        Assert.That(h.forms.fields_with_label, Is.EqualTo(3));
+        Assert.That(h.forms.fields_missing_label, Is.Zero);
+    }
+
+    [Test]
+    public async Task Generic_Forms_AllFourLabelAssociationMechanisms()
+    {
+        var html = """
+            <html><body>
+              <label for="a">A</label>
+              <input id="a" type="text">
+              <label>B <input type="text"></label>
+              <input type="text" aria-label="C">
+              <span id="lbl">D</span>
+              <input type="text" aria-labelledby="lbl">
+              <input type="text">
+            </body></html>
+            """;
+        var h = await RunExtAsync(html);
+        Assert.That(h.forms.field_count, Is.EqualTo(5));
+        Assert.That(h.forms.fields_with_label, Is.EqualTo(4));
+        Assert.That(h.forms.fields_missing_label, Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task Generic_AriaLabelledBy_MultiIdref_OneEmptyOneNonEmpty_CountsAsLabelled()
+    {
+        var html = """
+            <html><body>
+              <span id="e"></span>
+              <span id="ne">Name</span>
+              <input type="text" aria-labelledby="e ne">
+            </body></html>
+            """;
+        var h = await RunExtAsync(html);
+        Assert.That(h.forms.fields_with_label, Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task Generic_AriaLabelledBy_SingleIdrefPointingToEmptySpan_CountsAsMissingLabel()
+    {
+        var html = """
+            <html><body>
+              <span id="e"></span>
+              <input type="text" aria-labelledby="e">
+            </body></html>
+            """;
+        var h = await RunExtAsync(html);
+        Assert.That(h.forms.fields_with_label, Is.Zero);
+        Assert.That(h.forms.fields_missing_label, Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task Generic_AriaLabelledBy_UnresolvedAndResolvedIdref_CountsAsLabelled()
+    {
+        // Q3' addition: unresolved IDREFs contribute empty text and do not throw
+        // or disqualify other resolved non-empty IDREFs in the same list.
+        var html = """
+            <html><body>
+              <span id="ne">Name</span>
+              <input type="text" aria-labelledby="ghost ne">
+            </body></html>
+            """;
+        var h = await RunExtAsync(html);
+        Assert.That(h.forms.fields_with_label, Is.EqualTo(1));
+        Assert.That(h.forms.fields_missing_label, Is.Zero);
+    }
+
+    [Test]
+    public async Task Generic_AriaLabelledBy_UnresolvedIdrefAlone_CountsAsMissingAndDoesNotThrow()
+    {
+        var html = "<html><body><input type=\"text\" aria-labelledby=\"ghost\"></body></html>";
+        var h = await RunExtAsync(html);
+        Assert.That(h.forms.fields_with_label, Is.Zero);
+        Assert.That(h.forms.fields_missing_label, Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task Generic_Lang_PresentAndAbsent()
+    {
+        var h1 = await RunExtAsync("<html lang=\"en-GB\"><body></body></html>");
+        Assert.That(h1.lang, Is.EqualTo("en-GB"));
+
+        var h2 = await RunExtAsync("<html><body></body></html>");
+        Assert.That(h2.lang, Is.Null);
+    }
+
+    // ---------- Fixture-backed regression coverage (Task 1.E) ----------
+
+    [Test]
+    public async Task Generic_Fixture_100kb_ProducesNewTopLevelFields()
+    {
+        var bytes = LoadFixture("fetch-url-100kb.html");
+        _resolver.MaxBytes = bytes.Length + 10_000;
+        SetupHttpClientHtml(bytes);
+        var args = new Dictionary<string, object?>
+        {
+            ["url"] = "https://wearecogworks.com/",
+            ["extract"] = "structured"
+        };
+        var result = (string)await _tool.ExecuteAsync(args, _context, CancellationToken.None);
+        using var doc = JsonDocument.Parse(result);
+        var root = doc.RootElement;
+        Assert.That(root.TryGetProperty("forms", out _), Is.True);
+        Assert.That(root.TryGetProperty("semantic_elements", out _), Is.True);
+        Assert.That(root.TryGetProperty("lang", out _), Is.True);
+        Assert.That(root.GetProperty("headings").TryGetProperty("sequence", out var seq), Is.True);
+        Assert.That(seq.ValueKind, Is.EqualTo(JsonValueKind.Array));
+        Assert.That(root.GetProperty("links").TryGetProperty("anchor_texts", out _), Is.True);
+        Assert.That(root.GetProperty("links").TryGetProperty("anchor_texts_truncated", out _), Is.True);
+    }
+
+    [Test]
+    public async Task Generic_Fixture_500kb_HasHeadingSequenceArray()
+    {
+        var bytes = LoadFixture("fetch-url-500kb.html");
+        _resolver.MaxBytes = bytes.Length + 10_000;
+        SetupHttpClientHtml(bytes);
+        var args = new Dictionary<string, object?>
+        {
+            ["url"] = "https://umbraco.com/products/cms/",
+            ["extract"] = "structured"
+        };
+        var result = (string)await _tool.ExecuteAsync(args, _context, CancellationToken.None);
+        using var doc = JsonDocument.Parse(result);
+        Assert.That(doc.RootElement.GetProperty("headings").GetProperty("sequence").ValueKind,
+            Is.EqualTo(JsonValueKind.Array));
+    }
+
+    [Test]
+    public async Task Generic_Fixture_1500kb_DeterministicAcrossTwoParses()
+    {
+        var bytes = LoadFixture("fetch-url-1500kb.html");
+        _resolver.MaxBytes = 2_097_152;
+        SetupHttpClientHtml(bytes);
+        var args = new Dictionary<string, object?>
+        {
+            ["url"] = "https://www.bbc.co.uk/news",
+            ["extract"] = "structured"
+        };
+        var first = (string)await _tool.ExecuteAsync(args, _context, CancellationToken.None);
+        var second = (string)await _tool.ExecuteAsync(args, _context, CancellationToken.None);
+        using var d1 = JsonDocument.Parse(first);
+        using var d2 = JsonDocument.Parse(second);
+        var seq1 = d1.RootElement.GetProperty("headings").GetProperty("sequence").GetRawText();
+        var seq2 = d2.RootElement.GetProperty("headings").GetProperty("sequence").GetRawText();
+        Assert.That(seq2, Is.EqualTo(seq1));
+        var anchors1 = d1.RootElement.GetProperty("links").GetProperty("anchor_texts").GetRawText();
+        var anchors2 = d2.RootElement.GetProperty("links").GetProperty("anchor_texts").GetRawText();
+        Assert.That(anchors2, Is.EqualTo(anchors1));
+    }
+
+    [Test]
+    public async Task Generic_BackwardsCompatibility_CqaExistingFieldShapeUnchanged()
+    {
+        // Story 9.4 AC8 / Task 1.E: CQA scanner.md consumes the existing
+        // structured shape unchanged. This test exists to fail loudly if
+        // anyone renames or restructures the pre-9.4 fields.
+        var bytes = LoadFixture("fetch-url-100kb.html");
+        _resolver.MaxBytes = bytes.Length + 10_000;
+        SetupHttpClientHtml(bytes);
+        var args = new Dictionary<string, object?>
+        {
+            ["url"] = "https://wearecogworks.com/",
+            ["extract"] = "structured"
+        };
+        var json = (string)await _tool.ExecuteAsync(args, _context, CancellationToken.None);
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+
+        Assert.That(root.TryGetProperty("title", out _), Is.True);
+        Assert.That(root.TryGetProperty("meta_description", out _), Is.True);
+        Assert.That(root.TryGetProperty("word_count", out var wc), Is.True);
+        Assert.That(wc.ValueKind, Is.EqualTo(JsonValueKind.Number));
+        Assert.That(root.TryGetProperty("truncated", out _), Is.True);
+
+        var headings = root.GetProperty("headings");
+        Assert.That(headings.GetProperty("h1").ValueKind, Is.EqualTo(JsonValueKind.Array));
+        Assert.That(headings.GetProperty("h2").ValueKind, Is.EqualTo(JsonValueKind.Array));
+        Assert.That(headings.GetProperty("h3_h6_count").ValueKind, Is.EqualTo(JsonValueKind.Number));
+
+        var images = root.GetProperty("images");
+        Assert.That(images.GetProperty("total").ValueKind, Is.EqualTo(JsonValueKind.Number));
+        Assert.That(images.GetProperty("with_alt").ValueKind, Is.EqualTo(JsonValueKind.Number));
+        Assert.That(images.GetProperty("missing_alt").ValueKind, Is.EqualTo(JsonValueKind.Number));
+
+        var links = root.GetProperty("links");
+        Assert.That(links.GetProperty("internal").ValueKind, Is.EqualTo(JsonValueKind.Number));
+        Assert.That(links.GetProperty("external").ValueKind, Is.EqualTo(JsonValueKind.Number));
     }
 
     private class MockHttpHandler : HttpMessageHandler

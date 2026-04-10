@@ -394,6 +394,12 @@ The actual package split can happen when we're ready to ship V2. It's a refactor
 
 _Drop raw ideas here. No format required. They'll be triaged into the sections above periodically._
 
+### Writing memory files when the agent isn't allowed out of the instance folder
+
+Right now our agents don't have any sidecar or memory files, but more advanced ones do. the agents are instructed for security reasons to not go out of the instance folder, but to save memories they have to. we need to find a secure way to allow this
+
+### Permissions and allowing per person workflows
+
 we should think about permissoins too actually as right now anyone can go in and trigger a flow and also go in a look at one somone else has triggered. this isn't a high priority, but for enterprise level apps, it will be a consideration, especially an audit trail of who has done what and why. maybe we can tap into the umbraco audit logger?
 
 ### Tree Navigation UX Overhaul (captured 2026-04-02)
