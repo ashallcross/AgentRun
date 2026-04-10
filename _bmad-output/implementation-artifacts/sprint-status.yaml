@@ -1,5 +1,5 @@
 # generated: 2026-03-30
-# last_updated: 2026-04-08 (story 9-7 in-progress)
+# last_updated: 2026-04-10 (story 9-4 ready-for-dev)
 # project: Shallai.UmbracoAgentRunner
 # project_key: NOKEY
 # tracking_system: file-system
@@ -44,7 +44,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-30
-last_updated: 2026-04-08 (story 9-1b ready-for-dev)
+last_updated: 2026-04-10 (story 9-2 done)
 project: AgentRun.Umbraco
 project_key: NOKEY
 tracking_system: file-system
@@ -126,10 +126,10 @@ development_status:
   9-1a-content-quality-audit-working-skeleton: done             # full validation blocked by 9-0; skeleton itself is committed
   9-7-tool-result-offloading-fetch-url: done                    # done 2026-04-08 — DoD amended via SCP, workflow-completion gate deferred to 9.1b + 9.9; see sprint-change-proposal-2026-04-08-9-7-dod-amendment.md
   9-9-read-file-size-guard: done                         # done 2026-04-08 — defence-in-depth size guard for read_file; manual E2E verified; post-impl code review fixes (D1 single bounded-read path closes TOCTOU; D2 ToolContextMissingException + FetchUrlTool spillover) applied
-  9-1c-first-run-ux-url-input: paused                        # paused 2026-04-08 pending 9.7 (done) + 9.1b + 9.9; chain extended after 9.7 manual E2E surfaced read_file bloat — see sprint-change-proposal-2026-04-08-9-1c-pause-addendum-2026-04-08-readfile.md
+  9-1c-first-run-ux-url-input: done                        # done 2026-04-10 — Task 7.1–7.10 manual E2E walked end-to-end on Sonnet 4.6 against the post-9.1b scanner.md, all 9 ACs MET, full CQA pipeline (scanner → analyser → reporter) green on instance 9e5dcad4121d4beba027ab9f62e3ae1c. Tasks 1–6 partial milestone from 2026-04-08 + scanner.md preservation through 9.1b verified by Winston 2026-04-09. Surfaced one out-of-scope bug (instance resume after step completion) — captured in deferred-work.md and bug-finding-2026-04-10-instance-resume-after-step-completion.md, suggested as Epic 10 story.
   9-1b-content-quality-audit-polish-and-quality: done           # done 2026-04-09 — Phase 1 build + 3 carve-outs + 2 Phase 2 polish passes shipped; full 3-step CQA pipeline (scanner → analyser → reporter) verified end-to-end against the 5-URL trustworthiness gate batch on Sonnet 4.6, all 3 artifacts produced, audit-report.md verified as paying-client quality. Root cause of multi-URL stall was MaxOutputTokens unset (FinishReason=length) — caught by architect-gated pre-commit FinishReason instrumentation; fix is hardcoded MaxOutputTokens=32768 at StepExecutor.cs:160 with Story 9.6.1 follow-up filed for resolver wiring. Tests 442/442. See 9-1b-content-quality-audit-polish-and-quality.md change-log rows 0.1–0.7 and 9-1b-phase-1-stall-investigation-report-2026-04-09.md for the diagnostic-gate teaching artefact. Phase 2 polish budget 2/5 consumed; remaining 3 passes available for post-launch trustworthiness iteration.
-  9-4-accessibility-quick-scan-workflow: backlog                # depends on 9-1c patterns being in place
-  9-2-json-schema-for-workflow-yaml: backlog                    # needs 9-6 keys (tool_defaults, tool_overrides) included
+  9-4-accessibility-quick-scan-workflow: in-progress            # started 2026-04-10 — Task 1 (engine additive accessibility block) in flight
+  9-2-json-schema-for-workflow-yaml: done                             # done 2026-04-10 — schema rewritten to mirror WorkflowValidator (tool_defaults, tool_overrides, icon, variants, data_files, description, mode-no-longer-required); WorkflowSchemaTests regression gate (parse-as-draft-2020-12 + shipped-CQA-validates + full-Epic9-surface-validates added during code review to close the ~30% surface-coverage gap); tests 463/463; CQA workflow has yaml-language-server directive; manual VS Code autocomplete smoke confirmed by Adam; two low-severity findings deferred (NormalizeForJson scalar coercion + null-block schema/validator drift) — see deferred-work.md.
   9-3-documentation-and-nuget-packaging: backlog                # needs 9-6 (resolution chain section) and 9-1c (first-run framing)
   9-5-private-beta-distribution-plan: backlog                   # ships last — distributes everything above
   epic-9-retrospective: optional

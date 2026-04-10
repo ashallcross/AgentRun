@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../../../AgentRun.Umbraco/Schemas/workflow-schema.json
 name: Content Quality Audit
 description: Scans, analyses, and reports on content quality
 mode: interactive

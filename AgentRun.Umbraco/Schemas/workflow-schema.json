@@ -1,32 +1,45 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Workflow Definition",
-  "description": "Schema for AgentRun.Umbraco workflow.yaml files",
+  "title": "AgentRun.Umbraco Workflow Definition",
+  "description": "Schema for AgentRun.Umbraco workflow.yaml files. Mirrors the runtime WorkflowValidator — anything this schema accepts must be accepted by the engine, and anything the engine rejects must be rejected here. Reference this schema from workflow.yaml via a '# yaml-language-server: $schema=...' directive for editor autocomplete and inline validation.",
   "type": "object",
-  "required": ["name", "description", "mode", "steps"],
+  "required": ["name", "description", "steps"],
   "additionalProperties": false,
   "properties": {
     "name": {
       "type": "string",
-      "description": "Human-readable name of the workflow"
+      "description": "Human-readable name of the workflow shown in the AgentRun dashboard."
     },
     "description": {
       "type": "string",
-      "description": "Description of what this workflow does"
+      "description": "Short description of what this workflow does. Shown in the workflow list and first-run UX."
     },
     "mode": {
       "type": "string",
       "enum": ["interactive", "autonomous"],
-      "description": "Execution mode: interactive requires user input between steps, autonomous runs to completion"
+      "description": "Execution mode. 'interactive' pauses between steps for user input; 'autonomous' runs steps back-to-back to completion. Optional — defaults to 'interactive' when omitted."
     },
     "default_profile": {
       "type": "string",
-      "description": "Default LLM profile to use for steps that don't specify one"
+      "description": "Default Umbraco.AI profile alias used for steps that do not specify their own 'profile'."
+    },
+    "icon": {
+      "type": "string",
+      "description": "Optional icon identifier used by the dashboard when rendering this workflow in lists."
+    },
+    "variants": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Reserved for future workflow variant support. The runtime validator permits this key with free-form contents today — do not rely on a stable inner shape yet."
+    },
+    "tool_defaults": {
+      "$ref": "#/$defs/toolTuning",
+      "description": "Workflow-level tool tuning. Values declared here apply to every step unless a step-level 'tool_overrides' block overrides them. Resolution chain: step tool_overrides → workflow tool_defaults → site AgentRun:ToolLimits defaults → engine default, all capped by the site-level ceiling. See Story 9.6 (fetch_url / tool_loop) and Story 9.9 (read_file)."
     },
     "steps": {
       "type": "array",
       "minItems": 1,
-      "description": "Ordered list of workflow steps",
+      "description": "Ordered list of workflow steps. At least one step is required.",
       "items": {
         "type": "object",
         "required": ["id", "name", "agent"],
@@ -34,46 +47,111 @@
         "properties": {
           "id": {
             "type": "string",
-            "description": "Unique step identifier (snake_case)"
+            "description": "Unique step identifier within this workflow (snake_case recommended). Used in artifact paths and the step-progress sidebar."
           },
           "name": {
             "type": "string",
-            "description": "Human-readable step name"
+            "description": "Human-readable step name shown in the dashboard step sidebar."
+          },
+          "description": {
+            "type": "string",
+            "description": "Optional short description of what this step does. Surfaced in the dashboard when available."
           },
           "agent": {
             "type": "string",
-            "description": "Relative path to the agent markdown file"
+            "description": "Relative path (from the workflow.yaml folder) to the agent markdown file that drives this step."
           },
           "profile": {
             "type": "string",
-            "description": "LLM profile override for this step"
+            "description": "Umbraco.AI profile alias override for this step. Falls back to the workflow 'default_profile' when omitted."
           },
           "tools": {
             "type": "array",
             "items": { "type": "string" },
-            "description": "Tool names available to this step"
+            "description": "Tool names this step is allowed to call (e.g. fetch_url, read_file, write_file). Must match tools registered with the engine."
           },
           "reads_from": {
             "type": "array",
             "items": { "type": "string" },
-            "description": "Artifact file paths this step reads"
+            "description": "Artifact file paths (relative to the instance artifacts folder) this step reads. Shown on the dashboard so users can see step dependencies."
           },
           "writes_to": {
             "type": "array",
             "items": { "type": "string" },
-            "description": "Artifact file paths this step produces"
+            "description": "Artifact file paths this step is expected to produce. Used by the artifact browser and the completion checker."
+          },
+          "data_files": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Additional read-only data files (relative to the workflow folder) made available to this step at prompt-assembly time."
           },
           "completion_check": {
             "type": "object",
             "additionalProperties": false,
+            "required": ["files_exist"],
+            "description": "Criteria the engine uses to decide whether this step is complete.",
             "properties": {
               "files_exist": {
                 "type": "array",
                 "items": { "type": "string" },
-                "description": "Files that must exist for the step to be considered complete"
+                "minItems": 1,
+                "description": "Non-empty list of artifact files that must exist for the step to be considered complete."
               }
+            }
+          },
+          "tool_overrides": {
+            "$ref": "#/$defs/toolTuning",
+            "description": "Step-level tool tuning. Values declared here override 'tool_defaults' for this step only. See the resolution chain on 'tool_defaults'."
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "toolTuning": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Tool tuning block. Only the explicitly supported tools and settings are allowed — unknown tools or settings are rejected by the runtime validator.",
+      "properties": {
+        "fetch_url": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Tuning for the fetch_url tool (Story 9.6).",
+          "properties": {
+            "max_response_bytes": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "description": "Maximum response size in bytes for a single fetch_url call. Engine default 1048576 (1 MB). Resolution chain: step tool_overrides → workflow tool_defaults → site AgentRun:ToolLimits:FetchUrl:MaxResponseBytesDefault → engine default, capped by AgentRun:ToolLimits:FetchUrl:MaxResponseBytesCeiling. Introduced in Story 9.6."
             },
-            "required": ["files_exist"]
+            "timeout_seconds": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "description": "Per-request timeout in seconds for fetch_url. Engine default 10. Resolution chain: step tool_overrides → workflow tool_defaults → site AgentRun:ToolLimits:FetchUrl:TimeoutSecondsDefault → engine default, capped by AgentRun:ToolLimits:FetchUrl:TimeoutSecondsCeiling. Introduced in Story 9.6."
+            }
+          }
+        },
+        "read_file": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Tuning for the read_file tool (Story 9.9).",
+          "properties": {
+            "max_response_bytes": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "description": "Maximum bytes returned from a single read_file call (defence-in-depth against oversized artifacts). Engine default 1048576 (1 MB). Resolution chain: step tool_overrides → workflow tool_defaults → site AgentRun:ToolLimits:ReadFile:MaxResponseBytesDefault → engine default, capped by AgentRun:ToolLimits:ReadFile:MaxResponseBytesCeiling. Introduced in Story 9.9."
+            }
+          }
+        },
+        "tool_loop": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Tuning for the step tool-loop (Story 9.6).",
+          "properties": {
+            "user_message_timeout_seconds": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "description": "How long the tool loop waits for a user message in interactive mode before giving up. Engine default 300. Resolution chain: step tool_overrides → workflow tool_defaults → site AgentRun:ToolLimits:ToolLoop:UserMessageTimeoutSecondsDefault → engine default, capped by AgentRun:ToolLimits:ToolLoop:UserMessageTimeoutSecondsCeiling. Introduced in Story 9.6."
+            }
           }
         }
       }
