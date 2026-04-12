@@ -202,6 +202,22 @@ Architect-triaged (Winston, 2026-04-10). Full review: `planning-artifacts/codeba
 - **`WorkflowOrchestrator.cs` (181 lines) — defer.** Rewrite comes with background execution; refactoring now is wasted.
 - **`agentrun-chat-message.element.ts` (235 lines) — skip.** DOM-to-HTML pattern is correct for sanitisation + streaming; small file, works.
 
+## Context bloat risk for Umbraco content tools on larger sites (2026-04-12)
+
+Identified during manual testing of Story 9.12 content tools. On a 26-node test site the agent calls `get_content` for every node and accumulates all results in conversation context. On sites with 100+ nodes this will exhaust the context window and trigger the same stall/failure pattern that Story 9.7 solved for `fetch_url`.
+
+**Beta limitation (document in known issues):** The Umbraco Content Audit workflow is tested on small-to-medium sites (~50-100 content nodes). Larger sites may cause the scanner step to stall or fail due to context accumulation. The workaround is to use `contentType` or `parentId` filters in `list_content` to audit content in sections rather than the full tree.
+
+**Prompt-level mitigation for Story 9.13:** The scanner agent prompt must instruct incremental writing — examine a node, append findings to `scan-results.md` immediately via `write_file`, then move to the next node. The agent should not hold findings in memory across nodes.
+
+**Engine-level mitigations (Story 10.2 — Context Management):**
+
+- **Tool result offloading for content tools** — same pattern as 9.7's `.fetch-cache/` handles. `get_content` writes the full result to a file and returns a compact summary. The agent reads the file via `read_file` only when it needs detail.
+- **Conversation truncation/summarisation** — engine-level support for dropping old tool results from the conversation while preserving a summary of findings so far.
+- **Batched sub-invocation** — the workflow runs the scanner in batches (by content type or subtree) with each batch as a separate step or sub-agent invocation that writes to the same cumulative findings file. This is a natural application of the sub-agent spawning capability from the architecture summary.
+
+**Cross-reference:** Story 10.2 (Context Management for Long Conversations) is the existing story for this. The content tools make it more urgent — the `fetch_url` stall was on 5-URL batches; a content audit on a 500-node site is a much larger context surface.
+
 ## Deferred from: Story 9.1c Task 7.4 manual E2E exploration (2026-04-10)
 
 ## Deferred from: code review of story 9-12-umbraco-content-tools (2026-04-12)

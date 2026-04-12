@@ -4,11 +4,15 @@ AI-powered workflow engine for Umbraco CMS -- define multi-step agent workflows 
 
 <!-- Badges (post-beta): NuGet version, Umbraco compatibility -->
 
-> AgentRun ships with two example workflows: Content Quality Audit and Accessibility Quick-Scan.
-> After installing the package and configuring an Umbraco.AI profile, open the Agent Workflows
-> section, click a workflow, and click Start. The agent will ask you for one or more URLs to
-> audit -- paste URLs from your own site (or any public site you'd like a second opinion on)
-> and watch the workflow run.
+> AgentRun ships with three example workflows, including an **Umbraco Content Audit** that
+> analyses the content in your Umbraco instance directly from the backoffice -- no external URLs
+> needed. After installing the package and configuring an Umbraco.AI profile, open Agent
+> Workflows, click the Content Audit, and click Start. The agent reads your published content
+> tree and produces a prioritised audit report.
+>
+> Also included: **Content Quality Audit** and **Accessibility Quick-Scan** -- paste one or
+> more public URLs and the agent fetches, scores, and reports on content quality or WCAG 2.1 AA
+> accessibility issues.
 
 ## Quick Start
 
@@ -55,10 +59,11 @@ Copy-Item -Recurse "$env:USERPROFILE\.nuget\packages\agentrun.umbraco\1.0.0-beta
     -Destination "App_Data\AgentRun.Umbraco\workflows\"
 ```
 
-This gives you two ready-to-run workflows:
+This gives you three ready-to-run workflows:
 
 | Workflow | Steps | What it does |
 |----------|-------|-------------|
+| **Umbraco Content Audit** | Scanner, Analyser, Reporter | Reads your Umbraco content tree, scores completeness and structure, generates a prioritised audit report |
 | **Content Quality Audit** | Scanner, Analyser, Reporter | Fetches pages, scores content quality, generates an audit report |
 | **Accessibility Quick-Scan** | Scanner, Reporter | Fetches pages, identifies WCAG 2.1 AA issues, produces a prioritised fix list |
 
@@ -79,8 +84,10 @@ The shipped examples use `anthropic-sonnet-4-6`; update this to your profile ali
 
 ### 6. Open Agent Workflows
 
-Navigate to the **Agent Workflows** section in the backoffice. Both example workflows should
-appear. Click one, click **Start**, and paste one or more URLs when prompted.
+Navigate to the **Agent Workflows** section in the backoffice. All three example workflows
+should appear. Start with the **Umbraco Content Audit** -- it reads your site's own content,
+so there's nothing to configure beyond the profile. For the URL-based workflows, click
+**Start** and paste one or more URLs when prompted.
 
 ## Creating Your Own Workflows
 

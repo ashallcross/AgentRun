@@ -1949,7 +1949,7 @@ _Full story spec to be created by SM before development begins._
 
 ### Story 9.5: Private Beta Distribution Plan
 
-_Added 2026-04-07 — defines the beta release milestone explicitly. Previously there was no distinction between "beta" and "public launch" in the epic plan, which created ambiguity about when Epic 9 was "done"._
+_Added 2026-04-07. Updated 2026-04-12 to reflect three workflows (including Umbraco Content Audit), known-issues list, and updated documentation references._
 
 As a product owner,
 I want the beta release milestone defined, packaged, and distributed to a curated invite list,
@@ -1965,7 +1965,13 @@ So that real users exercise the package before public launch.
 
 **Given** the beta invite list is finalised
 **When** invitations are sent
-**Then** each invitee receives: installation instructions, a link to the documentation (Story 9.3 deliverable), a request for structured feedback, and explicit language that this is a private beta not for re-sharing
+**Then** each invitee receives:
+- Installation instructions (README quick start)
+- A link to the documentation (Story 9.14 deliverable — updated for all three workflows)
+- A request to start with the **Umbraco Content Audit** workflow first (it reads the content in their own instance — no external URLs needed, immediate demonstration of the package's value)
+- The known-issues list (see below)
+- A request for structured feedback
+- Explicit language that this is a private beta not for re-sharing
 **And** the invite list includes: Cogworks internal engineering contacts, 3-5 Umbraco community contacts, selected Umbraco Discord members (coordinated with Discord moderators as appropriate)
 
 **Given** a beta user reports an issue or gives feedback
@@ -1977,6 +1983,16 @@ So that real users exercise the package before public launch.
 **When** the beta period ends
 **Then** a beta retrospective is held to capture lessons learned
 **And** a decision is made about readiness for public launch (Epic 10.5)
+
+**Known Issues to Ship With Beta:**
+
+The following are documented limitations, not bugs. Include in the beta invitation:
+
+- **Content audit on large sites (100+ nodes) may stall.** The scanner accumulates content in conversation context. Workaround: use content type or subtree filters to audit in sections. Fix planned for Story 10.2 (Context Management).
+- **Cancel is cosmetic.** Clicking Cancel updates the status label but does not stop the in-flight LLM call or tool execution. The run may continue to completion or failure after cancellation. Fix planned for Epic 10.
+- **SSE disconnect marks runs as Failed.** If the browser tab is closed or the network drops during a running step, the run is marked Failed even though the work may have partially completed. Fix planned for Epic 10.
+- **Instance resume after step completion does not work.** If you navigate away from a running instance and return after a step completes, the chat input rejects all messages. Workaround: stay on the instance page until the workflow completes. Fix planned for Epic 10. See `bug-finding-2026-04-10-instance-resume-after-step-completion.md`.
+- **Single concurrent instance per workflow.** No instance-level locking exists — running two instances of the same workflow simultaneously may corrupt state. Fix planned for Story 10.1.
 
 **What NOT to Build:**
 

@@ -290,6 +290,67 @@ Lists all files in the instance's working directory (or a subdirectory).
 Returns newline-separated relative file paths, sorted alphabetically. Useful when the agent
 needs to discover what files exist before reading them.
 
+### Umbraco Content Tools
+
+The following tools are available when the workflow runs inside an Umbraco instance. They read
+from the published content cache in-process -- no HTTP requests, no SSRF concerns.
+
+### `list_content`
+
+Lists published content nodes from the Umbraco instance. Optionally filter by document type
+alias or parent node ID.
+
+**Parameters:**
+
+| Name | Required | Description |
+|------|----------|-------------|
+| `contentType` | No | Filter by document type alias (e.g., `'blogPost'`). Returns all types if omitted |
+| `parentId` | No | Filter to direct children of this content node ID. Returns all content if omitted |
+
+Returns a JSON array of objects: `id`, `name`, `contentType`, `url`, `level`, `createDate`,
+`updateDate`, `creatorName`, `childCount`. Large result sets are truncated with a marker
+indicating how many nodes were returned vs total.
+
+**Access:** reads from Umbraco's published content cache in-process. No network calls.
+
+### `get_content`
+
+Gets the full details and property values of a single published content node by ID.
+
+**Parameters:**
+
+| Name | Required | Description |
+|------|----------|-------------|
+| `id` | Yes | The ID of the published content node to retrieve |
+
+Returns a JSON object: `id`, `name`, `contentType`, `url`, `level`, `createDate`, `updateDate`,
+`creatorName`, `templateAlias`, `properties` (object mapping alias to extracted text value).
+
+Property extraction: Rich Text is stripped to plain text, Text String/Textarea as-is, Content
+Picker shows name + URL, Media Picker shows name + URL + alt text, Block List/Grid shows
+simplified block content, TrueFalse shows `"true"`/`"false"`, fallback is JSON-serialised
+source value.
+
+**Access:** same in-process published content cache. Large responses are truncated by removing
+properties from the end.
+
+### `list_content_types`
+
+Lists document type definitions from the Umbraco instance, including their properties,
+compositions, and allowed child types.
+
+**Parameters:**
+
+| Name | Required | Description |
+|------|----------|-------------|
+| `alias` | No | Filter by document type alias. Returns all document types if omitted |
+
+Returns a JSON array of objects: `alias`, `name`, `description`, `icon`, `properties` (array
+of `{alias, name, editorAlias, mandatory}`), `compositions` (array of aliases),
+`allowedChildTypes` (array of aliases). Large responses are truncated.
+
+**Access:** reads from `IContentTypeService`. No published content cache needed.
+
 ## Configuring Tool Tuning Values
 
 Tool behaviour can be tuned at multiple levels. Values resolve through a four-tier chain,
@@ -514,6 +575,11 @@ The shipped example workflows are practical references:
 - **Accessibility Quick-Scan** (`accessibility-quick-scan/`) -- 2 steps (scanner, reporter)
   with the same interactive pattern but a different domain. Good example of a minimal but
   production-quality workflow.
+
+- **Umbraco Content Audit** (`umbraco-content-audit/`) -- 3 steps (scanner, analyser, reporter)
+  using in-process content tools (`list_content_types`, `list_content`, `get_content`) instead
+  of `fetch_url`. No external URLs -- reads directly from Umbraco's published content cache.
+  Good example of the content tool pattern for workflows that operate on the site's own data.
 
 Read these alongside this guide. The agent prompts in `agents/` show what works in practice --
 especially the invariant patterns for preventing interactive-mode stalls.

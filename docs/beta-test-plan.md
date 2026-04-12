@@ -84,8 +84,9 @@ Neither the AI section nor Agent Workflows will work until permissions are grant
 
 ### 9. Update Workflow Profiles
 
-Edit the `default_profile` field in both workflow files to match your profile alias:
+Edit the `default_profile` field in all three workflow files to match your profile alias:
 
+- `App_Data/AgentRun.Umbraco/workflows/umbraco-content-audit/workflow.yaml`
 - `App_Data/AgentRun.Umbraco/workflows/content-quality-audit/workflow.yaml`
 - `App_Data/AgentRun.Umbraco/workflows/accessibility-quick-scan/workflow.yaml`
 
@@ -94,9 +95,19 @@ Restart the site after editing (or wait for the manifest cache to refresh).
 ### 10. Verify Workflows Appear
 
 1. Navigate to the **Agent Workflows** section in the backoffice
-2. **Check:** Both "Content Quality Audit" and "Accessibility Quick-Scan" appear in the list
+2. **Check:** All three workflows appear in the list: "Umbraco Content Audit", "Content Quality Audit", and "Accessibility Quick-Scan"
 
-### 11. Run a Workflow
+### 11. Run the Umbraco Content Audit (Primary Smoke Test)
+
+1. Click **Umbraco Content Audit**
+2. Click **Start**
+3. Confirm when prompted (this workflow reads from the site's own content -- no URL input needed)
+4. **Check:** The scanner calls `list_content_types` and `list_content` to inventory the content model
+5. **Check:** The scanner calls `get_content` for individual content nodes
+6. **Check:** The workflow progresses through all three steps (scanner, analyser, reporter)
+7. **Check:** The audit report references actual site content (node names, content types, real property values)
+
+### 12. Run a URL-Based Workflow (Secondary Verification)
 
 1. Click **Content Quality Audit**
 2. Click **Start**
@@ -105,7 +116,7 @@ Restart the site after editing (or wait for the manifest cache to refresh).
 5. **Check:** The workflow progresses through all three steps (scanner, analyser, reporter)
 6. **Check:** A final report artifact is produced
 
-### 12. Uninstall AgentRun
+### 13. Uninstall AgentRun
 
 ```bash
 dotnet remove package AgentRun.Umbraco
@@ -114,7 +125,7 @@ dotnet remove package AgentRun.Umbraco
 Since `Umbraco.AI` was installed as a direct dependency in step 3, it remains after removing
 AgentRun. The site should continue to work without AgentRun.
 
-### 13. Verify Clean Uninstall
+### 14. Verify Clean Uninstall
 
 1. Run the site: `dotnet run`
 2. **Check:** Site starts without errors related to AgentRun
@@ -124,7 +135,8 @@ AgentRun. The site should continue to work without AgentRun.
 
 ## Pass Criteria
 
-- [ ] Both example workflows appear in the dashboard after install
-- [ ] At least one workflow runs successfully end-to-end
+- [ ] All three example workflows appear in the dashboard after install
+- [ ] Umbraco Content Audit runs successfully and produces an audit report referencing actual site content
+- [ ] At least one URL-based workflow (CQA or Accessibility) runs successfully end-to-end
 - [ ] No errors on site startup after uninstall
 - [ ] No database tables, config entries, or files outside `App_Data/AgentRun.Umbraco/` created
