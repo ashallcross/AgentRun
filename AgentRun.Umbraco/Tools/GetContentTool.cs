@@ -265,7 +265,7 @@ public class GetContentTool : IWorkflowTool
             : $"{media.Name} ({url}) alt=\"{altText}\"";
     }
 
-    private static string ExtractBlockList(IPublishedProperty property)
+    private string ExtractBlockList(IPublishedProperty property)
     {
         var value = property.GetValue(culture: null, segment: null);
         if (value is IEnumerable<object> blocks)
@@ -282,18 +282,18 @@ public class GetContentTool : IWorkflowTool
                 if (contentProp?.GetValue(block) is IPublishedElement element)
                 {
                     var parts = new List<string> { $"[{element.ContentType.Alias}]" };
-                    // Extract string-valued properties for a simplified text representation
                     foreach (var prop in element.Properties)
                     {
-                        if (prop.HasValue(culture: null, segment: null))
+                        if (!prop.HasValue(culture: null, segment: null))
+                            continue;
+
+                        // Route through the same editor-aware extraction used for top-level
+                        // properties so that RTEs, media pickers, etc. inside blocks are
+                        // handled correctly instead of being silently skipped.
+                        var extracted = ExtractElementPropertyValue(prop);
+                        if (!string.IsNullOrWhiteSpace(extracted))
                         {
-                            var propVal = prop.GetValue(culture: null, segment: null);
-                            if (propVal is string s && !string.IsNullOrWhiteSpace(s))
-                            {
-                                // Truncate long values to keep the representation concise
-                                var display = s.Length > 100 ? s[..100] + "..." : s;
-                                parts.Add($"{prop.Alias}=\"{display}\"");
-                            }
+                            parts.Add($"{prop.Alias}=\"{extracted}\"");
                         }
                     }
                     labels.Add(string.Join(" ", parts));
@@ -306,7 +306,29 @@ public class GetContentTool : IWorkflowTool
         return string.Empty;
     }
 
-    private static string ExtractBlockGrid(IPublishedProperty property)
+    private static string? ExtractElementPropertyValue(IPublishedProperty property)
+    {
+        var editorAlias = property.PropertyType.EditorAlias;
+        var result = editorAlias switch
+        {
+            "Umbraco.RichText" => ExtractRichText(property),
+            "Umbraco.TextBox" or "Umbraco.TextArea" => ExtractText(property),
+            "Umbraco.TrueFalse" => ExtractTrueFalse(property),
+            "Umbraco.Integer" => ExtractInteger(property),
+            "Umbraco.Decimal" => ExtractDecimal(property),
+            "Umbraco.DateTime" => ExtractDateTime(property),
+            "Umbraco.Tags" => ExtractTags(property),
+            _ => property.GetValue(culture: null, segment: null)?.ToString()
+        };
+
+        if (string.IsNullOrWhiteSpace(result))
+            return null;
+
+        // Truncate long values to keep block representation concise
+        return result.Length > 500 ? result[..500] + "..." : result;
+    }
+
+    private string ExtractBlockGrid(IPublishedProperty property)
     {
         // Same approach as BlockList — extract top-level block content type aliases
         return ExtractBlockList(property);
