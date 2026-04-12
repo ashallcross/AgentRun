@@ -1,6 +1,6 @@
 # Story 9.13: Umbraco Content Audit Workflow — Audit the Content in This Instance
 
-Status: ready-for-dev
+Status: done
 
 **Depends on:** Story 9.12 (Umbraco content tools — `list_content`, `get_content`, `list_content_types`)
 **Blocks:** 9.14 (Documentation Update), 9.5 (Private Beta Distribution)
@@ -67,48 +67,48 @@ Then both existing workflows continue to register and run without changes.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Create `workflow.yaml` for `umbraco-content-audit` (AC: #1, #8)
-  - [ ] 1.1 Create `AgentRun.Umbraco/Workflows/umbraco-content-audit/workflow.yaml`
-  - [ ] 1.2 Define 3-step pipeline: scanner → analyser → reporter
-  - [ ] 1.3 Scanner tools: `list_content`, `list_content_types`, `get_content`, `write_file`
-  - [ ] 1.4 Analyser tools: `read_file`, `write_file`
-  - [ ] 1.5 Reporter tools: `read_file`, `write_file`
-  - [ ] 1.6 Completion checks: `files_exist` for each step's output artifact
-- [ ] Task 2: Create `agents/scanner.md` (AC: #2, #3, #4, #7)
-  - [ ] 2.1 Opening line asks user to confirm they want to audit this site's content (or specify filters)
-  - [ ] 2.2 Step 1: call `list_content_types` — understand the content model
-  - [ ] 2.3 Step 2: call `list_content` — get full content inventory
-  - [ ] 2.4 Step 3: call `get_content` for each node (prioritise: skip compositions/element types, focus on pages with templates)
-  - [ ] 2.5 Step 4: write `artifacts/content-inventory.md` — structured content tree summary
-  - [ ] 2.6 Step 5: write `artifacts/scan-results.md` — findings against the content model
-  - [ ] 2.7 Handle empty site: write scan-results noting no content found
-  - [ ] 2.8 Handle large sites: work within tool size limits, prioritise nodes with templates
-  - [ ] 2.9 Interactive mode invariants: no text-only turns mid-task (same pattern as CQA scanner)
-- [ ] Task 3: Create `agents/analyser.md` (AC: #5)
-  - [ ] 3.1 Read `artifacts/scan-results.md` immediately (no greeting)
-  - [ ] 3.2 Score each content node on: Completeness (property fill rate), Structure (heading hierarchy, content depth), Metadata (name, URL, template assignment)
-  - [ ] 3.3 Write `artifacts/quality-scores.md` using structured output template
-  - [ ] 3.4 Interactive mode invariants: tool call in every turn until write_file completes
-- [ ] Task 4: Create `agents/reporter.md` (AC: #6)
-  - [ ] 4.1 Read both `artifacts/scan-results.md` and `artifacts/quality-scores.md`
-  - [ ] 4.2 Produce Executive Summary, Content-by-Content Findings, Prioritised Action Plan
-  - [ ] 4.3 Write for non-technical content manager audience
-  - [ ] 4.4 Write `artifacts/audit-report.md` using structured output template
-  - [ ] 4.5 Interactive mode invariants
-- [ ] Task 5: Copy workflow to TestSite (AC: #1, #9)
-  - [ ] 5.1 Copy the workflow folder to `AgentRun.Umbraco.TestSite/App_Data/AgentRun.Umbraco/workflows/umbraco-content-audit/`
-  - [ ] 5.2 Verify TestSite still discovers all 3 workflows (CQA, Accessibility, new Content Audit) plus any test workflows
-- [ ] Task 6: Add NuGet contentFiles entry (AC: #8)
-  - [ ] 6.1 Add `<None Include>` entry in `AgentRun.Umbraco.csproj` for the new workflow, following the exact pattern of the CQA and Accessibility entries
-- [ ] Task 7: Manual E2E Validation (AC: #1–#9)
-  - [ ] 7.1 Start TestSite — verify all 3 packaged workflows appear in the workflow list
-  - [ ] 7.2 Start the Umbraco Content Audit workflow
-  - [ ] 7.3 Confirm scanner calls `list_content_types`, `list_content`, then `get_content` for nodes
-  - [ ] 7.4 Confirm scanner writes `content-inventory.md` and `scan-results.md`
-  - [ ] 7.5 Advance to analyser — confirm it reads scan-results and writes `quality-scores.md`
-  - [ ] 7.6 Advance to reporter — confirm it reads both artifacts and writes `audit-report.md`
-  - [ ] 7.7 Review `audit-report.md` — confirm findings reference actual TestSite content (node names, content types, property values from the Clean Starter Kit)
-  - [ ] 7.8 Verify CQA and Accessibility workflows still work (no regression)
+- [x] Task 1: Create `workflow.yaml` for `umbraco-content-audit` (AC: #1, #8)
+  - [x] 1.1 Create `AgentRun.Umbraco/Workflows/umbraco-content-audit/workflow.yaml`
+  - [x] 1.2 Define 3-step pipeline: scanner → analyser → reporter
+  - [x] 1.3 Scanner tools: `list_content`, `list_content_types`, `get_content`, `write_file`
+  - [x] 1.4 Analyser tools: `read_file`, `write_file`
+  - [x] 1.5 Reporter tools: `read_file`, `write_file`
+  - [x] 1.6 Completion checks: `files_exist` for each step's output artifact
+- [x] Task 2: Create `agents/scanner.md` (AC: #2, #3, #4, #7)
+  - [x] 2.1 Opening line asks user to confirm they want to audit this site's content (or specify filters)
+  - [x] 2.2 Step 1: call `list_content_types` — understand the content model
+  - [x] 2.3 Step 2: call `list_content` — get full content inventory
+  - [x] 2.4 Step 3: call `get_content` for each node (prioritise: skip compositions/element types, focus on pages with templates)
+  - [x] 2.5 Step 4: write `artifacts/content-inventory.md` — structured content tree summary
+  - [x] 2.6 Step 5: write `artifacts/scan-results.md` — findings against the content model
+  - [x] 2.7 Handle empty site: write scan-results noting no content found
+  - [x] 2.8 Handle large sites: work within tool size limits, prioritise nodes with templates
+  - [x] 2.9 Interactive mode invariants: no text-only turns mid-task (same pattern as CQA scanner)
+- [x] Task 3: Create `agents/analyser.md` (AC: #5)
+  - [x] 3.1 Read `artifacts/scan-results.md` immediately (no greeting)
+  - [x] 3.2 Score each content node on: Completeness (property fill rate), Structure (heading hierarchy, content depth), Metadata (name, URL, template assignment)
+  - [x] 3.3 Write `artifacts/quality-scores.md` using structured output template
+  - [x] 3.4 Interactive mode invariants: tool call in every turn until write_file completes
+- [x] Task 4: Create `agents/reporter.md` (AC: #6)
+  - [x] 4.1 Read both `artifacts/scan-results.md` and `artifacts/quality-scores.md`
+  - [x] 4.2 Produce Executive Summary, Content-by-Content Findings, Prioritised Action Plan
+  - [x] 4.3 Write for non-technical content manager audience
+  - [x] 4.4 Write `artifacts/audit-report.md` using structured output template
+  - [x] 4.5 Interactive mode invariants
+- [x] Task 5: Copy workflow to TestSite (AC: #1, #9)
+  - [x] 5.1 Copy the workflow folder to `AgentRun.Umbraco.TestSite/App_Data/AgentRun.Umbraco/workflows/umbraco-content-audit/`
+  - [x] 5.2 Verify TestSite still discovers all 3 workflows (CQA, Accessibility, new Content Audit) plus any test workflows
+- [x] Task 6: Add NuGet contentFiles entry (AC: #8)
+  - [x] 6.1 Add `<None Include>` entry in `AgentRun.Umbraco.csproj` for the new workflow, following the exact pattern of the CQA and Accessibility entries
+- [x] Task 7: Manual E2E Validation (AC: #1–#9)
+  - [x] 7.1 Start TestSite — verify all 3 packaged workflows appear in the workflow list
+  - [x] 7.2 Start the Umbraco Content Audit workflow
+  - [x] 7.3 Confirm scanner calls `list_content_types`, `list_content`, then `get_content` for nodes
+  - [x] 7.4 Confirm scanner writes `content-inventory.md` and `scan-results.md`
+  - [x] 7.5 Advance to analyser — confirm it reads scan-results and writes `quality-scores.md`
+  - [x] 7.6 Advance to reporter — confirm it reads both artifacts and writes `audit-report.md`
+  - [x] 7.7 Review `audit-report.md` — confirm findings reference actual TestSite content (node names, content types, property values from the Clean Starter Kit)
+  - [x] 7.8 Verify CQA and Accessibility workflows still work (no regression)
 
 ## Dev Notes
 
@@ -363,8 +363,35 @@ This is the data the scanner will read. The agent prompts should be written to h
 
 ### Agent Model Used
 
+Claude Opus 4.6 (1M context)
+
 ### Debug Log References
+
+- Manual E2E instance: `792eeae8d7a74974ba7a4edc43122232` — full 3-step pipeline completed on Sonnet 4.6 against Clean Starter Kit TestSite (26 nodes, 33 document types)
 
 ### Completion Notes List
 
+- workflow.yaml: 3-step interactive pipeline (scanner → analyser → reporter). No tool_defaults needed — content tools don't use fetch_url. Schema directive on line 1 for IDE autocomplete.
+- scanner.md: Opens with confirmation prompt, calls list_content_types → list_content → sequential get_content, writes content-inventory.md then scan-results.md. Five interactive mode invariants included. Handles empty sites, large sites, content type/subtree filters, and ambiguous input.
+- analyser.md: Reads scan-results.md immediately, scores each node on Completeness/Structure/Metadata (1-10), writes quality-scores.md.
+- reporter.md: Reads both scan-results.md and quality-scores.md, produces Executive Summary → Content-by-Content Findings → Content Model Observations → Prioritised Action Plan. Written for non-technical content managers.
+- TestSite copy has adjusted schema path (../../../../../AgentRun.Umbraco/Schemas/workflow-schema.json).
+- NuGet contentFiles entry added to .csproj following existing CQA/Accessibility pattern.
+- 521/521 tests pass — zero C# changes, zero regressions.
+- Manual E2E: full pipeline ran end-to-end on Sonnet 4.6. Scanner scanned all 26 nodes sequentially. All 4 artifacts produced. Audit report references real TestSite content (node names, content types, property values, actual findings like 25/26 missing metaDescription).
+
 ### File List
+
+- `AgentRun.Umbraco/Workflows/umbraco-content-audit/workflow.yaml` (new)
+- `AgentRun.Umbraco/Workflows/umbraco-content-audit/agents/scanner.md` (new)
+- `AgentRun.Umbraco/Workflows/umbraco-content-audit/agents/analyser.md` (new)
+- `AgentRun.Umbraco/Workflows/umbraco-content-audit/agents/reporter.md` (new)
+- `AgentRun.Umbraco/AgentRun.Umbraco.csproj` (modified — added NuGet contentFiles entry)
+- `AgentRun.Umbraco.TestSite/App_Data/AgentRun.Umbraco/workflows/umbraco-content-audit/workflow.yaml` (new — TestSite copy)
+- `AgentRun.Umbraco.TestSite/App_Data/AgentRun.Umbraco/workflows/umbraco-content-audit/agents/scanner.md` (new — TestSite copy)
+- `AgentRun.Umbraco.TestSite/App_Data/AgentRun.Umbraco/workflows/umbraco-content-audit/agents/analyser.md` (new — TestSite copy)
+- `AgentRun.Umbraco.TestSite/App_Data/AgentRun.Umbraco/workflows/umbraco-content-audit/agents/reporter.md` (new — TestSite copy)
+
+### Change Log
+
+- 2026-04-12: Story 9.13 implemented — Umbraco Content Audit workflow (workflow.yaml, scanner.md, analyser.md, reporter.md), TestSite copy, NuGet packaging entry. Zero C# changes. 521/521 tests. Manual E2E passed on Sonnet 4.6.

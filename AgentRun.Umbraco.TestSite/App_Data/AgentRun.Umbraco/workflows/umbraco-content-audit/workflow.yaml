@@ -1,29 +1,24 @@
-# yaml-language-server: $schema=../../Schemas/workflow-schema.json
-name: Content Quality Audit
-description: Scans, analyses, and reports on content quality
+# yaml-language-server: $schema=../../../../../AgentRun.Umbraco/Schemas/workflow-schema.json
+name: Umbraco Content Audit
+description: Audits content in this Umbraco instance for quality, completeness, and structural issues
 mode: interactive
 # Change this to match your configured Umbraco.AI profile alias
 default_profile: anthropic-sonnet-4-6
-# Story 9.6: workflow-configurable tool tuning. Marketing pages routinely
-# exceed the 1 MB engine default in size only marginally — but live testing
-# on 2026-04-07 found that some homepages need ~2 MB headroom. Bump to 2 MB
-# and extend the per-request fetch_url timeout to 30s to absorb slow CDNs.
-tool_defaults:
-  fetch_url:
-    max_response_bytes: 2097152
-    timeout_seconds: 30
 steps:
   - id: scanner
     name: Content Scanner
     agent: agents/scanner.md
     tools:
-      - fetch_url
-      - read_file
+      - list_content
+      - list_content_types
+      - get_content
       - write_file
     writes_to:
+      - artifacts/content-inventory.md
       - artifacts/scan-results.md
     completion_check:
       files_exist:
+        - artifacts/content-inventory.md
         - artifacts/scan-results.md
   - id: analyser
     name: Quality Analyser
@@ -45,6 +40,7 @@ steps:
       - read_file
       - write_file
     reads_from:
+      - artifacts/scan-results.md
       - artifacts/quality-scores.md
     writes_to:
       - artifacts/audit-report.md

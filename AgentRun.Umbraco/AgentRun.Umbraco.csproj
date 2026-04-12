@@ -60,6 +60,7 @@
   <ItemGroup>
     <None Include="Workflows\content-quality-audit\**\*" Pack="true" PackagePath="contentFiles\any\any\App_Data\AgentRun.Umbraco\workflows\content-quality-audit" />
     <None Include="Workflows\accessibility-quick-scan\**\*" Pack="true" PackagePath="contentFiles\any\any\App_Data\AgentRun.Umbraco\workflows\accessibility-quick-scan" />
+    <None Include="Workflows\umbraco-content-audit\**\*" Pack="true" PackagePath="contentFiles\any\any\App_Data\AgentRun.Umbraco\workflows\umbraco-content-audit" />
   </ItemGroup>
 
   <!-- README: include in nupkg root for NuGet gallery rendering -->

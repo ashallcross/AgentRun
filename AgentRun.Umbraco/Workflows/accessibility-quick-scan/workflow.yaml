@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=../../workflow-schema.json
+# yaml-language-server: $schema=../../Schemas/workflow-schema.json
 name: Accessibility Quick-Scan
 description: Scans pages for accessibility issues and produces a prioritised, WCAG 2.1 AA-anchored fix list
 mode: interactive

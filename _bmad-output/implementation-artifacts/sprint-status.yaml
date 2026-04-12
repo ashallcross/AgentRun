@@ -44,7 +44,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-30
-last_updated: 2026-04-12 (story 9-13 created — ready-for-dev)
+last_updated: 2026-04-12 (story 9-13 done)
 project: AgentRun.Umbraco
 project_key: NOKEY
 tracking_system: file-system
@@ -134,7 +134,7 @@ development_status:
   9-10-workflow-definition-path-traversal-validation: done              # done 2026-04-10 — BETA BLOCKER cleared; ValidatePathSafety in WorkflowValidator rejects traversal/absolute/null-byte at load time; defence-in-depth canonicalisation in PromptAssembler, ArtifactValidator, CompletionChecker, ConversationStore; code review applied 5 patches (sidecar containment, non-string type errors, null-byte sanitisation, void return, missing test); 486/486 tests; 4 Windows-specific findings deferred
   9-11-fail-registration-on-missing-agent-files: done              # done 2026-04-11 — VerifyAgentFiles returns bool + blocks registration; code review: AC7 combined check + AC4 test; 491/491 tests
   9-12-umbraco-content-tools: done                                  # BETA BLOCKER cleared — in-process content tools; code review: 7 patches (templateAlias, truncation, EnforceCeilings, overflow, IHtmlEncodedString, BlockList text, CompositionPropertyTypes), 4 deferred, 5 dismissed; 521/521 tests; awaiting manual E2E by Adam
-  9-13-umbraco-content-audit-workflow: ready-for-dev               # headline workflow that audits content in THIS Umbraco instance, not external URLs
+  9-13-umbraco-content-audit-workflow: done                  # done 2026-04-12 — workflow-only (YAML + 3 agent prompts), zero C# changes, 521/521 tests; code review: PASS, 1 observation (schema path inconsistency in CQA/Accessibility — fixed in-review); manual E2E on Sonnet 4.6 against Clean Starter Kit (26 nodes, 33 doc types), all 4 artifacts produced, audit-report references real content
   9-14-update-docs-for-umbraco-tools: backlog                     # README, authoring guide, beta test plan updated for Umbraco-connected tools and workflow
   9-5-private-beta-distribution-plan: backlog                   # ships last — distributes everything above
   epic-9-retrospective: optional
