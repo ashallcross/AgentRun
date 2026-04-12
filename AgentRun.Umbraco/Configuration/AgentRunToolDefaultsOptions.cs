@@ -13,6 +13,12 @@ public sealed class AgentRunToolDefaultsOptions
 
     public ToolLoopDefaults? ToolLoop { get; set; }
 
+    public ListContentDefaults? ListContent { get; set; }
+
+    public GetContentDefaults? GetContent { get; set; }
+
+    public ListContentTypesDefaults? ListContentTypes { get; set; }
+
     public sealed class FetchUrlDefaults
     {
         public int? MaxResponseBytes { get; set; }
@@ -27,5 +33,20 @@ public sealed class AgentRunToolDefaultsOptions
     public sealed class ToolLoopDefaults
     {
         public int? UserMessageTimeoutSeconds { get; set; }
+    }
+
+    public sealed class ListContentDefaults
+    {
+        public int? MaxResponseBytes { get; set; }
+    }
+
+    public sealed class GetContentDefaults
+    {
+        public int? MaxResponseBytes { get; set; }
+    }
+
+    public sealed class ListContentTypesDefaults
+    {
+        public int? MaxResponseBytes { get; set; }
     }
 }

@@ -1811,6 +1811,142 @@ So that only workflows that can actually execute appear in the UI.
 
 _Full story spec to be created by SM before development begins._
 
+### Story 9.12: Umbraco Content Tools — In-Process Content & Schema Access (BETA BLOCKER — product credibility)
+
+_Added 2026-04-12 — identified during architect review of the product's value proposition. AgentRun.Umbraco ships as an Umbraco package but has zero connection to the Umbraco instance it's installed in. The current workflows (CQA, Accessibility Quick-Scan) scan external URLs via `fetch_url` — something any generic AI tool can do. For the package to justify its name and its installation footprint, at least one workflow must operate on the content in **this** Umbraco instance. This story builds the tool layer that makes that possible._
+
+_**Key architectural insight:** AgentRun runs in-process inside the Umbraco host. It has direct access to Umbraco's DI container — `IContentService`, `IMediaService`, `IContentTypeService`. No HTTP calls, no OAuth2 tokens, no Management API pagination, no response normalisation. The tools inject Umbraco services directly and return structured results. This is an enormous advantage over external tools like the Umbraco MCP Server (which loads 315 tool definitions at ~100K+ tokens per invocation)._
+
+_**Engine boundary:** these tools live in `Tools/`, not `Engine/`. The engine calls `IWorkflowTool.ExecuteAsync()` and doesn't know or care that Umbraco services are behind it. The "Engine has zero Umbraco dependencies" rule holds. The runner stays workflow-generic (FR23/NFR25)._
+
+As a workflow author,
+I want tools that can read content, content types, and media from the Umbraco instance this package is installed in,
+So that I can build workflows that audit, analyse, and report on actual CMS content rather than external URLs.
+
+**Tools to implement:**
+
+| Tool Name | Umbraco Service | Returns | Notes |
+|-----------|----------------|---------|-------|
+| `list_content` | `IContentService` / `IPublishedContentCache` | Content nodes: id, name, document type alias, URL, publish status, last edited, last edited by, child count | Supports optional `contentType` filter and `parentId` for subtree queries |
+| `get_content` | `IContentService` / `IPublishedContentCache` | Full property values for a single node by ID or path, with text extraction from RTEs and common editors | Property values resolved to readable text where possible; raw value as fallback |
+| `list_content_types` | `IContentTypeService` | Document type definitions: alias, name, properties (name, alias, editor alias, mandatory flag), compositions, allowed child types | Gives agents the content model context to understand what fields exist and why |
+
+**Implementation pattern (matches existing tools exactly):**
+
+- Each tool implements `IWorkflowTool` with `Name`, `Description`, `ParameterSchema`, `ExecuteAsync`
+- Registered in `AgentRunComposer` via `services.AddSingleton<IWorkflowTool, ListContentTool>()`
+- Per-step whitelist model applies unchanged — workflows declare `tools: [list_content, get_content, write_file]`
+- Tool results returned as structured JSON text to the agent (same pattern as `FetchUrlTool`)
+- Error handling follows existing convention: tool errors returned as error results to the LLM, never thrown
+
+**Property value representation decisions (architect-locked):**
+
+1. **Use `IPublishedContentCache` (published content) as the primary source**, not `IContentService` (draft content). Agents should reason over what's live on the site. Draft access is a v2 enhancement.
+2. **Text extraction for common editors:** Rich Text → strip HTML, return plain text + tag summary. Text String / Textarea → return as-is. Content Picker → return referenced node name + URL. Media Picker → return media name + URL + alt text. Block List / Block Grid → return a simplified text representation of block contents. For editors without a specific handler, return `JsonSerializer.Serialize(value)` as fallback.
+3. **Result size:** individual `get_content` results should respect the existing `read_file` size guard pattern. If a node's serialised properties exceed a configurable limit, truncate with a marker (same pattern as Story 9.9).
+4. **`list_content` pagination:** return all matching nodes in a single result (Umbraco sites typically have hundreds to low thousands of content nodes, not millions). If the result exceeds the size limit, truncate with a count of remaining nodes. Do NOT implement cursor-based pagination in the tool — keep it simple for agents.
+
+**Files in scope:** `AgentRun.Umbraco/Tools/ListContentTool.cs`, `AgentRun.Umbraco/Tools/GetContentTool.cs`, `AgentRun.Umbraco/Tools/ListContentTypesTool.cs`, `AgentRun.Umbraco/Composers/AgentRunComposer.cs` (DI registration), `AgentRun.Umbraco.Tests/Tools/` (tests for each tool), `WorkflowValidator` allowed tool names update.
+
+**Failure & Edge Cases:**
+
+- Content tree is empty → `list_content` returns empty array, no error
+- Content node ID not found → `get_content` returns tool error "Content node not found"
+- `contentType` filter matches no types → `list_content` returns empty array
+- `IPublishedContentCache` is not available (site not fully booted) → tool error with clear message
+- Property value converter throws → catch, return raw value as JSON string, log warning
+- Very large site (10,000+ nodes) → `list_content` truncates at size limit with count of remaining
+- **Deny-by-default statement:** unrecognised parameters or parameter values must be rejected, not silently ignored
+
+**What NOT to Build:**
+
+- Do NOT build `list_media` in this story — defer to a follow-on story when a workflow needs it
+- Do NOT build write-back tools (`update_content`, `publish_content`) — read-only for v1
+- Do NOT build Management API / HTTP-based equivalents — in-process only; remote access is v2+
+- Do NOT build draft content access — published content only for v1
+- Do NOT add any Umbraco service dependencies to the `Engine/` folder
+- Do NOT build content tree visualisation or navigation tools — agents work with flat lists and individual node lookups
+
+_Full story spec to be created by SM before development begins._
+
+### Story 9.13: Umbraco Content Audit Workflow — Audit the Content in This Instance
+
+_Added 2026-04-12 — the headline workflow that proves this is an Umbraco package. Uses the in-process content tools from Story 9.12 to scan and audit the actual content in the Umbraco instance where the package is installed. This replaces external-URL scanning as the primary demonstration of the package's value._
+
+As an Umbraco editor or agency developer,
+I want a workflow that audits the content in my Umbraco instance for quality, completeness, and structural issues,
+So that I get actionable findings about my actual CMS content without leaving the backoffice.
+
+**Workflow structure:**
+
+| Step | Agent | Tools | Writes |
+|------|-------|-------|--------|
+| Scanner | `agents/scanner.md` | `list_content`, `list_content_types`, `get_content`, `write_file` | `content-inventory.md`, `scan-results.md` |
+| Analyser | `agents/analyser.md` | `read_file`, `write_file` | `quality-scores.md` |
+| Reporter | `agents/reporter.md` | `read_file`, `write_file` | `audit-report.md` |
+
+**What the scanner does differently from CQA:**
+
+- Calls `list_content_types` first to understand the content model
+- Calls `list_content` to get the full content inventory
+- Calls `get_content` for each content node (or a configured subset) to read property values
+- Analyses content against the document type schema — which required fields are empty, which optional fields are unused, which content types have no instances
+- Writes structured findings to `scan-results.md`
+
+**What the analyser and reporter do:** Same pattern as the existing CQA pipeline — the analyser scores findings, the reporter produces a prioritised action list. The agent prompts are workflow-specific; the engine doesn't change.
+
+**Mode:** Interactive (user can review scanner findings before analysis proceeds)
+
+**Acceptance Criteria:**
+
+**Given** the package is installed on an Umbraco instance with existing content
+**When** the user starts the Umbraco Content Audit workflow
+**Then** the scanner reads content from the Umbraco instance (not from external URLs)
+**And** the scanner produces findings based on actual content node properties and content model structure
+**And** the full pipeline produces an audit report with actionable findings about the instance's content
+
+**Given** the Umbraco instance has no published content
+**When** the user starts the workflow
+**Then** the scanner reports that no content was found and the workflow completes with an appropriate message
+
+**Failure & Edge Cases:**
+
+- Site has content in multiple languages → scan the default language only for v1; note in audit report that other variants exist
+- Content types with no instances → report as a finding ("unused content types")
+- Very large content trees → scanner should work within the tool size limits from Story 9.12
+- Scanner produces findings the analyser can't parse → same failure mode as CQA; retry is the user's recovery path
+
+**What NOT to Build:**
+
+- Do NOT build content modification or remediation — read-only audit
+- Do NOT build per-page scores or comparison with external best practices — that's what the external CQA is for
+- Do NOT duplicate the CQA or Accessibility workflows — this is a content model and completeness audit, not an SEO or accessibility scan
+- Do NOT build custom UI for this workflow — it runs in the same instance detail view as all other workflows
+
+_Full story spec to be created by SM before development begins._
+
+### Story 9.14: Update Documentation and Beta Test Plan for Umbraco Content Tools
+
+_Added 2026-04-12 — the README, workflow authoring guide, and beta test plan must reflect the new Umbraco-connected workflow and tools. The beta test plan's smoke test should exercise the Umbraco Content Audit workflow as the primary demonstration, not just the external-URL workflows._
+
+As a beta tester,
+I want the documentation to describe the Umbraco-connected tools and the Content Audit workflow,
+So that I understand this package audits my actual Umbraco content, not just external URLs.
+
+**Scope:**
+
+- `README.md` — update Quick Start to lead with the Umbraco Content Audit workflow; move external-URL workflows to a secondary "also included" position
+- `docs/workflow-authoring-guide.md` — add `list_content`, `get_content`, `list_content_types` to the tool reference section
+- `docs/beta-test-plan.md` — update the smoke test to run the Umbraco Content Audit workflow against the test site's own content
+- `Client/public/umbraco-package.json` and `.csproj` — no version bump needed unless packaging changes
+
+**What NOT to Build:**
+
+- Do NOT rewrite the entire README — update, don't replace
+- Do NOT remove the external-URL workflow documentation — those remain valid use cases
+
+_Full story spec to be created by SM before development begins._
+
 ### Story 9.5: Private Beta Distribution Plan
 
 _Added 2026-04-07 — defines the beta release milestone explicitly. Previously there was no distinction between "beta" and "public launch" in the epic plan, which created ambiguity about when Epic 9 was "done"._
@@ -1821,7 +1957,7 @@ So that real users exercise the package before public launch.
 
 **Acceptance Criteria:**
 
-**Given** Stories 9.6, 9.0, 9.1a, 9.1b, 9.1c, 9.2, 9.3, 9.4, 9.10, and 9.11 are all complete
+**Given** Stories 9.6, 9.0, 9.1a, 9.1b, 9.1c, 9.2, 9.3, 9.4, 9.10, 9.11, 9.12, 9.13, and 9.14 are all complete
 **When** the beta is packaged
 **Then** the NuGet package is built with version `1.0.0-beta.1`
 **And** it is pushed to NuGet.org as a pre-release package (NOT listed on Umbraco Marketplace)
@@ -1910,6 +2046,40 @@ So that retries actually recover the workflow instead of stalling again on the s
 **Pre-implementation gate:** the spec includes a Pre-Implementation Architect Review checkbox at the bottom that **must** be ticked by Winston (with a one-line note recording the locked design alternative) before Amelia starts coding.
 
 _Full story spec lives at [_bmad-output/implementation-artifacts/10-6-retry-replay-degeneration-recovery.md](../implementation-artifacts/10-6-retry-replay-degeneration-recovery.md)._
+
+### Story 10.7: Code Shape Cleanup — Hotspot Refactoring
+
+_Added 2026-04-10 — driven by pre-launch codebase bloat review (Codex) and architect assessment (Winston). The package is not oversized for its feature set, but several core files have become accumulation points carrying too many responsibilities, too much branch density, and embedded implementation history from 9 epics of AI-assisted development. The goal is clearer responsibility boundaries with the fewest necessary moves — not maximum decomposition._
+
+_Reference documents: `planning-artifacts/codebase-bloat-review-agentrun-umbraco-2026-04-10.md` (review) and `planning-artifacts/codebase-bloat-refactor-brief-agentrun-umbraco-2026-04-10.md` (refactor brief). Winston's triage below records which recommendations to act on, which to defer, and which to skip._
+
+As a maintainer,
+I want the highest-complexity accumulation points in the codebase refactored into clearer responsibility boundaries,
+So that future changes are lower-risk, easier to reason about, and the codebase doesn't carry the shape of how it was built across 9 epics of AI-assisted iteration.
+
+**Architect-triaged hotspots (Winston, 2026-04-10):**
+
+| Hotspot | Codex | Winston | Action |
+|---------|-------|---------|--------|
+| `Tools/FetchUrlTool.cs` (691 lines) | Split | Agree | Extract HTML extraction + fetch transport into collaborators; tool becomes coordinator |
+| `Engine/ToolLoop.cs` (446 lines) | Split | Agree directionally | Will reshape naturally with background execution (10.1); extract stall recovery policy + streaming accumulator |
+| `Client/agentrun-instance-detail.element.ts` (1047 lines) | Split | Agree | Extract SSE event reducer, state store, and action handlers; component becomes view/composition |
+| `Engine/StepExecutor.cs` (362 lines) | Split | Partial — extract `ToolDeclaration` inner class + failure handler only | Don't over-decompose; sequencing logic belongs here |
+| `Engine/PromptAssembler.cs` (236 lines) | Simplify | Skip | Clear sections, reasonable size, splitting would fragment not simplify |
+| `Engine/WorkflowOrchestrator.cs` (181 lines) | Simplify | Defer | Rewrite comes with background execution; refactoring now is wasted |
+| `Client/agentrun-chat-message.element.ts` (235 lines) | Simplify | Skip | DOM-to-HTML pattern is correct for sanitisation + streaming; 235 lines, works |
+| Comment hygiene | Phase 4 | Pre-public-launch polish pass | Strip story refs and gate notes; keep technical rationale only |
+
+**Timing:** This story should be worked after Epic 10 stability stories (10.1, 10.2) and alongside or after any feature work that naturally touches these files. Refactoring should compound with feature changes, not precede them.
+
+**What NOT to Build:**
+
+- Do NOT refactor files that are about to change for background execution (10.1) or cancel wiring — let the feature work reshape them
+- Do NOT split files into thin one-method wrappers — reject any extraction that doesn't reduce reasoning load
+- Do NOT strip comments that explain non-obvious constraints or security rationale — only remove story/gate/milestone archaeology
+- Do NOT touch `Security/*`, `Instances/*`, or `Workflows/*` — these are already bounded and intentional
+
+_Full story spec to be created by SM before development begins. The refactor brief provides concrete tasks and definitions of done per hotspot._
 
 ### Story 10.5: Marketplace Listing & Community Launch
 

@@ -530,4 +530,40 @@ After Story 9.6 ships, do a follow-up audit pass on the codebase looking for any
 
 ---
 
+---
+
+## 9. Code Shape Cleanup
+
+### Current State (V1)
+
+The codebase was built across 9 epics using AI-assisted development (Claude Code + BMAD). The code works, is well-tested (465 backend / 162 frontend tests), and ships — but several core files have become accumulation points carrying multiple responsibilities, high branch density, and embedded implementation history from iterative story-by-story development.
+
+### Known Hotspots
+
+A pre-launch codebase bloat review (Codex, 2026-04-10) identified 7 hotspots. Architect (Winston) triaged them into act/defer/skip:
+
+| File | Lines | Disposition | Notes |
+|------|-------|------------|-------|
+| `Tools/FetchUrlTool.cs` | 691 | Split | SSRF, redirect, extraction, caching all in one file |
+| `Engine/ToolLoop.cs` | 446 | Split (with 10.1) | Branch-heavy; stall recovery + streaming + persistence interleaved |
+| `Client/agentrun-instance-detail.element.ts` | 1047 | Split | Controller/reducer/state/view all in one component |
+| `Engine/StepExecutor.cs` | 362 | Partial extract | Inner `ToolDeclaration` class + failure handler only |
+| `Engine/PromptAssembler.cs` | 236 | Skip | Clear sections, acceptable size |
+| `Engine/WorkflowOrchestrator.cs` | 181 | Defer | Rewrite comes with background execution |
+| `Client/agentrun-chat-message.element.ts` | 235 | Skip | Workaround-shaped but correct and small |
+
+### Approach
+
+Refactoring should compound with feature work, not precede it. When Epic 10 stories touch `ToolLoop` and `WorkflowOrchestrator` for background execution and cancel wiring, the refactoring happens as part of the feature, not as standalone cleanup. `FetchUrlTool` and `instance-detail` are candidates for standalone refactoring if no feature work touches them first.
+
+Comment hygiene (stripping story references, gate notes, and implementation archaeology from production code) should be a pre-public-launch polish pass.
+
+### Reference Documents
+
+- Review: `planning-artifacts/codebase-bloat-review-agentrun-umbraco-2026-04-10.md`
+- Refactor brief: `planning-artifacts/codebase-bloat-refactor-brief-agentrun-umbraco-2026-04-10.md`
+- Epic plan: Story 10.7 in `planning-artifacts/epics.md`
+
+---
+
 _This is a living document. Add thoughts freely, triage periodically, formalise when planning the next cycle._

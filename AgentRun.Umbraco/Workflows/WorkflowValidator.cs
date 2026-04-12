@@ -33,7 +33,10 @@ public sealed class WorkflowValidator : IWorkflowValidator
     {
         ["fetch_url"] = new(StringComparer.Ordinal) { "max_response_bytes", "timeout_seconds" },
         ["read_file"] = new(StringComparer.Ordinal) { "max_response_bytes" },
-        ["tool_loop"] = new(StringComparer.Ordinal) { "user_message_timeout_seconds" }
+        ["tool_loop"] = new(StringComparer.Ordinal) { "user_message_timeout_seconds" },
+        ["list_content"] = new(StringComparer.Ordinal) { "max_response_bytes" },
+        ["get_content"] = new(StringComparer.Ordinal) { "max_response_bytes" },
+        ["list_content_types"] = new(StringComparer.Ordinal) { "max_response_bytes" }
     };
 
     private static readonly HashSet<string> AllowedCompletionCheckKeys = new(StringComparer.Ordinal)
@@ -372,6 +375,24 @@ public sealed class WorkflowValidator : IWorkflowValidator
             workflow.Alias, "tool_defaults.tool_loop.user_message_timeout_seconds",
             "ToolLoop:UserMessageTimeoutSecondsCeiling");
 
+        EnforceField(
+            workflow.ToolDefaults?.ListContent?.MaxResponseBytes,
+            limits.ListContent?.MaxResponseBytesCeiling,
+            workflow.Alias, "tool_defaults.list_content.max_response_bytes",
+            "ListContent:MaxResponseBytesCeiling");
+
+        EnforceField(
+            workflow.ToolDefaults?.GetContent?.MaxResponseBytes,
+            limits.GetContent?.MaxResponseBytesCeiling,
+            workflow.Alias, "tool_defaults.get_content.max_response_bytes",
+            "GetContent:MaxResponseBytesCeiling");
+
+        EnforceField(
+            workflow.ToolDefaults?.ListContentTypes?.MaxResponseBytes,
+            limits.ListContentTypes?.MaxResponseBytesCeiling,
+            workflow.Alias, "tool_defaults.list_content_types.max_response_bytes",
+            "ListContentTypes:MaxResponseBytesCeiling");
+
         // Step-level overrides
         foreach (var step in workflow.Steps)
         {
@@ -402,6 +423,27 @@ public sealed class WorkflowValidator : IWorkflowValidator
                 workflow.Alias,
                 $"steps[{step.Id}].tool_overrides.tool_loop.user_message_timeout_seconds",
                 "ToolLoop:UserMessageTimeoutSecondsCeiling");
+
+            EnforceField(
+                step.ToolOverrides?.ListContent?.MaxResponseBytes,
+                limits.ListContent?.MaxResponseBytesCeiling,
+                workflow.Alias,
+                $"steps[{step.Id}].tool_overrides.list_content.max_response_bytes",
+                "ListContent:MaxResponseBytesCeiling");
+
+            EnforceField(
+                step.ToolOverrides?.GetContent?.MaxResponseBytes,
+                limits.GetContent?.MaxResponseBytesCeiling,
+                workflow.Alias,
+                $"steps[{step.Id}].tool_overrides.get_content.max_response_bytes",
+                "GetContent:MaxResponseBytesCeiling");
+
+            EnforceField(
+                step.ToolOverrides?.ListContentTypes?.MaxResponseBytes,
+                limits.ListContentTypes?.MaxResponseBytesCeiling,
+                workflow.Alias,
+                $"steps[{step.Id}].tool_overrides.list_content_types.max_response_bytes",
+                "ListContentTypes:MaxResponseBytesCeiling");
         }
     }
 

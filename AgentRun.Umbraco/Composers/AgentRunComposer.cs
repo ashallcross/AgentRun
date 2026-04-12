@@ -70,5 +70,10 @@ public class AgentRunComposer : IComposer
                 AllowAutoRedirect = false
             });
         builder.Services.AddSingleton<IWorkflowTool, FetchUrlTool>();
+
+        // Umbraco content tools (Story 9.12) — in-process access to published content
+        builder.Services.AddSingleton<IWorkflowTool, ListContentTool>();
+        builder.Services.AddSingleton<IWorkflowTool, GetContentTool>();
+        builder.Services.AddSingleton<IWorkflowTool, ListContentTypesTool>();
     }
 }

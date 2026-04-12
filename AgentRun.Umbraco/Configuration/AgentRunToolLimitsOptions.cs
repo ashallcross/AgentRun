@@ -14,6 +14,12 @@ public sealed class AgentRunToolLimitsOptions
 
     public ToolLoopLimits? ToolLoop { get; set; }
 
+    public ListContentLimits? ListContent { get; set; }
+
+    public GetContentLimits? GetContent { get; set; }
+
+    public ListContentTypesLimits? ListContentTypes { get; set; }
+
     public sealed class FetchUrlLimits
     {
         public int? MaxResponseBytesCeiling { get; set; }
@@ -28,5 +34,20 @@ public sealed class AgentRunToolLimitsOptions
     public sealed class ToolLoopLimits
     {
         public int? UserMessageTimeoutSecondsCeiling { get; set; }
+    }
+
+    public sealed class ListContentLimits
+    {
+        public int? MaxResponseBytesCeiling { get; set; }
+    }
+
+    public sealed class GetContentLimits
+    {
+        public int? MaxResponseBytesCeiling { get; set; }
+    }
+
+    public sealed class ListContentTypesLimits
+    {
+        public int? MaxResponseBytesCeiling { get; set; }
     }
 }

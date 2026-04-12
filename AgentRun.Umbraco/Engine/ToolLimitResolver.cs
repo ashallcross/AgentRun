@@ -92,6 +92,39 @@ public sealed class ToolLimitResolver : IToolLimitResolver
             ceiling:       options.ToolLimits?.ToolLoop?.UserMessageTimeoutSecondsCeiling);
     }
 
+    public int ResolveListContentMaxResponseBytes(StepDefinition step, WorkflowDefinition workflow)
+    {
+        var options = SafeOptions();
+        return ResolveCore(
+            stepValue:     step.ToolOverrides?.ListContent?.MaxResponseBytes,
+            workflowValue: workflow.ToolDefaults?.ListContent?.MaxResponseBytes,
+            siteDefault:   options.ToolDefaults?.ListContent?.MaxResponseBytes,
+            engineDefault: EngineDefaults.ListContentMaxResponseBytes,
+            ceiling:       options.ToolLimits?.ListContent?.MaxResponseBytesCeiling);
+    }
+
+    public int ResolveGetContentMaxResponseBytes(StepDefinition step, WorkflowDefinition workflow)
+    {
+        var options = SafeOptions();
+        return ResolveCore(
+            stepValue:     step.ToolOverrides?.GetContent?.MaxResponseBytes,
+            workflowValue: workflow.ToolDefaults?.GetContent?.MaxResponseBytes,
+            siteDefault:   options.ToolDefaults?.GetContent?.MaxResponseBytes,
+            engineDefault: EngineDefaults.GetContentMaxResponseBytes,
+            ceiling:       options.ToolLimits?.GetContent?.MaxResponseBytesCeiling);
+    }
+
+    public int ResolveListContentTypesMaxResponseBytes(StepDefinition step, WorkflowDefinition workflow)
+    {
+        var options = SafeOptions();
+        return ResolveCore(
+            stepValue:     step.ToolOverrides?.ListContentTypes?.MaxResponseBytes,
+            workflowValue: workflow.ToolDefaults?.ListContentTypes?.MaxResponseBytes,
+            siteDefault:   options.ToolDefaults?.ListContentTypes?.MaxResponseBytes,
+            engineDefault: EngineDefaults.ListContentTypesMaxResponseBytes,
+            ceiling:       options.ToolLimits?.ListContentTypes?.MaxResponseBytesCeiling);
+    }
+
     private static int ResolveCore(
         int? stepValue,
         int? workflowValue,

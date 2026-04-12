@@ -189,6 +189,26 @@ These were caught by inspecting the artefacts produced by the trustworthiness ga
 - Windows-illegal filename chars (`<`, `>`, `"`, `|`, `*`, `?`) not blocked in ConversationStore step ID check. Windows-specific. [ConversationStore.cs:172]
 - `TrimEnd(Path.DirectorySeparatorChar)` on root path `/` produces empty string, allowing all absolute paths to pass the containment check. Instance/workflow folders should never be root. [PromptAssembler.cs:31, ArtifactValidator.cs:33]
 
+## Deferred from: pre-launch codebase bloat review (Codex, 2026-04-10)
+
+Architect-triaged (Winston, 2026-04-10). Full review: `planning-artifacts/codebase-bloat-review-agentrun-umbraco-2026-04-10.md`. Refactor brief: `planning-artifacts/codebase-bloat-refactor-brief-agentrun-umbraco-2026-04-10.md`. Tracked as Story 10.7.
+
+- **`FetchUrlTool.cs` (691 lines) — split.** Coordinator + HTML extraction + fetch transport should be separate collaborators. Strongest backend hotspot.
+- **`ToolLoop.cs` (446 lines) — split directionally.** Stall recovery policy and streaming accumulator should extract. Will reshape naturally with background execution (10.1).
+- **`agentrun-instance-detail.element.ts` (1047 lines) — split.** SSE event reducer, state store, and action handlers out of the render component. Strongest frontend hotspot.
+- **`StepExecutor.cs` (362 lines) — partial.** Extract `ToolDeclaration` inner class and failure handler only. Don't over-decompose the sequencing logic.
+- **Comment hygiene — pre-public-launch polish pass.** Strip story/gate/milestone archaeology from production code; keep technical rationale only.
+- **`PromptAssembler.cs` (236 lines) — skip.** Clear sections, reasonable size. Splitting would fragment not simplify.
+- **`WorkflowOrchestrator.cs` (181 lines) — defer.** Rewrite comes with background execution; refactoring now is wasted.
+- **`agentrun-chat-message.element.ts` (235 lines) — skip.** DOM-to-HTML pattern is correct for sanitisation + streaming; small file, works.
+
 ## Deferred from: Story 9.1c Task 7.4 manual E2E exploration (2026-04-10)
+
+## Deferred from: code review of story 9-12-umbraco-content-tools (2026-04-12)
+
+- **cancellationToken never used in content tools** — ListContentTool, GetContentTool, ListContentTypesTool all accept but ignore CancellationToken. On large content trees the BFS runs to completion even after cancellation. Pre-existing pattern across all tools. Candidate for a cross-cutting fix when CT propagation is addressed holistically.
+- **Duplicated helper methods across 3 content tools** — RejectUnknownParameters, ExtractOptionalStringArgument, ExtractOptionalIntArgument, ExtractRequiredIntArgument copy-pasted verbatim. DRY violation. Refactor to shared static helper when 10-7 (code shape cleanup) is tackled.
+- **O(n²) truncation loop on large result sets** — ListContentTool and ListContentTypesTool remove one item per iteration and re-serialize. Only triggers when result exceeds 256 KB. Performance story candidate for post-beta.
+- **BFS loads full content tree before truncation** — ListContentTool materialises entire published tree into memory before truncation. On sites with 10k+ nodes this is expensive. Consider streaming/early-exit approach in a future performance pass.
 
 - **Instance resume after step completion fails — chat input rejects all messages with "Failed to send message. Try again."** Found by Adam during 9.1c Task 7.4 manual E2E. After completing the scanner step on instance `f95d49e1ca1c485faeb79313d453e958` (5-URL multi-fetch run), Adam navigated away and then reopened the instance from the instance list. The scanner had completed (`Step scanner completed` … `Advanced CurrentStepIndex to 1`), but on resume the chat input rejected every message — `ok whats next`, `hello`, `hi` — with the UI error "Failed to send message. Try again." No engine log entries for the failed sends, so the failure is UI-side, not engine-side. **Two distinct hypotheses, both plausible, both need investigation:** (1) the orchestrator pauses workflow advancement when an instance is suspended in the UI and does not pick the analyser back up on reopen; (2) the chat surface in resumed instances posts to the wrong step (the completed scanner index 0 instead of the active analyser index 1) and the engine silently rejects the post. Reproduction: start a CQA instance, run the scanner to completion, navigate away, reopen, attempt to send any chat message. Severity: Medium — affects basic "I left and came back" UX expectations but does not block any happy path that runs to completion in one sitting. **Not** a 9.1c regression and **not** a 9.1b regression — pre-existing instance-lifecycle gap surfaced by exploratory QA. Suggested home: a new Epic 10 story (e.g. **10.X — Instance resume after step completion**) before public 1.0; safe to ship private beta with this open if it's documented in known-issues. Full finding artefact: [bug-finding-2026-04-10-instance-resume-after-step-completion.md](../planning-artifacts/bug-finding-2026-04-10-instance-resume-after-step-completion.md).

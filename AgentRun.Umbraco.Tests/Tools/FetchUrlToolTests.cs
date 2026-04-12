@@ -64,6 +64,9 @@ public class FetchUrlToolTests
         public int ResolveFetchUrlTimeoutSeconds(StepDefinition step, WorkflowDefinition workflow) => TimeoutSeconds;
         public int ResolveReadFileMaxResponseBytes(StepDefinition step, WorkflowDefinition workflow) => EngineDefaults.ReadFileMaxResponseBytes;
         public int ResolveToolLoopUserMessageTimeoutSeconds(StepDefinition step, WorkflowDefinition workflow) => 300;
+        public int ResolveListContentMaxResponseBytes(StepDefinition step, WorkflowDefinition workflow) => EngineDefaults.ListContentMaxResponseBytes;
+        public int ResolveGetContentMaxResponseBytes(StepDefinition step, WorkflowDefinition workflow) => EngineDefaults.GetContentMaxResponseBytes;
+        public int ResolveListContentTypesMaxResponseBytes(StepDefinition step, WorkflowDefinition workflow) => EngineDefaults.ListContentTypesMaxResponseBytes;
     }
 
     private void SetupHttpClient(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> handler)

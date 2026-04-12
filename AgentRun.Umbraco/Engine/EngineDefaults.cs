@@ -30,4 +30,22 @@ public static class EngineDefaults
     /// promise codified in Story 9.0 AC #1.
     /// </summary>
     public const int StallDetectionWindowSeconds = 10;
+
+    /// <summary>
+    /// 256 KB. Per-call byte cap for <c>list_content</c> JSON result.
+    /// Story 9.12 — Umbraco content tools.
+    /// </summary>
+    public const int ListContentMaxResponseBytes = 262_144;
+
+    /// <summary>
+    /// 256 KB. Per-call byte cap for <c>get_content</c> JSON result.
+    /// Story 9.12 — Umbraco content tools.
+    /// </summary>
+    public const int GetContentMaxResponseBytes = 262_144;
+
+    /// <summary>
+    /// 256 KB. Per-call byte cap for <c>list_content_types</c> JSON result.
+    /// Story 9.12 — Umbraco content tools.
+    /// </summary>
+    public const int ListContentTypesMaxResponseBytes = 262_144;
 }

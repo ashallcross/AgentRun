@@ -14,6 +14,12 @@ public sealed class ToolDefaultsConfig
 
     public ToolLoopConfig? ToolLoop { get; set; }
 
+    public ListContentConfig? ListContent { get; set; }
+
+    public GetContentConfig? GetContent { get; set; }
+
+    public ListContentTypesConfig? ListContentTypes { get; set; }
+
     public sealed class FetchUrlConfig
     {
         public int? MaxResponseBytes { get; set; }
@@ -28,5 +34,20 @@ public sealed class ToolDefaultsConfig
     public sealed class ToolLoopConfig
     {
         public int? UserMessageTimeoutSeconds { get; set; }
+    }
+
+    public sealed class ListContentConfig
+    {
+        public int? MaxResponseBytes { get; set; }
+    }
+
+    public sealed class GetContentConfig
+    {
+        public int? MaxResponseBytes { get; set; }
+    }
+
+    public sealed class ListContentTypesConfig
+    {
+        public int? MaxResponseBytes { get; set; }
     }
 }

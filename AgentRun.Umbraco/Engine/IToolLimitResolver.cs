@@ -36,4 +36,25 @@ public interface IToolLimitResolver
     /// Resolves <c>tool_loop.user_message_timeout_seconds</c> for the given step in the given workflow.
     /// </summary>
     int ResolveToolLoopUserMessageTimeoutSeconds(StepDefinition step, WorkflowDefinition workflow);
+
+    /// <summary>
+    /// Resolves <c>list_content.max_response_bytes</c> for the given step in the given workflow.
+    /// Chain: step.tool_overrides → workflow.tool_defaults → site default → engine default (256 KB).
+    /// Story 9.12 — Umbraco content tools.
+    /// </summary>
+    int ResolveListContentMaxResponseBytes(StepDefinition step, WorkflowDefinition workflow);
+
+    /// <summary>
+    /// Resolves <c>get_content.max_response_bytes</c> for the given step in the given workflow.
+    /// Chain: step.tool_overrides → workflow.tool_defaults → site default → engine default (256 KB).
+    /// Story 9.12 — Umbraco content tools.
+    /// </summary>
+    int ResolveGetContentMaxResponseBytes(StepDefinition step, WorkflowDefinition workflow);
+
+    /// <summary>
+    /// Resolves <c>list_content_types.max_response_bytes</c> for the given step in the given workflow.
+    /// Chain: step.tool_overrides → workflow.tool_defaults → site default → engine default (256 KB).
+    /// Story 9.12 — Umbraco content tools.
+    /// </summary>
+    int ResolveListContentTypesMaxResponseBytes(StepDefinition step, WorkflowDefinition workflow);
 }

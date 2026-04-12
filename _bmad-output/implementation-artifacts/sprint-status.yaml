@@ -44,7 +44,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-30
-last_updated: 2026-04-11 (story 9-11 code review fixes applied — AC7 combined check + AC4 test; 491/491 tests)
+last_updated: 2026-04-12 (story 9-12 code review complete — done, 7 patches applied)
 project: AgentRun.Umbraco
 project_key: NOKEY
 tracking_system: file-system
@@ -119,7 +119,7 @@ development_status:
   # Re-scoped 2026-04-07 — was "Example Workflow, Documentation & Packaging".
   # Goal is now a meaningful private beta (NuGet 1.0.0-beta.1, curated invite list,
   # NOT public Marketplace). Two example workflows, beta-blocker engine fixes,
-  # documentation. Story dependency order is 9-6 → 9-0 → 9-1a → 9-7 → 9-1c → 9-1b → 9-4 → 9-2 → 9-3 → 9-10 + 9-11 (parallel, no deps on each other) → 9-5.
+  # documentation. Story dependency order is 9-6 → 9-0 → 9-1a → 9-7 → 9-1c → 9-1b → 9-4 → 9-2 → 9-3 → 9-10 + 9-11 (parallel) → 9-12 → 9-13 → 9-14 → 9-5.
   epic-9: in-progress
   9-6-workflow-configurable-tool-limits: done                   # BETA BLOCKER — architectural foundation, ships first
   9-0-toolloop-stall-recovery: done                             # BETA BLOCKER cleared — Tasks 1–6 + manual E2E 7.1–7.6 done; 7.7 prod smoke deferred to pre-public-beta cumulative gate
@@ -133,6 +133,9 @@ development_status:
   9-3-documentation-and-nuget-packaging: done                      # done 2026-04-10 — Round 1 (Amelia): NuGet packaging, contentFiles for workflows + schema, nupkg verified. Round 2 (Paige): README, workflow authoring guide, beta test plan, .csproj PackageReadmeFile. Round 3 (Adam): fresh install smoke test passed on Umbraco 17.3.2 — both workflows discovered and ran, clean uninstall verified. Key findings fed back into docs: install order (wizard first), section permissions (AI + AgentRun, re-login required), Umbraco.AI as direct dependency, manual workflow copy from NuGet cache. Upgrade to 17.3.2 / Umbraco.AI 1.8.0 applied during testing — see upgrade-report-umbraco-17.3.md.
   9-10-workflow-definition-path-traversal-validation: done              # done 2026-04-10 — BETA BLOCKER cleared; ValidatePathSafety in WorkflowValidator rejects traversal/absolute/null-byte at load time; defence-in-depth canonicalisation in PromptAssembler, ArtifactValidator, CompletionChecker, ConversationStore; code review applied 5 patches (sidecar containment, non-string type errors, null-byte sanitisation, void return, missing test); 486/486 tests; 4 Windows-specific findings deferred
   9-11-fail-registration-on-missing-agent-files: done              # done 2026-04-11 — VerifyAgentFiles returns bool + blocks registration; code review: AC7 combined check + AC4 test; 491/491 tests
+  9-12-umbraco-content-tools: done                                  # BETA BLOCKER cleared — in-process content tools; code review: 7 patches (templateAlias, truncation, EnforceCeilings, overflow, IHtmlEncodedString, BlockList text, CompositionPropertyTypes), 4 deferred, 5 dismissed; 521/521 tests; awaiting manual E2E by Adam
+  9-13-umbraco-content-audit-workflow: backlog                    # headline workflow that audits content in THIS Umbraco instance, not external URLs
+  9-14-update-docs-for-umbraco-tools: backlog                     # README, authoring guide, beta test plan updated for Umbraco-connected tools and workflow
   9-5-private-beta-distribution-plan: backlog                   # ships last — distributes everything above
   epic-9-retrospective: optional
 
