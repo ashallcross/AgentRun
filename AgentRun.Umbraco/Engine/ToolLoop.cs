@@ -10,6 +10,13 @@ public static class ToolLoop
 {
     internal const int MaxIterations = 100;
 
+    /// <summary>
+    /// Placeholder prefix used by conversation compaction (Story 10.2).
+    /// Tool results older than the compaction threshold are replaced with
+    /// a placeholder containing this prefix. The JSONL log is NOT modified.
+    /// </summary>
+    internal const string CompactionPlaceholderPrefix = "[Content offloaded";
+
     public static async Task<ChatResponse> RunAsync(
         IChatClient client,
         IList<ChatMessage> messages,
@@ -23,7 +30,8 @@ public static class ToolLoop
         IConversationRecorder? recorder = null,
         Func<CancellationToken, Task<bool>>? completionCheck = null,
         IToolLimitResolver? toolLimitResolver = null,
-        TimeSpan? userMessageTimeoutOverride = null)
+        TimeSpan? userMessageTimeoutOverride = null,
+        int? compactionTurnThreshold = null)
     {
         // The user-message wait window (Story 9.6) is only needed in interactive
         // mode (when userMessageReader is non-null). Resolution is deferred until
@@ -47,6 +55,17 @@ public static class ToolLoop
         // so it does not bake any workflow-specific tool name into the engine.
         var nudgeAttempted = false;
 
+        // Story 10.2: conversation compaction state. Track which tool results
+        // have been compacted (by CallId) and when they were added (by assistant
+        // turn count). The threshold is resolved once here to avoid per-iteration
+        // resolver calls; -1 disables compaction entirely.
+        var compactThreshold = compactionTurnThreshold ?? -1;
+        var compactedCallIds = new HashSet<string>(StringComparer.Ordinal);
+        var assistantTurnCount = 0;
+        // Map: FunctionResultContent.CallId → assistant turn count at which the
+        // tool result was added. Populated when tool results are appended.
+        var toolResultTurnMap = new Dictionary<string, int>(StringComparer.Ordinal);
+
         var iteration = 0;
         while (true)
         {
@@ -61,6 +80,14 @@ public static class ToolLoop
 
             // Drain any user messages queued from the message endpoint
             await DrainUserMessagesAsync(userMessageReader, messages, recorder, emitter, cancellationToken);
+
+            // Story 10.2: compact old tool results before the LLM call to keep
+            // the in-memory context bounded. Only the Result string is replaced;
+            // the message structure stays intact (no orphaned tool_calls).
+            if (compactThreshold > 0)
+            {
+                CompactOldToolResults(messages, assistantTurnCount, compactThreshold, compactedCallIds, toolResultTurnMap, logger, context);
+            }
 
             // Stream the LLM response, emitting text.delta events for each chunk
             var textBuilder = new StringBuilder();
@@ -108,6 +135,9 @@ public static class ToolLoop
 
             // Assemble streaming updates into messages for conversation context
             messages.AddMessages(updates);
+
+            // Story 10.2: track assistant turns for compaction age calculation
+            assistantTurnCount++;
 
             // Extract function calls from the last assistant message only (not previously processed ones)
             var lastAssistantMessage = messages.LastOrDefault(m => m.Role == ChatRole.Assistant);
@@ -403,6 +433,17 @@ public static class ToolLoop
             // Add tool results as a single tool-role message
             messages.Add(new ChatMessage(ChatRole.Tool, resultContents));
 
+            // Story 10.2: register tool result CallIds at the current assistant turn
+            // so compaction knows when they were added.
+            if (compactThreshold > 0)
+            {
+                foreach (var rc in resultContents.OfType<FunctionResultContent>())
+                {
+                    if (rc.CallId is not null)
+                        toolResultTurnMap.TryAdd(rc.CallId, assistantTurnCount);
+                }
+            }
+
             // Drain any user messages sent during tool execution
             await DrainUserMessagesAsync(userMessageReader, messages, recorder, emitter, cancellationToken);
         }
@@ -442,5 +483,96 @@ public static class ToolLoop
             }
         }
         return count;
+    }
+
+    /// <summary>
+    /// Story 10.2: replace old tool result content with compact placeholders
+    /// in the in-memory message list. The JSONL log is NOT modified — this
+    /// operates on the live <paramref name="messages"/> list only.
+    /// </summary>
+    internal static void CompactOldToolResults(
+        IList<ChatMessage> messages,
+        int currentAssistantTurn,
+        int threshold,
+        HashSet<string> compactedCallIds,
+        Dictionary<string, int> toolResultTurnMap,
+        ILogger logger,
+        ToolExecutionContext context)
+    {
+        // Find the most recent tool-role message index — those results are the
+        // "current batch" the model hasn't responded to yet and must NOT be compacted.
+        var lastToolMessageIndex = -1;
+        for (var i = messages.Count - 1; i >= 0; i--)
+        {
+            if (messages[i].Role == ChatRole.Tool)
+            {
+                lastToolMessageIndex = i;
+                break;
+            }
+        }
+
+        for (var i = 0; i < messages.Count; i++)
+        {
+            var msg = messages[i];
+            if (msg.Role != ChatRole.Tool) continue;
+
+            // Skip the most recent tool result batch — model hasn't seen it yet
+            if (i == lastToolMessageIndex) continue;
+
+            foreach (var content in msg.Contents)
+            {
+                if (content is not FunctionResultContent frc) continue;
+                if (frc.CallId is null) continue;
+                if (compactedCallIds.Contains(frc.CallId)) continue;
+
+                // Determine the age of this result in assistant turns
+                if (!toolResultTurnMap.TryGetValue(frc.CallId, out var addedAtTurn))
+                {
+                    // Result was in the message list before ToolLoop started
+                    // (e.g. from a retry reload). Treat as maximally old.
+                    addedAtTurn = 0;
+                }
+
+                var age = currentAssistantTurn - addedAtTurn;
+                if (age < threshold) continue;
+
+                // Compute original size — skip compaction for small results (handles
+                // from offloaded tools are already compact; replacing them destroys
+                // metadata for negligible context savings).
+                var originalResult = frc.Result?.ToString() ?? string.Empty;
+                var originalSize = System.Text.Encoding.UTF8.GetByteCount(originalResult);
+                if (originalSize <= EngineDefaults.CompactionMinSizeBytes)
+                    continue;
+
+                var toolName = frc.CallId; // CallId is typically the tool call ID, not the name
+
+                // Try to find the matching FunctionCallContent for a better name
+                var resolvedName = ResolveToolNameForCallId(messages, frc.CallId) ?? frc.CallId;
+
+                var placeholder = $"[Content offloaded — {originalSize} bytes from {resolvedName}. Original result available in conversation log.]";
+
+                // Replace the Result property. FunctionResultContent.Result has a public setter.
+                frc.Result = placeholder;
+                compactedCallIds.Add(frc.CallId);
+
+                logger.LogDebug(
+                    "Compacted tool result {CallId} ({ToolName}, {OriginalSize} bytes, age {Age} turns) for step {StepId} in workflow {WorkflowAlias} instance {InstanceId}",
+                    frc.CallId, resolvedName, originalSize, age, context.StepId, context.WorkflowAlias, context.InstanceId);
+            }
+        }
+    }
+
+    private static string? ResolveToolNameForCallId(IList<ChatMessage> messages, string callId)
+    {
+        for (var i = messages.Count - 1; i >= 0; i--)
+        {
+            if (messages[i].Role != ChatRole.Assistant) continue;
+            foreach (var content in messages[i].Contents)
+            {
+                if (content is FunctionCallContent fcc && fcc.CallId == callId)
+                    return fcc.Name;
+            }
+        }
+        return null;
     }
 }

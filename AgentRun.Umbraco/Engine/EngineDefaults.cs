@@ -48,4 +48,20 @@ public static class EngineDefaults
     /// Story 9.12 — Umbraco content tools.
     /// </summary>
     public const int ListContentTypesMaxResponseBytes = 262_144;
+
+    /// <summary>
+    /// 3 assistant turns. After this many assistant turns have passed since a
+    /// tool result was added, the result's content is replaced with a compact
+    /// placeholder in the in-memory message list (not in the JSONL log).
+    /// Story 10.2 — conversation compaction safety net.
+    /// </summary>
+    public const int CompactionTurnThreshold = 3;
+
+    /// <summary>
+    /// 1 KB. Tool results at or below this byte size are never compacted.
+    /// Offloaded tool handles (get_content, fetch_url) are already compact
+    /// representations — compacting them destroys metadata for negligible
+    /// context savings. Story 10.2 bug fix.
+    /// </summary>
+    public const int CompactionMinSizeBytes = 1024;
 }

@@ -20,6 +20,12 @@ public sealed class ToolDefaultsConfig
 
     public ListContentTypesConfig? ListContentTypes { get; set; }
 
+    /// <summary>
+    /// Number of assistant turns after which old tool results are compacted
+    /// in-memory. Story 10.2.
+    /// </summary>
+    public int? CompactionTurns { get; set; }
+
     public sealed class FetchUrlConfig
     {
         public int? MaxResponseBytes { get; set; }

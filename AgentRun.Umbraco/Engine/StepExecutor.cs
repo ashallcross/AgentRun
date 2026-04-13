@@ -183,11 +183,14 @@ public class StepExecutor : IStepExecutor
                 ? async ct => (await _completionChecker.CheckAsync(step.CompletionCheck, context.InstanceFolderPath, ct)).Passed
                 : null;
 
+            // Story 10.2: resolve compaction threshold for this step
+            var compactionThreshold = _toolLimitResolver.ResolveCompactionTurnThreshold(step, workflow);
+
             // Run the tool loop
             await ToolLoop.RunAsync(
                 client, messages, chatOptions, toolDict, toolExecutionContext, _logger, cancellationToken,
                 context.UserMessageReader, context.EventEmitter, context.ConversationRecorder,
-                completionCheck, _toolLimitResolver);
+                completionCheck, _toolLimitResolver, compactionTurnThreshold: compactionThreshold);
 
             _logger.LogInformation(
                 "Tool loop complete for step {StepId} in workflow {WorkflowAlias} instance {InstanceId}",

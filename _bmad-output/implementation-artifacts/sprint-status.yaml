@@ -1,6 +1,6 @@
 # generated: 2026-03-30
 # last_updated: 2026-04-10 (story 9-4 patch-in-place pending — Re-Review Gate ticked, Amelia unblocked)
-# project: Shallai.UmbracoAgentRunner
+# project: AgentRun.Umbraco
 # project_key: NOKEY
 # tracking_system: file-system
 # story_location: /Users/adamshallcross/Documents/Umbraco AI/_bmad-output/implementation-artifacts
@@ -44,7 +44,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-30
-last_updated: 2026-04-12 (story 9-14 review)
+last_updated: 2026-04-13 (Story 10.2 done — code review passed, 1 patch applied; Epic 10 in-progress)
 project: AgentRun.Umbraco
 project_key: NOKEY
 tracking_system: file-system
@@ -120,7 +120,7 @@ development_status:
   # Goal is now a meaningful private beta (NuGet 1.0.0-beta.1, curated invite list,
   # NOT public Marketplace). Two example workflows, beta-blocker engine fixes,
   # documentation. Story dependency order is 9-6 → 9-0 → 9-1a → 9-7 → 9-1c → 9-1b → 9-4 → 9-2 → 9-3 → 9-10 + 9-11 (parallel) → 9-12 → 9-13 → 9-14 → 9-5.
-  epic-9: in-progress
+  epic-9: done
   9-6-workflow-configurable-tool-limits: done                   # BETA BLOCKER — architectural foundation, ships first
   9-0-toolloop-stall-recovery: done                             # BETA BLOCKER cleared — Tasks 1–6 + manual E2E 7.1–7.6 done; 7.7 prod smoke deferred to pre-public-beta cumulative gate
   9-1a-content-quality-audit-working-skeleton: done             # full validation blocked by 9-0; skeleton itself is committed
@@ -136,26 +136,33 @@ development_status:
   9-12-umbraco-content-tools: done                                  # BETA BLOCKER cleared — in-process content tools; code review: 7 patches (templateAlias, truncation, EnforceCeilings, overflow, IHtmlEncodedString, BlockList text, CompositionPropertyTypes), 4 deferred, 5 dismissed; 521/521 tests; awaiting manual E2E by Adam
   9-13-umbraco-content-audit-workflow: done                  # done 2026-04-12 — workflow-only (YAML + 3 agent prompts), zero C# changes, 521/521 tests; code review: PASS, 1 observation (schema path inconsistency in CQA/Accessibility — fixed in-review); manual E2E on Sonnet 4.6 against Clean Starter Kit (26 nodes, 33 doc types), all 4 artifacts produced, audit-report references real content
   9-14-update-docs-for-umbraco-tools: done                         # done 2026-04-12 — README, authoring guide, beta test plan updated for Umbraco content tools and Content Audit workflow; code review PASS, all 7 ACs met
-  9-5-private-beta-distribution-plan: backlog                   # ships last — distributes everything above
-  epic-9-retrospective: optional
+  9-5-private-beta-distribution-plan: done                        # done 2026-04-13 — nupkg rebuilt, fresh-install smoke passed, published to NuGet.org as 1.0.0-beta.1 pre-release, beta invite drafted; feedback tracking + beta period are ongoing process, not epic blockers
+  epic-9-retrospective: done
 
   # Epic 10: Ship Readiness & Public Launch
-  # Re-scoped 2026-04-07 — post-beta stability + public 1.0 launch. 10-3 was pulled
-  # forward into 9-0 as a beta blocker.
-  epic-10: backlog
-  10-1-instance-concurrency-locking: backlog
-  10-2-context-management-for-long-conversations: backlog
-  10-3-multi-turn-interactive-fix: moved                        # moved into 9-0 on 2026-04-07 — scope expanded from question-detection bug to full stall recovery & completion logic
-  10-4-open-source-licence-decision: backlog
-  10-5-marketplace-listing-and-community-launch: backlog
-  10-6-retry-replay-degeneration-recovery: backlog        # created via SCP 2026-04-08 (9.1b rescope) — promoted from 9.1b edge case to its own story; fast-follower with explicit beta-blocker escalation criteria recorded in the spec
-  10-7-code-shape-cleanup-hotspot-refactoring: backlog    # added 2026-04-10 — architect-triaged hotspot refactoring from Codex bloat review; compound with feature work, not standalone
+  # Updated 2026-04-13 — 10.12 added from Warren Buckley beta feedback (migration, profile fallback, provider errors).
+  # Priority order: 10-2 → 10-12 → 10-8 → 10-9 → 10-10 → 10-1 → 10-6 → 10-11 → 10-7 → 10-4 → 10-5.
+  epic-10: in-progress
+  10-2-context-management-for-long-conversations: done  # Tasks 1–6 done, code review passed (1 patch: WorkflowValidator compaction_turns), 540/540 tests; manual E2E (7.1–7.5) pending Adam's browser testing
+  10-12-first-run-experience-migration-profile-provider: backlog  # added 2026-04-13 — Warren Buckley feedback: package migration (auto-copy workflows + section perms), profile fallback (no YAML editing), provider error surfacing (silent failure on bad API keys)
+  10-8-cancel-wiring-cancellation-token-per-instance: backlog   # added 2026-04-12 — cancel endpoint must signal CancellationTokenSource to stop in-flight work
+  10-9-sse-disconnect-resilience: backlog                        # added 2026-04-12 — distinguish client disconnect from execution failure; don't mark runs Failed on connection drop
+  10-10-instance-resume-after-step-completion: backlog           # added 2026-04-12 — bug from 9.1c E2E; chat input rejects messages after step completion + navigation away
+  10-1-instance-concurrency-locking: backlog                    # per-instance SemaphoreSlim to prevent concurrent step execution
+  10-3-multi-turn-interactive-fix: moved                        # moved into 9-0 on 2026-04-07
+  10-6-retry-replay-degeneration-recovery: backlog              # created via SCP 2026-04-08; fast-follower with beta-blocker escalation criteria
+  10-11-sse-keepalive-and-engine-boundary-cleanup: backlog      # added 2026-04-12 — SSE heartbeat + ProfileResolver Umbraco.AI dependency extraction
+  10-7-code-shape-cleanup-hotspot-refactoring: backlog          # added 2026-04-10 — compound with feature work, not standalone
+  10-4-open-source-licence-decision: backlog                    # product/legal decision; ships before marketplace listing
+  10-5-marketplace-listing-and-community-launch: backlog        # ships last — public 1.0 launch
   epic-10-retrospective: optional
 
   # Epic 11: Adoption Accelerators
+  # Updated 2026-04-12 — template choices revised for Umbraco-connected workflows; list_media added.
   epic-11: backlog
-  11-1-additional-workflow-templates: backlog
+  11-1-additional-workflow-templates: backlog                    # Content Model Health Check, SEO Metadata Audit, Content Freshness Report — all use existing in-process tools
   11-2-tree-navigation-ux-overhaul: backlog
+  11-4-list-media-tool: backlog                                  # added 2026-04-12 — deferred from 9.12; enables media-focused workflow templates
   11-3-token-usage-logging: backlog
   epic-11-retrospective: optional
 

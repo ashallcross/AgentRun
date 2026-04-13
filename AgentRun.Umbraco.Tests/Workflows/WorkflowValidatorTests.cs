@@ -482,4 +482,88 @@ public class WorkflowValidatorTests
             Assert.That(result.IsValid, Is.False);
         }
     }
+
+    // --- Compaction Turns Scalar Validation (Story 10.2) ---
+
+    [Test]
+    public void Validate_CompactionTurns_InToolDefaults_Accepted()
+    {
+        var yaml = """
+            name: Compaction Test
+            description: Workflow with compaction_turns
+            steps:
+              - id: step_one
+                name: Step One
+                agent: agents/worker.md
+            tool_defaults:
+              compaction_turns: 5
+            """;
+
+        var result = _validator.Validate(yaml);
+
+        Assert.That(result.IsValid, Is.True,
+            $"compaction_turns should be accepted: {string.Join("; ", result.Errors.Select(e => e.Message))}");
+    }
+
+    [Test]
+    public void Validate_CompactionTurns_ZeroValue_Rejected()
+    {
+        var yaml = """
+            name: Compaction Zero
+            description: compaction_turns zero
+            steps:
+              - id: step_one
+                name: Step One
+                agent: agents/worker.md
+            tool_defaults:
+              compaction_turns: 0
+            """;
+
+        var result = _validator.Validate(yaml);
+
+        Assert.That(result.IsValid, Is.False);
+        Assert.That(result.Errors, Has.Some.Matches<WorkflowValidationError>(
+            e => e.FieldPath == "tool_defaults.compaction_turns" && e.Message.Contains("positive integer")));
+    }
+
+    [Test]
+    public void Validate_CompactionTurns_NegativeValue_Rejected()
+    {
+        var yaml = """
+            name: Compaction Negative
+            description: compaction_turns negative
+            steps:
+              - id: step_one
+                name: Step One
+                agent: agents/worker.md
+            tool_defaults:
+              compaction_turns: -1
+            """;
+
+        var result = _validator.Validate(yaml);
+
+        Assert.That(result.IsValid, Is.False);
+        Assert.That(result.Errors, Has.Some.Matches<WorkflowValidationError>(
+            e => e.FieldPath == "tool_defaults.compaction_turns" && e.Message.Contains("positive integer")));
+    }
+
+    [Test]
+    public void Validate_CompactionTurns_InStepOverrides_Accepted()
+    {
+        var yaml = """
+            name: Step Compaction
+            description: compaction_turns in step overrides
+            steps:
+              - id: step_one
+                name: Step One
+                agent: agents/worker.md
+                tool_overrides:
+                  compaction_turns: 10
+            """;
+
+        var result = _validator.Validate(yaml);
+
+        Assert.That(result.IsValid, Is.True,
+            $"compaction_turns in step overrides should be accepted: {string.Join("; ", result.Errors.Select(e => e.Message))}");
+    }
 }

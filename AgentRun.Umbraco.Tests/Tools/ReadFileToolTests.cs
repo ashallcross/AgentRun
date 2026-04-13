@@ -47,6 +47,7 @@ public class ReadFileToolTests
         public int ResolveListContentMaxResponseBytes(StepDefinition step, WorkflowDefinition workflow) => EngineDefaults.ListContentMaxResponseBytes;
         public int ResolveGetContentMaxResponseBytes(StepDefinition step, WorkflowDefinition workflow) => EngineDefaults.GetContentMaxResponseBytes;
         public int ResolveListContentTypesMaxResponseBytes(StepDefinition step, WorkflowDefinition workflow) => EngineDefaults.ListContentTypesMaxResponseBytes;
+        public int ResolveCompactionTurnThreshold(StepDefinition step, WorkflowDefinition workflow) => EngineDefaults.CompactionTurnThreshold;
     }
 
     private static string ExpectedMarker(int limit, long totalBytes) =>

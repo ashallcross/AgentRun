@@ -1,6 +1,8 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using AgentRun.Umbraco.Engine;
+using AgentRun.Umbraco.Security;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Umbraco.Cms.Core.Models.PublishedContent;
@@ -58,7 +60,12 @@ public class GetContentTool : IWorkflowTool
         _logger = logger;
     }
 
-    public Task<object> ExecuteAsync(
+    private static readonly JsonSerializerOptions HandleJsonOptions = new()
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.Never
+    };
+
+    public async Task<object> ExecuteAsync(
         IDictionary<string, object?> arguments,
         ToolExecutionContext context,
         CancellationToken cancellationToken)
@@ -68,6 +75,13 @@ public class GetContentTool : IWorkflowTool
             throw new ToolContextMissingException(
                 "GetContentTool requires ToolExecutionContext.Step and .Workflow to be set by the executor. " +
                 "This is an engine wiring bug, not a workflow configuration issue.");
+        }
+
+        if (string.IsNullOrEmpty(context.InstanceFolderPath))
+        {
+            throw new InvalidOperationException(
+                "GetContentTool requires ToolExecutionContext.InstanceFolderPath to be set " +
+                "so the tool can offload content to the instance scratch path.");
         }
 
         RejectUnknownParameters(arguments);
@@ -111,37 +125,97 @@ public class GetContentTool : IWorkflowTool
 
         var limit = _limitResolver.ResolveGetContentMaxResponseBytes(context.Step, context.Workflow);
         var json = JsonSerializer.Serialize(result);
+        var truncated = false;
 
-        if (System.Text.Encoding.UTF8.GetByteCount(json) <= limit)
+        if (System.Text.Encoding.UTF8.GetByteCount(json) > limit)
         {
-            return Task.FromResult<object>(json);
-        }
+            truncated = true;
 
-        // Truncate by removing properties from the end until under limit (preserves valid JSON)
-        var propertyKeys = properties.Keys.ToList();
-        var totalPropertyCount = propertyKeys.Count;
-        while (propertyKeys.Count > 0)
-        {
-            properties.Remove(propertyKeys[^1]);
-            propertyKeys.RemoveAt(propertyKeys.Count - 1);
-
-            json = JsonSerializer.Serialize(result);
-            var marker = $"[Response truncated — returned {propertyKeys.Count} of {totalPropertyCount} properties. " +
-                         "Override get_content.max_response_bytes in your workflow configuration to increase the limit.]";
-            var candidate = json + marker;
-
-            if (System.Text.Encoding.UTF8.GetByteCount(candidate) <= limit)
+            // Truncate by removing properties from the end until under limit (preserves valid JSON)
+            var propertyKeys = properties.Keys.ToList();
+            var totalPropertyCount = propertyKeys.Count;
+            while (propertyKeys.Count > 0)
             {
-                return Task.FromResult<object>(candidate);
+                properties.Remove(propertyKeys[^1]);
+                propertyKeys.RemoveAt(propertyKeys.Count - 1);
+
+                json = JsonSerializer.Serialize(result);
+                var marker = $"[Response truncated — returned {propertyKeys.Count} of {totalPropertyCount} properties. " +
+                             "Override get_content.max_response_bytes in your workflow configuration to increase the limit.]";
+                var candidate = json + marker;
+
+                if (System.Text.Encoding.UTF8.GetByteCount(candidate) <= limit)
+                {
+                    json = candidate;
+                    break;
+                }
+            }
+
+            // Even zero properties exceeds the limit — use what we have
+            if (propertyKeys.Count == 0 && System.Text.Encoding.UTF8.GetByteCount(json) > limit)
+            {
+                var emptyMarker = $"[Response truncated — returned 0 of {totalPropertyCount} properties. " +
+                                  "Override get_content.max_response_bytes in your workflow configuration to increase the limit.]";
+                json = JsonSerializer.Serialize(result) + emptyMarker;
             }
         }
 
-        // Even zero properties exceeds the limit
-        json = JsonSerializer.Serialize(result);
-        var emptyMarker = $"[Response truncated — returned 0 of {totalPropertyCount} properties. " +
-                          "Override get_content.max_response_bytes in your workflow configuration to increase the limit.]";
-        return Task.FromResult<object>(json + emptyMarker);
+        // Offload: write full result to .content-cache/{contentId}.json, return handle
+        var relPath = $".content-cache/{id}.json";
+
+        string validatedPath;
+        try
+        {
+            validatedPath = PathSandbox.ValidatePath(relPath, context.InstanceFolderPath);
+        }
+        catch (Exception ex) when (ex is ArgumentException or UnauthorizedAccessException)
+        {
+            throw new ToolExecutionException(
+                $"Failed to cache get_content response to {relPath}: {ex.Message}");
+        }
+
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(validatedPath)!);
+            await File.WriteAllTextAsync(validatedPath, json, cancellationToken);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogError(ex,
+                "Failed to write content cache for node {NodeId} in instance {InstanceId}, step {StepId}",
+                id, context.InstanceId, context.StepId);
+            throw new ToolExecutionException(
+                $"Failed to cache get_content response to {relPath}: {ex.Message}");
+        }
+
+        var sizeBytes = System.Text.Encoding.UTF8.GetByteCount(json);
+        var nodeName = node.Name ?? string.Empty;
+        // Truncate name in handle to keep handle under 1 KB
+        if (nodeName.Length > 100)
+            nodeName = nodeName[..100] + "...";
+
+        var handle = new GetContentHandle(
+            id,
+            nodeName,
+            node.ContentType.Alias,
+            _urlProvider.GetUrl(node) ?? string.Empty,
+            properties.Count,
+            sizeBytes,
+            relPath,
+            truncated);
+
+        return JsonSerializer.Serialize(handle, HandleJsonOptions);
     }
+
+    private sealed record GetContentHandle(
+        [property: JsonPropertyName("id")] int Id,
+        [property: JsonPropertyName("name")] string Name,
+        [property: JsonPropertyName("contentType")] string ContentType,
+        [property: JsonPropertyName("url")] string Url,
+        [property: JsonPropertyName("propertyCount")] int PropertyCount,
+        [property: JsonPropertyName("size_bytes")] int SizeBytes,
+        [property: JsonPropertyName("saved_to")] string SavedTo,
+        [property: JsonPropertyName("truncated")] bool Truncated);
 
     private Dictionary<string, object?> ExtractProperties(IPublishedContent node)
     {

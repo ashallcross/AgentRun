@@ -43,6 +43,7 @@ public class ListContentTypesToolTests
         public int ResolveListContentMaxResponseBytes(StepDefinition step, WorkflowDefinition workflow) => EngineDefaults.ListContentMaxResponseBytes;
         public int ResolveGetContentMaxResponseBytes(StepDefinition step, WorkflowDefinition workflow) => EngineDefaults.GetContentMaxResponseBytes;
         public int ResolveListContentTypesMaxResponseBytes(StepDefinition step, WorkflowDefinition workflow) => ListContentTypesMaxBytes;
+        public int ResolveCompactionTurnThreshold(StepDefinition step, WorkflowDefinition workflow) => EngineDefaults.CompactionTurnThreshold;
     }
 
     private static IContentType MakeContentType(string alias, string name, string? description = null, string? icon = null)
