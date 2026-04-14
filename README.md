@@ -33,7 +33,7 @@ startup and needs an existing database.
 ```bash
 dotnet add package Umbraco.AI
 dotnet add package Umbraco.AI.Anthropic
-dotnet add package AgentRun.Umbraco --version 1.0.0-beta.1
+dotnet add package AgentRun.Umbraco --version 1.0.0-beta.2
 ```
 
 All three packages auto-register via Umbraco's composer system -- no `Program.cs` changes needed.

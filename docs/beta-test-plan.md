@@ -7,7 +7,7 @@ Umbraco 17 site. Execute against the `.nupkg` produced by `dotnet pack`.
 
 - .NET 10 SDK installed
 - A valid Anthropic or OpenAI API key
-- The local `.nupkg` file (at `nupkg/AgentRun.Umbraco.1.0.0-beta.1.nupkg`)
+- The local `.nupkg` file (at `nupkg/AgentRun.Umbraco.1.0.0-beta.2.nupkg`)
 
 ## Steps
 
@@ -32,7 +32,7 @@ choose SQLite). Stop the site after setup completes.
 ```bash
 dotnet add package Umbraco.AI
 dotnet add package Umbraco.AI.Anthropic
-dotnet add package AgentRun.Umbraco --version 1.0.0-beta.1 --source /path/to/Umbraco-AI/nupkg
+dotnet add package AgentRun.Umbraco --version 1.0.0-beta.2 --source /path/to/Umbraco-AI/nupkg
 ```
 
 Replace `/path/to/Umbraco-AI/` with the absolute path to the repo root (e.g.,
