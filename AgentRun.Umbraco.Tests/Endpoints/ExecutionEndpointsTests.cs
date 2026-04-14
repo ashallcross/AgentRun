@@ -98,6 +98,39 @@ public class ExecutionEndpointsTests
         Assert.That(error?.Error, Is.EqualTo("invalid_state"));
     }
 
+    // Story 10.10 locked decision 5: Cancelled is NOT retry-eligible — the user
+    // explicitly stopped the run, the correct affordance is Delete. Guard against
+    // future drift where Cancelled gets added to Retry's accepted statuses or to
+    // the step-discovery match list.
+    [Test]
+    public async Task RetryInstance_CancelledInstance_Returns409()
+    {
+        var instance = new InstanceState
+        {
+            InstanceId = "inst-001",
+            WorkflowAlias = "test-wf",
+            Status = InstanceStatus.Cancelled,
+            Steps =
+            [
+                new StepState { Id = "step-0", Status = StepStatus.Complete },
+                new StepState { Id = "step-1", Status = StepStatus.Cancelled }
+            ]
+        };
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>()).Returns(instance);
+
+        var result = await _endpoints.RetryInstance("inst-001", CancellationToken.None);
+
+        Assert.That(result, Is.InstanceOf<ConflictObjectResult>());
+        var conflict = (ConflictObjectResult)result;
+        var error = conflict.Value as ErrorResponse;
+        Assert.That(error?.Error, Is.EqualTo("invalid_state"));
+
+        // Step-discovery must not have run — Retry's step-status match list is
+        // Error|Active only, never Cancelled.
+        await _instanceManager.DidNotReceive().UpdateStepStatusAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<StepStatus>(), Arg.Any<CancellationToken>());
+    }
+
     [Test]
     public async Task RetryInstance_NonExistentInstance_Returns404()
     {

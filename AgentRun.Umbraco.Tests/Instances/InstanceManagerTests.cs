@@ -406,6 +406,36 @@ public class InstanceManagerTests
         Assert.That(parsed, Is.EqualTo(InstanceStatus.Interrupted));
     }
 
+    // Story 10.10 AC9: JSON serialization of StepStatus.Cancelled produces "Cancelled".
+    [Test]
+    public void StepStatus_Cancelled_SerializesAsCancelledString()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(StepStatus.Cancelled);
+
+        Assert.That(json, Is.EqualTo("\"Cancelled\""));
+
+        var parsed = System.Text.Json.JsonSerializer.Deserialize<StepStatus>(json);
+        Assert.That(parsed, Is.EqualTo(StepStatus.Cancelled));
+    }
+
+    // Story 10.10 AC9: YAML round-trip — UpdateStepStatusAsync persists Cancelled and
+    // reads back as Cancelled. Pins the on-disk enum representation for cancel cleanup.
+    [Test]
+    public async Task UpdateStepStatusAsync_SetsCancelledStatus()
+    {
+        var definition = CreateTestDefinition();
+        var created = await _manager.CreateInstanceAsync("test-workflow", definition, "admin@example.com", CancellationToken.None);
+
+        await _manager.UpdateStepStatusAsync("test-workflow", created.InstanceId, 0, StepStatus.Active, CancellationToken.None);
+        var cancelled = await _manager.UpdateStepStatusAsync("test-workflow", created.InstanceId, 0, StepStatus.Cancelled, CancellationToken.None);
+
+        Assert.That(cancelled.Steps[0].Status, Is.EqualTo(StepStatus.Cancelled));
+
+        // Verify persisted to disk (YAML round-trip).
+        var readBack = await _manager.GetInstanceAsync("test-workflow", created.InstanceId, CancellationToken.None);
+        Assert.That(readBack!.Steps[0].Status, Is.EqualTo(StepStatus.Cancelled));
+    }
+
     // Story 10.9 manual E2E code review: Retry(Failed) must transition Failed → Running.
     // Pre-10.9 the terminal-transition guard refused this silently, leaving Retry broken —
     // RetryInstance would reset the step, call SetInstanceStatusAsync(Running) which no-op'd,

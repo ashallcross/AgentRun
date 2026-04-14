@@ -24,6 +24,8 @@ import {
   stepSubtitle,
   stepIconName,
   shouldAnimateStepIcon,
+  shouldShowContinueButton,
+  computeChatInputGate,
 } from "../utils/instance-detail-helpers.js";
 import { extractToolSummary } from "../utils/tool-helpers.js";
 import { numberAndSortInstances } from "../utils/instance-list-helpers.js";
@@ -922,10 +924,32 @@ export class AgentRunInstanceDetailElement extends UmbLitElement {
     // Retry is the correct resume affordance, same as for Failed).
     const showRetry = (inst.status === "Failed" || inst.status === "Interrupted") && !this._streaming;
 
-    // Continue button (header): autonomous mode only — step advancement between steps
-    const showContinue = !isInteractive
-      && inst.status === "Running" && !hasActiveStep && !this._streaming
-      && inst.steps.some((s) => s.status === "Pending");
+    // Completion banner: interactive mode, step finished, agent not actively
+    // responding. This is the in-session affordance shown right after a step
+    // streams to completion ("Step complete — review the output, then advance
+    // when ready"). `_stepCompletable` is in-memory only — it is set by the
+    // SSE step.finished event and is false on a fresh page load.
+    const showCompletionBanner = isInteractive && this._stepCompletable && !this._agentResponding;
+
+    // Between-steps state — the structural condition behind both the Continue
+    // header button and the chat-input disable. Decoupled from button
+    // visibility so the input gate disables consistently whether the in-session
+    // banner or the reopen header button is the visible affordance.
+    const isBetweenSteps = shouldShowContinueButton({
+      instanceStatus: inst.status,
+      hasActiveStep,
+      isStreaming: this._streaming,
+      hasPendingSteps: inst.steps.some((s) => s.status === "Pending"),
+    });
+
+    // Continue button (header): the reopen affordance. Story 10.10 added this
+    // to fix the chat-input-rejected-on-resume bug — `_stepCompletable` is
+    // false after navigating away, so the banner does not surface and the user
+    // had nothing to click. Suppress when the in-session banner is showing so
+    // the user does not see two "Continue" affordances simultaneously; the
+    // banner has the contextual "Step complete" copy and wins when present.
+    // Both end up at _onStartClick.
+    const showContinue = isBetweenSteps && !showCompletionBanner;
 
     // Cancel button (Story 10.8): shown whenever a run is in flight regardless of mode
     // or streaming state — the engine-level CTS wiring makes mid-stream cancel the
@@ -934,53 +958,27 @@ export class AgentRunInstanceDetailElement extends UmbLitElement {
     // Retry is the correct action for failed runs.
     const showCancel = inst.status === "Running" || inst.status === "Pending";
 
-    // Input enablement: interactive vs autonomous
-    let inputEnabled: boolean;
-    let inputPlaceholder: string;
-    if (inst.status === "Interrupted") {
-      // Story 10.9: Interrupted is recoverable — disable input and point the
-      // user at Retry. Applies to both interactive and autonomous modes;
-      // distinct from the "Workflow complete" terminal-state placeholder.
-      inputEnabled = false;
-      inputPlaceholder = "Run interrupted — click Retry to resume.";
-    } else if (isInteractive) {
-      if (isTerminal) {
-        inputEnabled = false;
-        inputPlaceholder =
-          inst.status === "Cancelled" ? "Run cancelled."
-          : inst.status === "Failed" ? "Run failed — click Retry to resume."
-          : "Workflow complete.";
-      } else if (this._viewingStepId) {
-        inputEnabled = false;
-        inputPlaceholder = "Viewing step history";
-      } else if (this._agentResponding) {
-        inputEnabled = false;
-        inputPlaceholder = "Agent is responding...";
-      } else if (this._streaming || activeStep || inst.status === "Running") {
-        // Streaming but agent idle (waiting for input), or active step exists
-        inputEnabled = true;
-        inputPlaceholder = "Message the agent...";
-      } else {
-        inputEnabled = false;
-        inputPlaceholder = "Send a message to start.";
-      }
-    } else {
-      inputEnabled = this._streaming && !this._viewingStepId;
-      inputPlaceholder = isTerminal
-        ? (inst.status === "Cancelled" ? "Run cancelled."
-           : inst.status === "Failed" ? "Run failed — click Retry to resume."
-           : "Workflow complete.")
-        : activeStep ? "Step complete" : "Click 'Start' to begin the workflow.";
-    }
+    // Chat input gate: delegated to shared helper so tests exercise the same
+    // function as production (Story 10.10 — closes the predicate-mirror drift
+    // risk flagged in code review). Gate uses `isBetweenSteps`, not the button
+    // visibility, so input stays disabled correctly when the banner is the
+    // visible affordance.
+    const { inputEnabled, inputPlaceholder } = computeChatInputGate({
+      instanceStatus: inst.status,
+      isInteractive,
+      isTerminal,
+      hasActiveStep,
+      isStreaming: this._streaming,
+      isViewingStepHistory: this._viewingStepId !== null,
+      agentResponding: this._agentResponding,
+      isBetweenSteps,
+    });
 
     // Send handler: interactive mode uses send-and-stream when no SSE connection,
     // otherwise sends to Channel via _onSendMessage (agent picks it up from ToolLoop)
     const sendHandler = isInteractive && !this._streaming
       ? (e: CustomEvent<{ message: string }>) => this._onSendAndStream(e)
       : (e: CustomEvent<{ message: string }>) => this._onSendMessage(e);
-
-    // Completion banner: interactive mode, step finished, agent not actively responding
-    const showCompletionBanner = isInteractive && this._stepCompletable && !this._agentResponding;
 
     // Workflow complete banner: all steps done
     const allStepsComplete = inst.steps.every(s => s.status === "Complete");

@@ -7,6 +7,8 @@ import {
   stepIconName,
   stepIconColor,
   shouldAnimateStepIcon,
+  shouldShowContinueButton,
+  computeChatInputGate,
 } from "../utils/instance-detail-helpers.js";
 import { numberAndSortInstances } from "../utils/instance-list-helpers.js";
 
@@ -301,26 +303,26 @@ describe("agentrun-instance-detail", () => {
       expect(shouldShowStart("Cancelled", false)).to.be.false;
     });
 
-    // Continue button (header) logic — autonomous mode only
-    it("Continue header button shows only for autonomous mode", () => {
-      const shouldShowContinue = (
-        status: string,
-        hasActiveStep: boolean,
-        hasPendingSteps: boolean,
-        streaming: boolean,
-        workflowMode: string,
-      ) =>
-        workflowMode === "autonomous"
-        && status === "Running" && !hasActiveStep && !streaming && hasPendingSteps;
-
-      // Autonomous: Running with completed current step and remaining steps
-      expect(shouldShowContinue("Running", false, true, false, "autonomous")).to.be.true;
-      // Autonomous: Running but step is active (in progress)
-      expect(shouldShowContinue("Running", true, true, false, "autonomous")).to.be.false;
-      // Autonomous: Running but streaming (button hidden during SSE)
-      expect(shouldShowContinue("Running", false, true, true, "autonomous")).to.be.false;
-      // Interactive: never shows header Continue
-      expect(shouldShowContinue("Running", false, true, false, "interactive")).to.be.false;
+    // Continue button (header) logic — Story 10.10 extracted the gate into
+    // shouldShowContinueButton so production render() and tests call the same
+    // function. Mode is intentionally not an input: the gate is mode-agnostic.
+    it("Continue header button shows between steps for both modes", () => {
+      // Running with completed current step and remaining steps — visible
+      expect(shouldShowContinueButton({
+        instanceStatus: "Running", hasActiveStep: false, isStreaming: false, hasPendingSteps: true,
+      })).to.be.true;
+      // Running but step is active — hidden
+      expect(shouldShowContinueButton({
+        instanceStatus: "Running", hasActiveStep: true, isStreaming: false, hasPendingSteps: true,
+      })).to.be.false;
+      // Running but streaming (hidden during SSE)
+      expect(shouldShowContinueButton({
+        instanceStatus: "Running", hasActiveStep: false, isStreaming: true, hasPendingSteps: true,
+      })).to.be.false;
+      // Running but no pending steps — hidden
+      expect(shouldShowContinueButton({
+        instanceStatus: "Running", hasActiveStep: false, isStreaming: false, hasPendingSteps: false,
+      })).to.be.false;
     });
 
     // Action buttons hidden for terminal states
@@ -435,6 +437,130 @@ describe("agentrun-instance-detail", () => {
         const interrupted = placeholderFor("Interrupted", false, true, false);
         const completed = placeholderFor("Completed", true, true, false);
         expect(interrupted.text).to.not.equal(completed.text);
+      });
+    });
+
+    // Story 10.10: Continue button extends to interactive mode between steps,
+    // and the chat input gate is coupled to showContinue so the button and
+    // input stay in lockstep ("if Continue is visible, input is disabled with
+    // the Continue hint"). These tests call the exported production helpers
+    // directly so the tests cannot drift from the render logic.
+    describe("Story 10.10 — interactive resume between steps", () => {
+      const betweenSteps = (overrides: Partial<Parameters<typeof computeChatInputGate>[0]> = {}) => {
+        const base = {
+          instanceStatus: "Running",
+          isInteractive: true,
+          isTerminal: false,
+          hasActiveStep: false,
+          isStreaming: false,
+          isViewingStepHistory: false,
+          agentResponding: false,
+          isBetweenSteps: true,
+          ...overrides,
+        };
+        return computeChatInputGate(base);
+      };
+
+      // AC1: Continue renders for interactive mode between steps.
+      it("Continue renders for interactive mode between steps", () => {
+        expect(shouldShowContinueButton({
+          instanceStatus: "Running", hasActiveStep: false, isStreaming: false, hasPendingSteps: true,
+        })).to.be.true;
+      });
+
+      // AC2: Continue still renders for autonomous mode between steps (regression).
+      // The gate is mode-agnostic — taking no workflowMode argument is the
+      // structural guarantee that `!isInteractive` cannot be reintroduced.
+      it("Continue still renders for autonomous mode between steps (regression guard)", () => {
+        // Same predicate call as AC1 — the absence of a mode parameter is the assertion.
+        expect(shouldShowContinueButton({
+          instanceStatus: "Running", hasActiveStep: false, isStreaming: false, hasPendingSteps: true,
+        })).to.be.true;
+      });
+
+      // AC3: Continue hidden when an active step exists.
+      it("Continue hidden when an active step exists", () => {
+        expect(shouldShowContinueButton({
+          instanceStatus: "Running", hasActiveStep: true, isStreaming: false, hasPendingSteps: true,
+        })).to.be.false;
+      });
+
+      // AC4: Continue hidden for terminal states.
+      it("Continue hidden for terminal states", () => {
+        for (const status of ["Completed", "Failed", "Cancelled", "Interrupted"]) {
+          expect(shouldShowContinueButton({
+            instanceStatus: status, hasActiveStep: false, isStreaming: false, hasPendingSteps: true,
+          })).to.be.false;
+        }
+      });
+
+      // AC5: Chat input disabled between steps in interactive mode with Continue hint.
+      it("chat input disabled between steps (interactive) with Continue hint", () => {
+        const result = betweenSteps();
+        expect(result.inputEnabled).to.be.false;
+        expect(result.inputPlaceholder).to.equal("Click Continue to run the next step.");
+      });
+
+      // AC6: Chat input re-enables when streaming begins after Continue click.
+      it("chat input re-enables when streaming starts", () => {
+        const result = betweenSteps({ isStreaming: true, isBetweenSteps: false });
+        expect(result.inputEnabled).to.be.true;
+        expect(result.inputPlaceholder).to.equal("Message the agent...");
+      });
+
+      // AC6 (alternative path): input also enables once orchestrator marks the next step Active.
+      it("chat input enables when next step becomes Active (even before SSE client flips _streaming)", () => {
+        const result = betweenSteps({ hasActiveStep: true, isBetweenSteps: false });
+        expect(result.inputEnabled).to.be.true;
+        expect(result.inputPlaceholder).to.equal("Message the agent...");
+      });
+
+      // viewingStepId wins over the showContinue branch — user is browsing a
+      // completed step's JSONL, chat reflects that context rather than the
+      // between-steps Continue hint.
+      it("viewingStepId beats showContinue (Viewing step history placeholder)", () => {
+        const result = betweenSteps({ isViewingStepHistory: true });
+        expect(result.inputEnabled).to.be.false;
+        expect(result.inputPlaceholder).to.equal("Viewing step history");
+      });
+
+      // Regression: pre-10.10, Running with no activeStep and no streaming fell
+      // through to the streaming/active branch and enabled the input, producing
+      // a 409 not_running on send. The new gate disables the input and points
+      // the user at Continue.
+      it("regression guard — Running + no activeStep + no streaming no longer enables input", () => {
+        const result = computeChatInputGate({
+          instanceStatus: "Running",
+          isInteractive: true,
+          isTerminal: false,
+          hasActiveStep: false,
+          isStreaming: false,
+          isViewingStepHistory: false,
+          agentResponding: false,
+          isBetweenSteps: true,
+        });
+        expect(result.inputEnabled).to.be.false;
+      });
+    });
+
+    // Story 10.10: StepStatus.Cancelled rendering — helpers should treat it as a
+    // neutral terminal state (no spinner, no danger colour, distinct icon).
+    describe("Story 10.10 — StepStatus.Cancelled helpers", () => {
+      it("stepSubtitle returns 'Cancelled' for Cancelled status", () => {
+        expect(stepSubtitle(mockStep({ status: "Cancelled" }))).to.equal("Cancelled");
+      });
+
+      it("stepIconName returns 'icon-block' for Cancelled", () => {
+        expect(stepIconName("Cancelled")).to.equal("icon-block");
+      });
+
+      it("stepIconColor returns undefined (neutral) for Cancelled", () => {
+        expect(stepIconColor("Cancelled")).to.be.undefined;
+      });
+
+      it("shouldAnimateStepIcon returns false for Cancelled regardless of isStreaming", () => {
+        expect(shouldAnimateStepIcon("Cancelled", true)).to.be.false;
+        expect(shouldAnimateStepIcon("Cancelled", false)).to.be.false;
       });
     });
 

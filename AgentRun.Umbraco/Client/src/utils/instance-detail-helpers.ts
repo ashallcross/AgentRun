@@ -26,6 +26,8 @@ export function stepSubtitle(step: StepDetailResponse): string {
       return step.writesTo?.[0] ?? "Complete";
     case "Error":
       return "Error";
+    case "Cancelled":
+      return "Cancelled";
     default:
       return step.status;
   }
@@ -41,6 +43,8 @@ export function stepIconName(status: string): string {
       return "icon-check";
     case "Error":
       return "icon-wrong";
+    case "Cancelled":
+      return "icon-block";
     default:
       return "icon-circle-dotted";
   }
@@ -58,7 +62,91 @@ export function stepIconColor(status: string): string | undefined {
       return "positive";
     case "Error":
       return "danger";
+    case "Cancelled":
+      return undefined; // neutral — instance-level Cancelled badge carries the signal
     default:
       return undefined;
   }
+}
+
+// Story 10.10: `showContinue` and the interactive chat-input gate are extracted
+// here so both the production render() and tests call the same function. This
+// closes the drift risk of predicate-mirror tests — there is no mirror to
+// maintain, only one contract.
+export interface ContinueButtonInput {
+  readonly instanceStatus: string;
+  readonly hasActiveStep: boolean;
+  readonly isStreaming: boolean;
+  readonly hasPendingSteps: boolean;
+}
+
+export function shouldShowContinueButton(input: ContinueButtonInput): boolean {
+  return input.instanceStatus === "Running"
+    && !input.hasActiveStep
+    && !input.isStreaming
+    && input.hasPendingSteps;
+}
+
+export interface ChatInputGateInput {
+  readonly instanceStatus: string;
+  readonly isInteractive: boolean;
+  readonly isTerminal: boolean;
+  readonly hasActiveStep: boolean;
+  readonly isStreaming: boolean;
+  readonly isViewingStepHistory: boolean;
+  readonly agentResponding: boolean;
+  // True when status is Running with no active step, no in-flight stream, and
+  // pending work remains. Decoupled from the header Continue button visibility
+  // because the in-session completion banner shows the same affordance —
+  // disabling the input is correct in both cases.
+  readonly isBetweenSteps: boolean;
+}
+
+export interface ChatInputGate {
+  readonly inputEnabled: boolean;
+  readonly inputPlaceholder: string;
+}
+
+export function computeChatInputGate(input: ChatInputGateInput): ChatInputGate {
+  if (input.instanceStatus === "Interrupted") {
+    return { inputEnabled: false, inputPlaceholder: "Run interrupted — click Retry to resume." };
+  }
+
+  if (input.isInteractive) {
+    if (input.isTerminal) {
+      const inputPlaceholder =
+        input.instanceStatus === "Cancelled" ? "Run cancelled."
+        : input.instanceStatus === "Failed" ? "Run failed — click Retry to resume."
+        : "Workflow complete.";
+      return { inputEnabled: false, inputPlaceholder };
+    }
+    if (input.isViewingStepHistory) {
+      return { inputEnabled: false, inputPlaceholder: "Viewing step history" };
+    }
+    if (input.agentResponding) {
+      return { inputEnabled: false, inputPlaceholder: "Agent is responding..." };
+    }
+    if (input.isBetweenSteps) {
+      return { inputEnabled: false, inputPlaceholder: "Click Continue to run the next step." };
+    }
+    if (input.isStreaming || input.hasActiveStep) {
+      return { inputEnabled: true, inputPlaceholder: "Message the agent..." };
+    }
+    return { inputEnabled: false, inputPlaceholder: "Send a message to start." };
+  }
+
+  // Autonomous mode
+  const inputEnabled = input.isStreaming && !input.isViewingStepHistory;
+  let inputPlaceholder: string;
+  if (input.isTerminal) {
+    inputPlaceholder =
+      input.instanceStatus === "Cancelled" ? "Run cancelled."
+      : input.instanceStatus === "Failed" ? "Run failed — click Retry to resume."
+      : "Workflow complete.";
+  } else if (input.hasActiveStep) {
+    inputPlaceholder = "Step complete";
+  } else {
+    inputPlaceholder = "Click 'Start' to begin the workflow.";
+  }
+  return { inputEnabled, inputPlaceholder };
 }

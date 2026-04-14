@@ -595,4 +595,146 @@ public class InstanceEndpointsTests
         Assert.That(okResult!.StatusCode, Is.EqualTo(200));
         _activeInstanceRegistry.Received(1).RequestCancellation("abc123");
     }
+
+    // ---------------- Story 10.10: step-status cleanup on cancel ---------------- //
+
+    private static InstanceState CreateRunningInstanceWithStepStatuses(params StepStatus[] stepStatuses)
+    {
+        var steps = stepStatuses
+            .Select((s, i) => new StepState { Id = $"step-{i + 1}", Status = s })
+            .ToList();
+        return new InstanceState
+        {
+            InstanceId = "abc123",
+            WorkflowAlias = "content-audit",
+            Status = InstanceStatus.Running,
+            CurrentStepIndex = 0,
+            CreatedAt = new DateTime(2026, 3, 30, 10, 0, 0, DateTimeKind.Utc),
+            UpdatedAt = new DateTime(2026, 3, 30, 10, 0, 0, DateTimeKind.Utc),
+            CreatedBy = "admin",
+            Steps = steps
+        };
+    }
+
+    // Story 10.10 AC10: cancel finds the Active step and sets it to Cancelled
+    [Test]
+    public async Task CancelInstance_WithActiveStep_SetsStepToCancelled()
+    {
+        var running = CreateRunningInstanceWithStepStatuses(StepStatus.Complete, StepStatus.Active);
+        _instanceManager.FindInstanceAsync("abc123", Arg.Any<CancellationToken>())
+            .Returns(running);
+
+        // After SetInstanceStatusAsync the returned state retains the Active step —
+        // the cleanup loop is what transitions it. Mirror production shape.
+        var afterInstanceCancel = CreateRunningInstanceWithStepStatuses(StepStatus.Complete, StepStatus.Active);
+        afterInstanceCancel.Status = InstanceStatus.Cancelled;
+        _instanceManager.SetInstanceStatusAsync("content-audit", "abc123", InstanceStatus.Cancelled, Arg.Any<CancellationToken>())
+            .Returns(afterInstanceCancel);
+
+        var afterStepCancel = CreateRunningInstanceWithStepStatuses(StepStatus.Complete, StepStatus.Cancelled);
+        afterStepCancel.Status = InstanceStatus.Cancelled;
+        _instanceManager.UpdateStepStatusAsync("content-audit", "abc123", 1, StepStatus.Cancelled, Arg.Any<CancellationToken>())
+            .Returns(afterStepCancel);
+
+        var result = await _endpoints.CancelInstance("abc123", CancellationToken.None);
+
+        Assert.That(result, Is.TypeOf<OkObjectResult>());
+
+        await _instanceManager.Received(1).UpdateStepStatusAsync(
+            "content-audit", "abc123", 1, StepStatus.Cancelled, Arg.Any<CancellationToken>());
+        _activeInstanceRegistry.Received(1).RequestCancellation("abc123");
+    }
+
+    // Story 10.10 AC11: cancel with no Active step still succeeds (between-steps window)
+    [Test]
+    public async Task CancelInstance_WithNoActiveStep_StillSucceeds()
+    {
+        var running = CreateRunningInstanceWithStepStatuses(StepStatus.Complete, StepStatus.Pending);
+        _instanceManager.FindInstanceAsync("abc123", Arg.Any<CancellationToken>())
+            .Returns(running);
+
+        var afterInstanceCancel = CreateRunningInstanceWithStepStatuses(StepStatus.Complete, StepStatus.Pending);
+        afterInstanceCancel.Status = InstanceStatus.Cancelled;
+        _instanceManager.SetInstanceStatusAsync("content-audit", "abc123", InstanceStatus.Cancelled, Arg.Any<CancellationToken>())
+            .Returns(afterInstanceCancel);
+
+        var result = await _endpoints.CancelInstance("abc123", CancellationToken.None);
+
+        Assert.That(result, Is.TypeOf<OkObjectResult>());
+
+        await _instanceManager.Received(1).SetInstanceStatusAsync(
+            "content-audit", "abc123", InstanceStatus.Cancelled, Arg.Any<CancellationToken>());
+        await _instanceManager.DidNotReceive().UpdateStepStatusAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<StepStatus>(), Arg.Any<CancellationToken>());
+        _activeInstanceRegistry.Received(1).RequestCancellation("abc123");
+    }
+
+    // Story 10.10 AC12: pathological guard — every Active step gets cleaned up
+    [Test]
+    public async Task CancelInstance_WithMultipleActiveSteps_CleansAllOfThem()
+    {
+        var running = CreateRunningInstanceWithStepStatuses(StepStatus.Active, StepStatus.Active);
+        _instanceManager.FindInstanceAsync("abc123", Arg.Any<CancellationToken>())
+            .Returns(running);
+
+        var afterInstanceCancel = CreateRunningInstanceWithStepStatuses(StepStatus.Active, StepStatus.Active);
+        afterInstanceCancel.Status = InstanceStatus.Cancelled;
+        _instanceManager.SetInstanceStatusAsync("content-audit", "abc123", InstanceStatus.Cancelled, Arg.Any<CancellationToken>())
+            .Returns(afterInstanceCancel);
+
+        // First cleanup call returns state where index 0 is Cancelled; second call's read
+        // sees index 1 still Active. Both writes must land.
+        var afterFirstCleanup = CreateRunningInstanceWithStepStatuses(StepStatus.Cancelled, StepStatus.Active);
+        afterFirstCleanup.Status = InstanceStatus.Cancelled;
+        _instanceManager.UpdateStepStatusAsync("content-audit", "abc123", 0, StepStatus.Cancelled, Arg.Any<CancellationToken>())
+            .Returns(afterFirstCleanup);
+
+        var afterSecondCleanup = CreateRunningInstanceWithStepStatuses(StepStatus.Cancelled, StepStatus.Cancelled);
+        afterSecondCleanup.Status = InstanceStatus.Cancelled;
+        _instanceManager.UpdateStepStatusAsync("content-audit", "abc123", 1, StepStatus.Cancelled, Arg.Any<CancellationToken>())
+            .Returns(afterSecondCleanup);
+
+        var result = await _endpoints.CancelInstance("abc123", CancellationToken.None);
+
+        Assert.That(result, Is.TypeOf<OkObjectResult>());
+
+        await _instanceManager.Received(1).UpdateStepStatusAsync(
+            "content-audit", "abc123", 0, StepStatus.Cancelled, Arg.Any<CancellationToken>());
+        await _instanceManager.Received(1).UpdateStepStatusAsync(
+            "content-audit", "abc123", 1, StepStatus.Cancelled, Arg.Any<CancellationToken>());
+    }
+
+    // Story 10.10 AC15 / "persist first, signal second" ordering regression guard
+    [Test]
+    public async Task CancelInstance_StepCleanupRunsBeforeRequestCancellation()
+    {
+        var running = CreateRunningInstanceWithStepStatuses(StepStatus.Active);
+        _instanceManager.FindInstanceAsync("abc123", Arg.Any<CancellationToken>())
+            .Returns(running);
+
+        var afterInstanceCancel = CreateRunningInstanceWithStepStatuses(StepStatus.Active);
+        afterInstanceCancel.Status = InstanceStatus.Cancelled;
+        _instanceManager.SetInstanceStatusAsync("content-audit", "abc123", InstanceStatus.Cancelled, Arg.Any<CancellationToken>())
+            .Returns(afterInstanceCancel);
+
+        var afterStepCancel = CreateRunningInstanceWithStepStatuses(StepStatus.Cancelled);
+        afterStepCancel.Status = InstanceStatus.Cancelled;
+        _instanceManager.UpdateStepStatusAsync("content-audit", "abc123", 0, StepStatus.Cancelled, Arg.Any<CancellationToken>())
+            .Returns(afterStepCancel);
+
+        var callOrder = new List<string>();
+        _instanceManager
+            .When(m => m.SetInstanceStatusAsync("content-audit", "abc123", InstanceStatus.Cancelled, Arg.Any<CancellationToken>()))
+            .Do(_ => callOrder.Add("set-instance-status"));
+        _instanceManager
+            .When(m => m.UpdateStepStatusAsync("content-audit", "abc123", 0, StepStatus.Cancelled, Arg.Any<CancellationToken>()))
+            .Do(_ => callOrder.Add("update-step-status"));
+        _activeInstanceRegistry
+            .When(r => r.RequestCancellation("abc123"))
+            .Do(_ => callOrder.Add("signal"));
+
+        await _endpoints.CancelInstance("abc123", CancellationToken.None);
+
+        Assert.That(callOrder, Is.EqualTo(new[] { "set-instance-status", "update-step-status", "signal" }));
+    }
 }
