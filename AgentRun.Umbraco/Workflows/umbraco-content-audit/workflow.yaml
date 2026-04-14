@@ -2,8 +2,6 @@
 name: Umbraco Content Audit
 description: Audits content in this Umbraco instance for quality, completeness, and structural issues
 mode: interactive
-# Change this to match your configured Umbraco.AI profile alias
-default_profile: anthropic-sonnet-4-6
 steps:
   - id: scanner
     name: Content Scanner

@@ -123,4 +123,56 @@ public class LlmErrorClassifierTests
         Assert.That(result, Is.Not.Null);
         Assert.That(result!.Value.ErrorCode, Is.EqualTo("provider_error"));
     }
+
+    // --- Billing/quota tests (Story 10.12, AC7) ---
+
+    [Test]
+    public void HttpRequestException_Status402_ReturnsBillingError()
+    {
+        var ex = new HttpRequestException("Payment Required", null, (HttpStatusCode)402);
+
+        var result = LlmErrorClassifier.Classify(ex);
+
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result!.Value.ErrorCode, Is.EqualTo("billing_error"));
+        Assert.That(result.Value.UserMessage, Does.Contain("billing or quota"));
+    }
+
+    [Test]
+    public void HttpRequestException_Status429_WithBillingMessage_ReturnsBillingError()
+    {
+        var ex = new HttpRequestException("You exceeded your current quota", null, HttpStatusCode.TooManyRequests);
+
+        var result = LlmErrorClassifier.Classify(ex);
+
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result!.Value.ErrorCode, Is.EqualTo("billing_error"));
+    }
+
+    [TestCase("billing limit exceeded")]
+    [TestCase("insufficient_funds")]
+    [TestCase("quota exceeded for this model")]
+    [TestCase("credit balance is zero")]
+    [TestCase("budget limit reached")]
+    public void MessageBased_BillingPatterns_ReturnBillingError(string message)
+    {
+        var ex = new Exception(message);
+
+        var result = LlmErrorClassifier.Classify(ex);
+
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result!.Value.ErrorCode, Is.EqualTo("billing_error"));
+    }
+
+    [Test]
+    public void HttpRequestException_Status429_NonBillingMessage_ReturnsRateLimit()
+    {
+        // 429 without billing keywords remains rate_limit
+        var ex = new HttpRequestException("Too many requests", null, HttpStatusCode.TooManyRequests);
+
+        var result = LlmErrorClassifier.Classify(ex);
+
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result!.Value.ErrorCode, Is.EqualTo("rate_limit"));
+    }
 }

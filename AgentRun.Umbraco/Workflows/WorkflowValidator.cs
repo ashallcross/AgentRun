@@ -39,6 +39,13 @@ public sealed class WorkflowValidator : IWorkflowValidator
         ["list_content_types"] = new(StringComparer.Ordinal) { "max_response_bytes" }
     };
 
+    // Scalar keys allowed directly inside tool_defaults / tool_overrides (not nested under a tool name).
+    // These are validated as positive integers.
+    private static readonly HashSet<string> AllowedTuningScalars = new(StringComparer.Ordinal)
+    {
+        "compaction_turns"
+    };
+
     private static readonly HashSet<string> AllowedCompletionCheckKeys = new(StringComparer.Ordinal)
     {
         "files_exist"
@@ -103,11 +110,32 @@ public sealed class WorkflowValidator : IWorkflowValidator
         foreach (var (toolKeyObj, toolValue) in blockDict)
         {
             var toolKey = toolKeyObj.ToString()!;
+
+            // Scalar tuning keys (e.g. compaction_turns) sit alongside tool names
+            // but are simple integers, not nested mappings. Validate and skip.
+            if (AllowedTuningScalars.Contains(toolKey))
+            {
+                var isValid = toolValue switch
+                {
+                    int iv => iv > 0,
+                    long lv => lv > 0,
+                    string sv => int.TryParse(sv, out var parsed) && parsed > 0,
+                    _ => false
+                };
+                if (!isValid)
+                {
+                    errors.Add(new WorkflowValidationError(
+                        $"{fieldPathPrefix}.{toolKey}",
+                        $"'{fieldPathPrefix}.{toolKey}' must be a positive integer"));
+                }
+                continue;
+            }
+
             if (!AllowedToolSettings.TryGetValue(toolKey, out var allowedSettings))
             {
                 errors.Add(new WorkflowValidationError(
                     $"{fieldPathPrefix}.{toolKey}",
-                    $"Unknown tool '{toolKey}' in {fieldPathPrefix}. Allowed tools: {string.Join(", ", AllowedToolSettings.Keys)}"));
+                    $"Unknown tool '{toolKey}' in {fieldPathPrefix}. Allowed: {string.Join(", ", AllowedToolSettings.Keys)}, {string.Join(", ", AllowedTuningScalars)}"));
                 continue;
             }
 

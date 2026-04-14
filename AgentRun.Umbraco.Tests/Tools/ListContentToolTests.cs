@@ -81,6 +81,7 @@ public class ListContentToolTests
         public int ResolveListContentMaxResponseBytes(StepDefinition step, WorkflowDefinition workflow) => ListContentMaxBytes;
         public int ResolveGetContentMaxResponseBytes(StepDefinition step, WorkflowDefinition workflow) => EngineDefaults.GetContentMaxResponseBytes;
         public int ResolveListContentTypesMaxResponseBytes(StepDefinition step, WorkflowDefinition workflow) => EngineDefaults.ListContentTypesMaxResponseBytes;
+        public int ResolveCompactionTurnThreshold(StepDefinition step, WorkflowDefinition workflow) => EngineDefaults.CompactionTurnThreshold;
     }
 
     private static IPublishedContent MakeNode(int id, string name, string contentTypeAlias, Guid key, int level = 1, int creatorId = 1)

@@ -9,6 +9,8 @@ using AgentRun.Umbraco.Engine;
 using AgentRun.Umbraco.Workflows;
 using Umbraco.AI.Core.Chat;
 using Umbraco.AI.Core.InlineChat;
+using Umbraco.AI.Core.Models;
+using Umbraco.AI.Core.Profiles;
 
 namespace AgentRun.Umbraco.Tests.Engine;
 
@@ -16,6 +18,7 @@ namespace AgentRun.Umbraco.Tests.Engine;
 public class ProfileResolverTests
 {
     private IAIChatService _chatService = null!;
+    private IAIProfileService _profileService = null!;
     private IChatClient _chatClient = null!;
     private ILogger<ProfileResolver> _logger = null!;
 
@@ -23,6 +26,7 @@ public class ProfileResolverTests
     public void SetUp()
     {
         _chatService = Substitute.For<IAIChatService>();
+        _profileService = Substitute.For<IAIProfileService>();
         _chatClient = Substitute.For<IChatClient>();
         _logger = NullLogger<ProfileResolver>.Instance;
     }
@@ -36,7 +40,7 @@ public class ProfileResolverTests
     private ProfileResolver CreateResolver(string defaultProfile = "")
     {
         var options = Options.Create(new AgentRunOptions { DefaultProfile = defaultProfile });
-        return new ProfileResolver(_chatService, options, _logger);
+        return new ProfileResolver(_chatService, _profileService, options, _logger);
     }
 
     private static StepDefinition MakeStep(string id = "step-1", string? profile = null) =>
@@ -96,9 +100,11 @@ public class ProfileResolverTests
     }
 
     [Test]
-    public void ResolveAndGetClientAsync_ThrowsWhenAllLevelsEmpty()
+    public void ResolveAndGetClientAsync_ThrowsWhenAllLevelsEmpty_AndNoProfiles()
     {
-        // AC #5 variant: no profile configured at any level
+        // AC #6: no profile at any level AND no Umbraco.AI profiles
+        _profileService.GetProfilesAsync(AICapability.Chat, Arg.Any<CancellationToken>())
+            .Returns(Enumerable.Empty<AIProfile>());
         var resolver = CreateResolver(defaultProfile: "");
 
         var ex = Assert.ThrowsAsync<ProfileNotFoundException>(async () =>
@@ -107,7 +113,7 @@ public class ProfileResolverTests
                 MakeWorkflow(defaultProfile: null),
                 CancellationToken.None));
 
-        Assert.That(ex!.Message, Does.Contain("(none configured)"));
+        Assert.That(ex!.Message, Does.Contain("No AI provider configured"));
     }
 
     [Test]
@@ -193,7 +199,7 @@ public class ProfileResolverTests
         _chatService.CreateChatClientAsync(Arg.Any<Action<AIChatBuilder>>(), Arg.Any<CancellationToken>())
             .Returns(_chatClient);
         var options = Options.Create(new AgentRunOptions { DefaultProfile = "site-default" });
-        var resolver = new ProfileResolver(_chatService, options, loggerSub);
+        var resolver = new ProfileResolver(_chatService, _profileService, options, loggerSub);
 
         await resolver.ResolveAndGetClientAsync(
             MakeStep(id: "gather_content", profile: "anthropic-claude"),
@@ -250,5 +256,159 @@ public class ProfileResolverTests
                 CancellationToken.None));
 
         Assert.That(ex!.InnerException, Is.SameAs(original));
+    }
+
+    // --- Auto-detection fallback tests (Story 10.12, AC4-AC6) ---
+
+    [Test]
+    public async Task ResolveAndGetClientAsync_AutoDetectsSingleProfile()
+    {
+        // AC4: single Umbraco.AI profile auto-detected when no explicit profile configured
+        var profile = new AIProfile { Alias = "my-anthropic", Name = "My Anthropic", ConnectionId = Guid.NewGuid() };
+        _profileService.GetProfilesAsync(AICapability.Chat, Arg.Any<CancellationToken>())
+            .Returns(new[] { profile });
+        _chatService.CreateChatClientAsync(Arg.Any<Action<AIChatBuilder>>(), Arg.Any<CancellationToken>())
+            .Returns(_chatClient);
+        var resolver = CreateResolver(defaultProfile: "");
+
+        var result = await resolver.ResolveAndGetClientAsync(
+            MakeStep(profile: null),
+            MakeWorkflow(defaultProfile: null),
+            CancellationToken.None);
+
+        Assert.That(result, Is.SameAs(_chatClient));
+    }
+
+    [Test]
+    public async Task ResolveAndGetClientAsync_MultipleProfiles_PicksFirstAlphabetically()
+    {
+        // AC5: multiple profiles — picks first by alias alphabetical order
+        var profiles = new[]
+        {
+            new AIProfile { Alias = "openai-gpt", Name = "OpenAI GPT", ConnectionId = Guid.NewGuid() },
+            new AIProfile { Alias = "anthropic-claude", Name = "Anthropic Claude", ConnectionId = Guid.NewGuid() },
+            new AIProfile { Alias = "azure-openai", Name = "Azure OpenAI", ConnectionId = Guid.NewGuid() }
+        };
+        _profileService.GetProfilesAsync(AICapability.Chat, Arg.Any<CancellationToken>())
+            .Returns(profiles);
+
+        _chatService.CreateChatClientAsync(Arg.Any<Action<AIChatBuilder>>(), Arg.Any<CancellationToken>())
+            .Returns(_chatClient);
+
+        var loggerSub = Substitute.For<ILogger<ProfileResolver>>();
+        var resolver = new ProfileResolver(_chatService, _profileService, Options.Create(new AgentRunOptions()), loggerSub);
+
+        await resolver.ResolveAndGetClientAsync(
+            MakeStep(profile: null),
+            MakeWorkflow(defaultProfile: null),
+            CancellationToken.None);
+
+        // Verify the alphabetical winner "anthropic-claude" was resolved and logged
+        loggerSub.Received().Log(
+            LogLevel.Information,
+            Arg.Any<EventId>(),
+            Arg.Is<object>(o => o.ToString()!.Contains("anthropic-claude")
+                && o.ToString()!.Contains("auto-detected")),
+            Arg.Any<Exception?>(),
+            Arg.Any<Func<object, Exception?, string>>());
+    }
+
+    [Test]
+    public async Task ResolveAndGetClientAsync_MultipleProfiles_LogsGuidance()
+    {
+        // AC5: logs guidance suggesting explicit default_profile when multiple profiles found
+        var profiles = new[]
+        {
+            new AIProfile { Alias = "openai-gpt", Name = "OpenAI GPT", ConnectionId = Guid.NewGuid() },
+            new AIProfile { Alias = "anthropic-claude", Name = "Anthropic Claude", ConnectionId = Guid.NewGuid() }
+        };
+        _profileService.GetProfilesAsync(AICapability.Chat, Arg.Any<CancellationToken>())
+            .Returns(profiles);
+
+        _chatService.CreateChatClientAsync(Arg.Any<Action<AIChatBuilder>>(), Arg.Any<CancellationToken>())
+            .Returns(_chatClient);
+
+        var loggerSub = Substitute.For<ILogger<ProfileResolver>>();
+        var resolver = new ProfileResolver(_chatService, _profileService, Options.Create(new AgentRunOptions()), loggerSub);
+
+        await resolver.ResolveAndGetClientAsync(
+            MakeStep(profile: null),
+            MakeWorkflow(defaultProfile: null),
+            CancellationToken.None);
+
+        // Verify guidance log message suggesting default_profile
+        loggerSub.Received().Log(
+            LogLevel.Information,
+            Arg.Any<EventId>(),
+            Arg.Is<object>(o => o.ToString()!.Contains("default_profile")),
+            Arg.Any<Exception?>(),
+            Arg.Any<Func<object, Exception?, string>>());
+    }
+
+    [Test]
+    public void ResolveAndGetClientAsync_ZeroProfiles_ThrowsClearMessage()
+    {
+        // AC6: zero profiles throws with clear "No AI provider configured" message
+        _profileService.GetProfilesAsync(AICapability.Chat, Arg.Any<CancellationToken>())
+            .Returns(Enumerable.Empty<AIProfile>());
+        var resolver = CreateResolver(defaultProfile: "");
+
+        var ex = Assert.ThrowsAsync<ProfileNotFoundException>(async () =>
+            await resolver.ResolveAndGetClientAsync(
+                MakeStep(profile: null),
+                MakeWorkflow(defaultProfile: null),
+                CancellationToken.None));
+
+        Assert.That(ex!.Message, Does.Contain("No AI provider configured"));
+        Assert.That(ex.Message, Does.Contain("Settings > AI"));
+    }
+
+    [Test]
+    public void ResolveAndGetClientAsync_ProfileServiceThrows_FallsThroughToProfileNotFoundException()
+    {
+        // Edge case: IAIProfileService throws (e.g. database not initialised)
+        _profileService.GetProfilesAsync(AICapability.Chat, Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("Database not ready"));
+        var resolver = CreateResolver(defaultProfile: "");
+
+        var ex = Assert.ThrowsAsync<ProfileNotFoundException>(async () =>
+            await resolver.ResolveAndGetClientAsync(
+                MakeStep(profile: null),
+                MakeWorkflow(defaultProfile: null),
+                CancellationToken.None));
+
+        Assert.That(ex!.Message, Does.Contain("No AI provider configured"));
+    }
+
+    [Test]
+    public async Task HasConfiguredProviderAsync_AutoDetectsWhenNoExplicitProfile()
+    {
+        // HasConfiguredProviderAsync uses auto-detection when no workflow/site default
+        var profile = new AIProfile { Alias = "my-provider", Name = "My Provider", ConnectionId = Guid.NewGuid() };
+        _profileService.GetProfilesAsync(AICapability.Chat, Arg.Any<CancellationToken>())
+            .Returns(new[] { profile });
+        _chatService.CreateChatClientAsync(Arg.Any<Action<AIChatBuilder>>(), Arg.Any<CancellationToken>())
+            .Returns(_chatClient);
+        var resolver = CreateResolver(defaultProfile: "");
+
+        var result = await resolver.HasConfiguredProviderAsync(
+            MakeWorkflow(defaultProfile: null), CancellationToken.None);
+
+        Assert.That(result, Is.True);
+    }
+
+    [Test]
+    public async Task HasConfiguredProviderAsync_ReturnsFalseWhenNoProfilesAndNoProvider()
+    {
+        // No profiles available, provider check fails
+        _profileService.GetProfilesAsync(AICapability.Chat, Arg.Any<CancellationToken>())
+            .Returns(Enumerable.Empty<AIProfile>());
+        _chatService.CreateChatClientAsync(Arg.Any<Action<AIChatBuilder>>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("No provider"));
+        var resolver = CreateResolver(defaultProfile: "");
+
+        var result = await resolver.HasConfiguredProviderAsync(null, CancellationToken.None);
+
+        Assert.That(result, Is.False);
     }
 }

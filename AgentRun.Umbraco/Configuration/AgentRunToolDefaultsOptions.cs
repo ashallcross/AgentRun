@@ -19,6 +19,11 @@ public sealed class AgentRunToolDefaultsOptions
 
     public ListContentTypesDefaults? ListContentTypes { get; set; }
 
+    /// <summary>
+    /// Site-level default for compaction turn threshold. Story 10.2.
+    /// </summary>
+    public int? CompactionTurns { get; set; }
+
     public sealed class FetchUrlDefaults
     {
         public int? MaxResponseBytes { get; set; }

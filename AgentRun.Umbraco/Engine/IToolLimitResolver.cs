@@ -57,4 +57,11 @@ public interface IToolLimitResolver
     /// Story 9.12 — Umbraco content tools.
     /// </summary>
     int ResolveListContentTypesMaxResponseBytes(StepDefinition step, WorkflowDefinition workflow);
+
+    /// <summary>
+    /// Resolves <c>compaction_turns</c> for the given step in the given workflow.
+    /// Chain: step.tool_overrides → workflow.tool_defaults → site default → engine default (3).
+    /// Story 10.2 — conversation compaction.
+    /// </summary>
+    int ResolveCompactionTurnThreshold(StepDefinition step, WorkflowDefinition workflow);
 }

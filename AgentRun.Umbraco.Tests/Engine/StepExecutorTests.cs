@@ -93,6 +93,7 @@ public class StepExecutorTests
         public int ResolveListContentMaxResponseBytes(StepDefinition step, WorkflowDefinition workflow) => AgentRun.Umbraco.Engine.EngineDefaults.ListContentMaxResponseBytes;
         public int ResolveGetContentMaxResponseBytes(StepDefinition step, WorkflowDefinition workflow) => AgentRun.Umbraco.Engine.EngineDefaults.GetContentMaxResponseBytes;
         public int ResolveListContentTypesMaxResponseBytes(StepDefinition step, WorkflowDefinition workflow) => AgentRun.Umbraco.Engine.EngineDefaults.ListContentTypesMaxResponseBytes;
+        public int ResolveCompactionTurnThreshold(StepDefinition step, WorkflowDefinition workflow) => AgentRun.Umbraco.Engine.EngineDefaults.CompactionTurnThreshold;
         public void EnforceCeilings(WorkflowDefinition workflow) { }
     }
 

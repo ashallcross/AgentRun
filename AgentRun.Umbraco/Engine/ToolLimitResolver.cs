@@ -125,6 +125,17 @@ public sealed class ToolLimitResolver : IToolLimitResolver
             ceiling:       options.ToolLimits?.ListContentTypes?.MaxResponseBytesCeiling);
     }
 
+    public int ResolveCompactionTurnThreshold(StepDefinition step, WorkflowDefinition workflow)
+    {
+        var options = SafeOptions();
+        return ResolveCore(
+            stepValue:     step.ToolOverrides?.CompactionTurns,
+            workflowValue: workflow.ToolDefaults?.CompactionTurns,
+            siteDefault:   options.ToolDefaults?.CompactionTurns,
+            engineDefault: EngineDefaults.CompactionTurnThreshold,
+            ceiling:       null);
+    }
+
     private static int ResolveCore(
         int? stepValue,
         int? workflowValue,

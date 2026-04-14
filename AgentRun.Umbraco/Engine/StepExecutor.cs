@@ -183,11 +183,14 @@ public class StepExecutor : IStepExecutor
                 ? async ct => (await _completionChecker.CheckAsync(step.CompletionCheck, context.InstanceFolderPath, ct)).Passed
                 : null;
 
+            // Story 10.2: resolve compaction threshold for this step
+            var compactionThreshold = _toolLimitResolver.ResolveCompactionTurnThreshold(step, workflow);
+
             // Run the tool loop
             await ToolLoop.RunAsync(
                 client, messages, chatOptions, toolDict, toolExecutionContext, _logger, cancellationToken,
                 context.UserMessageReader, context.EventEmitter, context.ConversationRecorder,
-                completionCheck, _toolLimitResolver);
+                completionCheck, _toolLimitResolver, compactionTurnThreshold: compactionThreshold);
 
             _logger.LogInformation(
                 "Tool loop complete for step {StepId} in workflow {WorkflowAlias} instance {InstanceId}",
@@ -243,6 +246,7 @@ public class StepExecutor : IStepExecutor
             // which would otherwise mask them as a generic "provider_error".
             context.LlmError = ex switch
             {
+                ProviderEmptyResponseException empty => ("provider_empty_response", empty.Message),
                 StallDetectedException stall => ("stall_detected", stall.Message),
                 AgentRunException agentEx => ("step_failed", agentEx.Message),
                 _ => LlmErrorClassifier.Classify(ex),

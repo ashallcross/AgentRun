@@ -2,8 +2,6 @@
 name: Accessibility Quick-Scan
 description: Scans pages for accessibility issues and produces a prioritised, WCAG 2.1 AA-anchored fix list
 mode: interactive
-# Change this to match your configured Umbraco.AI profile alias
-default_profile: anthropic-sonnet-4-6
 # Story 9.6 / 9.1b: marketing pages routinely exceed the 1 MB engine default
 # in size only marginally — bump to 2 MB and extend the per-request fetch_url
 # timeout to 30s to absorb slow CDNs. Same defaults as Content Quality Audit.

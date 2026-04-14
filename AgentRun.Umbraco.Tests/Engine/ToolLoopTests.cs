@@ -888,10 +888,11 @@ public class ToolLoopTests
     }
 
     [Test]
-    public async Task Stall_Interactive_NoPrecedingToolResult_DoesNotThrow_RunsInputWait()
+    public void Stall_Interactive_NoPrecedingToolResult_ThrowsProviderEmptyResponse()
     {
-        // AC #4: empty turn at step start (no tool result yet) → not a stall.
-        // Existing input-wait path runs.
+        // Story 10.12 AC #8: empty first turn (no prior tool results) is now detected as
+        // a provider configuration error, not sent to the input-wait path. This replaces
+        // the old "not a stall, runs input wait" behaviour — Warren's blank-screen bug.
         var declaredTools = new Dictionary<string, IWorkflowTool>(StringComparer.OrdinalIgnoreCase);
         var channel = Channel.CreateUnbounded<string>();
 
@@ -900,11 +901,10 @@ public class ToolLoopTests
 
         var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
 
-        var response = await ToolLoop.RunAsync(_chatClient, messages, new ChatOptions(), declaredTools, _context, _logger, CancellationToken.None,
-            userMessageReader: channel.Reader,
-            userMessageTimeoutOverride: TimeSpan.FromMilliseconds(100));
-
-        Assert.That(response, Is.Not.Null);
+        Assert.ThrowsAsync<ProviderEmptyResponseException>(async () =>
+            await ToolLoop.RunAsync(_chatClient, messages, new ChatOptions(), declaredTools, _context, _logger, CancellationToken.None,
+                userMessageReader: channel.Reader,
+                userMessageTimeoutOverride: TimeSpan.FromMilliseconds(100)));
     }
 
     [Test]
@@ -1127,6 +1127,72 @@ public class ToolLoopTests
         var response = await ToolLoop.RunAsync(_chatClient, messages, new ChatOptions(), declaredTools, _context, _logger, CancellationToken.None,
             userMessageReader: channel.Reader,
             userMessageTimeoutOverride: TimeSpan.FromMilliseconds(100));
+
+        Assert.That(response, Is.Not.Null);
+    }
+
+    // --- First-turn empty completion detection (Story 10.12, AC8) ---
+
+    [Test]
+    public void FirstTurnEmptyCompletion_ThrowsProviderEmptyResponseException()
+    {
+        // AC8: empty first-turn (no prior tool results) throws ProviderEmptyResponseException
+        _chatClient.GetStreamingResponseAsync(
+                Arg.Any<IEnumerable<ChatMessage>>(),
+                Arg.Any<ChatOptions>(),
+                Arg.Any<CancellationToken>())
+            .Returns(MakeEmptyStreamingResponse());
+
+        var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
+        var declaredTools = new Dictionary<string, IWorkflowTool>();
+
+        var ex = Assert.ThrowsAsync<ProviderEmptyResponseException>(async () =>
+            await ToolLoop.RunAsync(
+                _chatClient, messages, new ChatOptions(), declaredTools, _context, _logger,
+                CancellationToken.None,
+                userMessageReader: null));
+
+        Assert.That(ex!.Message, Does.Contain("empty response"));
+        Assert.That(ex.Message, Does.Contain("step-1"));
+        Assert.That(ex.StepId, Is.EqualTo("step-1"));
+    }
+
+    [Test]
+    public async Task NonFirstTurnEmptyCompletion_DoesNotThrowProviderEmpty()
+    {
+        // Non-first-turn empty completion (after tool results) follows normal stall/exit path
+        var callCount = 0;
+        _chatClient.GetStreamingResponseAsync(
+                Arg.Any<IEnumerable<ChatMessage>>(),
+                Arg.Any<ChatOptions>(),
+                Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                callCount++;
+                if (callCount == 1)
+                {
+                    // First turn: tool call
+                    return MakeStreamingToolCalls(("call-1", "test_tool", null));
+                }
+
+                // Second turn: empty (after tool results exist in context) — NOT first-turn
+                return MakeEmptyStreamingResponse();
+            });
+
+        var testTool = Substitute.For<IWorkflowTool>();
+        testTool.Name.Returns("test_tool");
+        testTool.ExecuteAsync(Arg.Any<IDictionary<string, object?>>(), Arg.Any<ToolExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns("result");
+        var declaredTools = new Dictionary<string, IWorkflowTool> { ["test_tool"] = testTool };
+
+        var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
+
+        // Should NOT throw ProviderEmptyResponseException (it's not first turn)
+        // Non-interactive mode exits normally on empty turn
+        var response = await ToolLoop.RunAsync(
+            _chatClient, messages, new ChatOptions(), declaredTools, _context, _logger,
+            CancellationToken.None,
+            userMessageReader: null);
 
         Assert.That(response, Is.Not.Null);
     }
