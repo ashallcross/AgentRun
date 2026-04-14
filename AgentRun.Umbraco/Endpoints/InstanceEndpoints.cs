@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Umbraco.Cms.Web.Common.Authorization;
+using AgentRun.Umbraco.Engine;
 using AgentRun.Umbraco.Instances;
 using AgentRun.Umbraco.Models.ApiModels;
 using AgentRun.Umbraco.Workflows;
@@ -14,11 +15,16 @@ public class InstanceEndpoints : ControllerBase
 {
     private readonly IInstanceManager _instanceManager;
     private readonly IWorkflowRegistry _workflowRegistry;
+    private readonly IActiveInstanceRegistry _activeInstanceRegistry;
 
-    public InstanceEndpoints(IInstanceManager instanceManager, IWorkflowRegistry workflowRegistry)
+    public InstanceEndpoints(
+        IInstanceManager instanceManager,
+        IWorkflowRegistry workflowRegistry,
+        IActiveInstanceRegistry activeInstanceRegistry)
     {
         _instanceManager = instanceManager;
         _workflowRegistry = workflowRegistry;
+        _activeInstanceRegistry = activeInstanceRegistry;
     }
 
     [HttpPost("instances")]
@@ -101,6 +107,11 @@ public class InstanceEndpoints : ControllerBase
 
         var updated = await _instanceManager.SetInstanceStatusAsync(
             state.WorkflowAlias, state.InstanceId, InstanceStatus.Cancelled, cancellationToken);
+
+        // Story 10.8: persist FIRST, signal SECOND. The SSE OCE handler reads
+        // the persisted status when it catches OCE and skips the Failed
+        // overwrite if it sees Cancelled. Reversing the order would race.
+        _activeInstanceRegistry.RequestCancellation(state.InstanceId);
 
         return Ok(MapToResponse(updated));
     }

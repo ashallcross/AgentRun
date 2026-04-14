@@ -46,11 +46,23 @@ public class WorkflowOrchestrator : IWorkflowOrchestrator
         var isFirstStep = true;
         var userMessageReader = _activeInstanceRegistry.RegisterInstance(instanceId);
 
+        // Story 10.8: combine the HTTP request token (existing) with the
+        // per-instance cancellation token (new). Either source firing cancels
+        // the run. Must dispose the linked source in finally to avoid leaking
+        // the subscription chain.
+        var instanceToken = _activeInstanceRegistry.GetCancellationToken(instanceId)
+            ?? CancellationToken.None;
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken, instanceToken);
+        var runToken = linkedCts.Token;
+
         try
         {
         while (true)
         {
-            var instance = await _instanceManager.FindInstanceAsync(instanceId, cancellationToken)
+            runToken.ThrowIfCancellationRequested();
+
+            var instance = await _instanceManager.FindInstanceAsync(instanceId, runToken)
                 ?? throw new AgentRunException($"Instance '{instanceId}' not found");
 
             var stepIndex = instance.CurrentStepIndex;
@@ -70,12 +82,12 @@ public class WorkflowOrchestrator : IWorkflowOrchestrator
             // Emit run.started only for the first step in this execution
             if (isFirstStep)
             {
-                await emitter.EmitRunStartedAsync(instanceId, cancellationToken);
+                await emitter.EmitRunStartedAsync(instanceId, runToken);
                 isFirstStep = false;
             }
 
             // Emit step.started
-            await emitter.EmitStepStartedAsync(step.Id, step.Name, cancellationToken);
+            await emitter.EmitStepStartedAsync(step.Id, step.Name, runToken);
 
             // Create conversation recorder for this step execution
             var recorder = new ConversationRecorder(
@@ -83,7 +95,7 @@ public class WorkflowOrchestrator : IWorkflowOrchestrator
                 _loggerFactory.CreateLogger<ConversationRecorder>());
 
             // Record step.started system message
-            await recorder.RecordSystemMessageAsync($"Starting {step.Name}...", cancellationToken);
+            await recorder.RecordSystemMessageAsync($"Starting {step.Name}...", runToken);
 
             // Build StepExecutionContext
             var instanceFolderPath = _instanceManager.GetInstanceFolderPath(workflowAlias, instanceId);
@@ -99,10 +111,10 @@ public class WorkflowOrchestrator : IWorkflowOrchestrator
                 UserMessageReader: userMessageReader);
 
             // Execute the step
-            await _stepExecutor.ExecuteStepAsync(context, cancellationToken);
+            await _stepExecutor.ExecuteStepAsync(context, runToken);
 
             // Re-load instance state after step execution (StepExecutor updates step status)
-            instance = await _instanceManager.FindInstanceAsync(instanceId, cancellationToken)
+            instance = await _instanceManager.FindInstanceAsync(instanceId, runToken)
                 ?? throw new AgentRunException($"Instance '{instanceId}' not found after step execution");
 
             var stepState = instance.Steps[stepIndex];
@@ -135,10 +147,10 @@ public class WorkflowOrchestrator : IWorkflowOrchestrator
             }
 
             // Record step.finished system message
-            await recorder.RecordSystemMessageAsync($"{step.Name} completed", cancellationToken);
+            await recorder.RecordSystemMessageAsync($"{step.Name} completed", runToken);
 
             // Step completed successfully
-            await emitter.EmitStepFinishedAsync(step.Id, "Complete", cancellationToken);
+            await emitter.EmitStepFinishedAsync(step.Id, "Complete", runToken);
 
             var isLastStep = stepIndex >= workflow.Steps.Count - 1;
 
@@ -146,9 +158,9 @@ public class WorkflowOrchestrator : IWorkflowOrchestrator
             {
                 // All steps done — mark instance Completed
                 await _instanceManager.SetInstanceStatusAsync(
-                    workflowAlias, instanceId, InstanceStatus.Completed, cancellationToken);
+                    workflowAlias, instanceId, InstanceStatus.Completed, runToken);
 
-                await emitter.EmitRunFinishedAsync(instanceId, "Completed", cancellationToken);
+                await emitter.EmitRunFinishedAsync(instanceId, "Completed", runToken);
 
                 _logger.LogInformation(
                     "Workflow {WorkflowAlias} instance {InstanceId} completed all steps",
@@ -157,7 +169,7 @@ public class WorkflowOrchestrator : IWorkflowOrchestrator
             }
 
             // More steps remain — advance CurrentStepIndex
-            await _instanceManager.AdvanceStepAsync(workflowAlias, instanceId, cancellationToken);
+            await _instanceManager.AdvanceStepAsync(workflowAlias, instanceId, runToken);
 
             if (!string.Equals(workflow.Mode, "autonomous", StringComparison.OrdinalIgnoreCase))
             {
@@ -168,9 +180,9 @@ public class WorkflowOrchestrator : IWorkflowOrchestrator
             // Autonomous mode: emit system message, brief delay, then loop
             var nextStep = workflow.Steps[stepIndex + 1];
             await emitter.EmitSystemMessageAsync(
-                $"Auto-advancing to {nextStep.Name}...", cancellationToken);
+                $"Auto-advancing to {nextStep.Name}...", runToken);
 
-            await Task.Delay(1000, cancellationToken);
+            await Task.Delay(1000, runToken);
         }
         }
         finally

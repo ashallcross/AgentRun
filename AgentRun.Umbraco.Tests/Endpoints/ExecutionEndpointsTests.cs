@@ -1,9 +1,11 @@
 using System.Threading.Channels;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using AgentRun.Umbraco.Endpoints;
 using AgentRun.Umbraco.Engine;
+using AgentRun.Umbraco.Engine.Events;
 using AgentRun.Umbraco.Instances;
 using AgentRun.Umbraco.Models.ApiModels;
 using AgentRun.Umbraco.Workflows;
@@ -16,6 +18,9 @@ public class ExecutionEndpointsTests
     private IInstanceManager _instanceManager = null!;
     private IConversationStore _conversationStore = null!;
     private IActiveInstanceRegistry _activeInstanceRegistry = null!;
+    private IWorkflowOrchestrator _orchestrator = null!;
+    private IProfileResolver _profileResolver = null!;
+    private IWorkflowRegistry _workflowRegistry = null!;
     private ExecutionEndpoints _endpoints = null!;
 
     [SetUp]
@@ -24,16 +29,29 @@ public class ExecutionEndpointsTests
         _instanceManager = Substitute.For<IInstanceManager>();
         _conversationStore = Substitute.For<IConversationStore>();
         _activeInstanceRegistry = Substitute.For<IActiveInstanceRegistry>();
+        _orchestrator = Substitute.For<IWorkflowOrchestrator>();
+        _profileResolver = Substitute.For<IProfileResolver>();
+        _workflowRegistry = Substitute.For<IWorkflowRegistry>();
 
         _endpoints = new ExecutionEndpoints(
             _instanceManager,
-            Substitute.For<IProfileResolver>(),
-            Substitute.For<IWorkflowOrchestrator>(),
-            Substitute.For<IWorkflowRegistry>(),
+            _profileResolver,
+            _orchestrator,
+            _workflowRegistry,
             _conversationStore,
             _activeInstanceRegistry,
             NullLogger<ExecutionEndpoints>.Instance,
             NullLoggerFactory.Instance);
+    }
+
+    private void AttachHttpContext()
+    {
+        var httpContext = new DefaultHttpContext();
+        httpContext.Response.Body = new MemoryStream();
+        _endpoints.ControllerContext = new Microsoft.AspNetCore.Mvc.ControllerContext
+        {
+            HttpContext = httpContext
+        };
     }
 
     [Test]
@@ -146,5 +164,84 @@ public class ExecutionEndpointsTests
         Assert.That(result, Is.InstanceOf<OkResult>());
         Assert.That(channel.Reader.TryRead(out var msg), Is.True);
         Assert.That(msg, Is.EqualTo("Hello agent"));
+    }
+
+    // ---------------- Story 10.8: SSE OCE handler ---------------- //
+
+    private static InstanceState MakeInstance(InstanceStatus status)
+    {
+        return new InstanceState
+        {
+            InstanceId = "inst-001",
+            WorkflowAlias = "test-wf",
+            Status = status,
+            Steps = [new StepState { Id = "step-0", Status = StepStatus.Pending }]
+        };
+    }
+
+    // Story 10.8 Task 9.3 + AC6: OCE with persisted Cancelled skips the Failed overwrite
+    // and returns cleanly (does NOT rethrow — rethrowing produces an unhandled-exception log).
+    [Test]
+    public async Task Start_OceWithCancelledStatus_ReturnsEmptyResultAndSkipsFailedOverwrite()
+    {
+        AttachHttpContext();
+
+        var pending = MakeInstance(InstanceStatus.Pending);
+        // First call (pre-start) → Pending. Second call (inside OCE handler) → Cancelled.
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>())
+            .Returns(pending, MakeInstance(InstanceStatus.Cancelled));
+
+        _instanceManager.SetInstanceStatusAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<InstanceStatus>(), Arg.Any<CancellationToken>())
+            .Returns(pending);
+
+        _profileResolver.HasConfiguredProviderAsync(Arg.Any<WorkflowDefinition?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        _orchestrator
+            .ExecuteNextStepAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<ISseEventEmitter>(), Arg.Any<CancellationToken>())
+            .Returns(_ => throw new OperationCanceledException());
+
+        var result = await _endpoints.StartInstance("inst-001", CancellationToken.None);
+
+        // Cancelled path completes cleanly with EmptyResult (no rethrow, no unhandled-exception log).
+        Assert.That(result, Is.InstanceOf<EmptyResult>());
+
+        // The initial Pending → Running transition was persisted on entry. Guards against
+        // a regression where the initial transition is accidentally skipped.
+        await _instanceManager.Received(1).SetInstanceStatusAsync(
+            Arg.Any<string>(), Arg.Any<string>(), InstanceStatus.Running, Arg.Any<CancellationToken>());
+
+        // No Failed overwrite was attempted (AC6 — Cancelled path preserves the persisted status).
+        await _instanceManager.DidNotReceive().SetInstanceStatusAsync(
+            Arg.Any<string>(), Arg.Any<string>(), InstanceStatus.Failed, Arg.Any<CancellationToken>());
+    }
+
+    // Story 10.8 Task 9.4 + 9.5 + F3: OCE with status Running (disconnect path) writes
+    // Failed and rethrows (Story 10.9 owns refining this path).
+    [Test]
+    public async Task Start_OceWithRunningStatus_WritesFailedAndRethrows()
+    {
+        AttachHttpContext();
+
+        var pending = MakeInstance(InstanceStatus.Pending);
+        // First call → Pending. Second call (inside OCE handler) → Running (disconnect path).
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>())
+            .Returns(pending, MakeInstance(InstanceStatus.Running));
+
+        _instanceManager.SetInstanceStatusAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<InstanceStatus>(), Arg.Any<CancellationToken>())
+            .Returns(pending);
+
+        _profileResolver.HasConfiguredProviderAsync(Arg.Any<WorkflowDefinition?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        _orchestrator
+            .ExecuteNextStepAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<ISseEventEmitter>(), Arg.Any<CancellationToken>())
+            .Returns(_ => throw new OperationCanceledException());
+
+        Assert.CatchAsync<OperationCanceledException>(async () =>
+            await _endpoints.StartInstance("inst-001", CancellationToken.None));
+
+        await _instanceManager.Received(1).SetInstanceStatusAsync(
+            "test-wf", "inst-001", InstanceStatus.Failed, Arg.Any<CancellationToken>());
     }
 }

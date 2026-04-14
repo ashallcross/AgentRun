@@ -333,21 +333,34 @@ describe("agentrun-instance-detail", () => {
       }
     });
 
-    // 8.11: Cancel button only renders for Running or Pending status in autonomous mode
-    it("Cancel button renders only for autonomous mode Running or Pending", () => {
-      const shouldShowCancel = (status: string, workflowMode: string, streaming: boolean) =>
-        workflowMode === "autonomous"
-        && (status === "Running" || status === "Pending") && !streaming;
+    // Story 10.8: Cancel renders for any in-flight run (Running or Pending) across
+    // both modes and during streaming — this is required for the mid-stream
+    // token-burn case. Failed is excluded — Retry is the correct action for Failed
+    // runs and the server's CancelInstance rejects Failed with 409.
+    it("Cancel button renders whenever a run is in flight regardless of mode or streaming", () => {
+      const shouldShowCancel = (status: string, _workflowMode: string, _streaming: boolean) =>
+        status === "Running" || status === "Pending";
 
-      // Autonomous mode
-      expect(shouldShowCancel("Pending", "autonomous", false)).to.be.true;
+      // Interactive mode — Running/Pending show Cancel (including during streaming)
+      expect(shouldShowCancel("Running", "interactive", true)).to.be.true;
+      expect(shouldShowCancel("Running", "interactive", false)).to.be.true;
+      expect(shouldShowCancel("Pending", "interactive", false)).to.be.true;
+
+      // Autonomous mode — same rule applies
+      expect(shouldShowCancel("Running", "autonomous", true)).to.be.true;
       expect(shouldShowCancel("Running", "autonomous", false)).to.be.true;
-      expect(shouldShowCancel("Completed", "autonomous", false)).to.be.false;
+      expect(shouldShowCancel("Pending", "autonomous", false)).to.be.true;
+
+      // Failed — Cancel is not shown (Retry is the correct action)
+      expect(shouldShowCancel("Failed", "interactive", false)).to.be.false;
       expect(shouldShowCancel("Failed", "autonomous", false)).to.be.false;
+      expect(shouldShowCancel("Failed", "interactive", true)).to.be.false;
+
+      // Terminal states — no Cancel
+      expect(shouldShowCancel("Completed", "autonomous", false)).to.be.false;
+      expect(shouldShowCancel("Completed", "interactive", false)).to.be.false;
       expect(shouldShowCancel("Cancelled", "autonomous", false)).to.be.false;
-      // Interactive mode — never show cancel
-      expect(shouldShowCancel("Pending", "interactive", false)).to.be.false;
-      expect(shouldShowCancel("Running", "interactive", false)).to.be.false;
+      expect(shouldShowCancel("Cancelled", "interactive", false)).to.be.false;
     });
 
     // 8.12: run number computation

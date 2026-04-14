@@ -69,6 +69,13 @@ public static class ToolLoop
         var iteration = 0;
         while (true)
         {
+            // Story 10.8: observe cancellation between iterations. The streaming
+            // response and per-tool calls already respect the token, but the
+            // gap between tool-batch completion and the next LLM call is the
+            // window this check closes — cancellation is observed within the
+            // same tool turn instead of waiting for the next streaming chunk.
+            cancellationToken.ThrowIfCancellationRequested();
+
             if (++iteration > MaxIterations)
             {
                 logger.LogError(
@@ -445,6 +452,11 @@ public static class ToolLoop
 
             // Add tool results as a single tool-role message
             messages.Add(new ChatMessage(ChatRole.Tool, resultContents));
+
+            // Story 10.8: observe cancellation after the tool batch completes.
+            // Prevents a cancelled run from racing into the next LLM call when
+            // cancel fires mid-batch.
+            cancellationToken.ThrowIfCancellationRequested();
 
             // Story 10.2: register tool result CallIds at the current assistant turn
             // so compaction knows when they were added.

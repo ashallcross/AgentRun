@@ -1196,4 +1196,162 @@ public class ToolLoopTests
 
         Assert.That(response, Is.Not.Null);
     }
+
+    // ---------------- Story 10.8: explicit cancellation checks ---------------- //
+
+    // Story 10.8 Task 8.1: top-of-iteration check fires when cancelled between iterations
+    [Test]
+    public void TopOfIteration_CancelledBetweenIterations_ThrowsOceBeforeNextLlmCall()
+    {
+        var tool = Substitute.For<IWorkflowTool>();
+        tool.Name.Returns("step_tool");
+        tool.ExecuteAsync(Arg.Any<IDictionary<string, object?>>(), Arg.Any<ToolExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns("ok");
+
+        var declaredTools = new Dictionary<string, IWorkflowTool>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["step_tool"] = tool
+        };
+
+        using var cts = new CancellationTokenSource();
+
+        // First streaming response triggers a tool call. After the tool returns,
+        // cancel the token — the top-of-iteration check on the next loop pass
+        // must throw OCE before any second GetStreamingResponseAsync call.
+        var llmCalls = 0;
+        _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                llmCalls++;
+                if (llmCalls == 1)
+                    return MakeStreamingToolCalls(("call-1", "step_tool", null));
+                return MakeStreamingTextResponse("should never reach here");
+            });
+
+        tool
+            .When(t => t.ExecuteAsync(Arg.Any<IDictionary<string, object?>>(), Arg.Any<ToolExecutionContext>(), Arg.Any<CancellationToken>()))
+            .Do(_ => cts.Cancel());
+
+        var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
+
+        Assert.CatchAsync<OperationCanceledException>(async () =>
+            await ToolLoop.RunAsync(_chatClient, messages, new ChatOptions(), declaredTools, _context, _logger, cts.Token));
+
+        // Exactly one LLM call was made — the post-batch and top-of-iteration
+        // checks both stop the loop before a second streaming call.
+        Assert.That(llmCalls, Is.EqualTo(1));
+    }
+
+    // Story 10.8 Task 8.2: post-batch check fires — no second LLM call after tool batch when cancelled
+    [Test]
+    public void PostBatch_CancelledDuringToolExecution_NoSecondLlmCall()
+    {
+        var tool = Substitute.For<IWorkflowTool>();
+        tool.Name.Returns("cancelling_tool");
+        var cts = new CancellationTokenSource();
+
+        tool.ExecuteAsync(Arg.Any<IDictionary<string, object?>>(), Arg.Any<ToolExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                cts.Cancel();
+                return "result";
+            });
+
+        var declaredTools = new Dictionary<string, IWorkflowTool>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["cancelling_tool"] = tool
+        };
+
+        var llmCalls = 0;
+        _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                llmCalls++;
+                if (llmCalls == 1)
+                    return MakeStreamingToolCalls(("call-1", "cancelling_tool", null));
+                return MakeStreamingTextResponse("unreachable");
+            });
+
+        var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
+
+        Assert.CatchAsync<OperationCanceledException>(async () =>
+            await ToolLoop.RunAsync(_chatClient, messages, new ChatOptions(), declaredTools, _context, _logger, cts.Token));
+
+        Assert.That(llmCalls, Is.EqualTo(1));
+        cts.Dispose();
+    }
+
+    // Story 10.8 Task 8.3: tool throwing OCE skips remaining tools in batch
+    [Test]
+    public void ToolThrowingOce_SkipsRemainingToolsInBatch()
+    {
+        var firstTool = Substitute.For<IWorkflowTool>();
+        firstTool.Name.Returns("first_tool");
+        firstTool.ExecuteAsync(Arg.Any<IDictionary<string, object?>>(), Arg.Any<ToolExecutionContext>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new OperationCanceledException());
+
+        var secondTool = Substitute.For<IWorkflowTool>();
+        secondTool.Name.Returns("second_tool");
+        secondTool.ExecuteAsync(Arg.Any<IDictionary<string, object?>>(), Arg.Any<ToolExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns("should-not-run");
+
+        var declaredTools = new Dictionary<string, IWorkflowTool>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["first_tool"] = firstTool,
+            ["second_tool"] = secondTool
+        };
+
+        _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+            .Returns(_ => MakeStreamingToolCalls(
+                ("call-1", "first_tool", null),
+                ("call-2", "second_tool", null)));
+
+        var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
+
+        Assert.CatchAsync<OperationCanceledException>(async () =>
+            await ToolLoop.RunAsync(_chatClient, messages, new ChatOptions(), declaredTools, _context, _logger, CancellationToken.None));
+
+        secondTool.DidNotReceive().ExecuteAsync(
+            Arg.Any<IDictionary<string, object?>>(), Arg.Any<ToolExecutionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    // Story 10.8 Task 8.4: tool throwing OCE does not record a tool result
+    [Test]
+    public void ToolThrowingOce_DoesNotRecordToolResult()
+    {
+        var tool = Substitute.For<IWorkflowTool>();
+        tool.Name.Returns("oce_tool");
+        tool.ExecuteAsync(Arg.Any<IDictionary<string, object?>>(), Arg.Any<ToolExecutionContext>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new OperationCanceledException());
+
+        var declaredTools = new Dictionary<string, IWorkflowTool>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["oce_tool"] = tool
+        };
+
+        _chatClient.GetStreamingResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+            .Returns(_ => MakeStreamingToolCalls(("call-oce", "oce_tool", null)));
+
+        var recorder = Substitute.For<IConversationRecorder>();
+        var messages = new List<ChatMessage> { new(ChatRole.System, "test") };
+
+        Assert.CatchAsync<OperationCanceledException>(async () =>
+            await ToolLoop.RunAsync(
+                _chatClient, messages, new ChatOptions(), declaredTools, _context, _logger,
+                CancellationToken.None,
+                recorder: recorder));
+
+        recorder.DidNotReceive().RecordToolResultAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+
+        // F5 intent: the tool_call IS recorded (before dispatch). Orphan tool_call
+        // in JSONL is the acknowledged trade-off; without this assertion a future
+        // refactor could silently drop the call-side record and no test would fail.
+        recorder.Received().RecordToolCallAsync(
+            "call-oce", "oce_tool", Arg.Any<string>(), Arg.Any<CancellationToken>());
+
+        // The message list must not contain a tool-role message (the loop
+        // exited before reaching the messages.Add at line 447).
+        Assert.That(messages.Any(m => m.Role == ChatRole.Tool), Is.False);
+    }
 }

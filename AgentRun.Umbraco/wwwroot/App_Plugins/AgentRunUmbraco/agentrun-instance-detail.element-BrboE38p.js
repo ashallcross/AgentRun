@@ -2,7 +2,7 @@ import { UmbLitElement as M } from "@umbraco-cms/backoffice/lit-element";
 import { css as I, property as d, state as c, customElement as z, html as r, nothing as p } from "@umbraco-cms/backoffice/external/lit";
 import { UMB_AUTH_CONTEXT as F } from "@umbraco-cms/backoffice/auth";
 import { umbConfirmModal as U } from "@umbraco-cms/backoffice/modal";
-import { s as W, b as j, a as V, d as T, m as P, e as q, r as K, f as J, h as O, i as G } from "./index-BHPGdLBM.js";
+import { s as W, b as j, a as V, d as T, m as P, e as q, r as K, f as J, h as O, i as G } from "./index-OBKXZ3lQ.js";
 import { n as X } from "./instance-list-helpers-Cp7Qb08Y.js";
 var Y = Object.defineProperty, Q = Object.getOwnPropertyDescriptor, k = (t, e, s, i) => {
   for (var a = i > 1 ? void 0 : i ? Q(e, s) : e, o = t.length - 1, n; o >= 0; o--)
@@ -1059,7 +1059,7 @@ let u = class extends M {
           and try refreshing the page.
         </div>
       `;
-    const t = this._instance, e = t.workflowMode !== "autonomous", s = t.status === "Completed" || t.status === "Failed" || t.status === "Cancelled", i = t.steps.find((y) => y.status === "Active"), a = !!i, o = t.status === "Pending" && !this._streaming, n = "Start", l = t.status === "Failed" && !this._streaming, S = !e && t.status === "Running" && !a && !this._streaming && t.steps.some((y) => y.status === "Pending"), m = !e && (t.status === "Running" || t.status === "Pending") && !this._streaming || t.status === "Failed" && !this._streaming;
+    const t = this._instance, e = t.workflowMode !== "autonomous", s = t.status === "Completed" || t.status === "Failed" || t.status === "Cancelled", i = t.steps.find((y) => y.status === "Active"), a = !!i, o = t.status === "Pending" && !this._streaming, n = "Start", l = t.status === "Failed" && !this._streaming, S = !e && t.status === "Running" && !a && !this._streaming && t.steps.some((y) => y.status === "Pending"), m = t.status === "Running" || t.status === "Pending" || t.status === "Failed" && !this._streaming;
     let g, _;
     e ? s ? (g = !1, _ = "Workflow complete") : this._viewingStepId ? (g = !1, _ = "Viewing step history") : this._agentResponding ? (g = !1, _ = "Agent is responding...") : this._streaming || i || t.status === "Running" ? (g = !0, _ = "Message the agent...") : (g = !1, _ = "Send a message to start.") : (g = this._streaming && !this._viewingStepId, _ = s ? "Workflow complete" : i ? "Step complete" : "Click 'Start' to begin the workflow.");
     const R = e && !this._streaming ? (y) => this._onSendAndStream(y) : (y) => this._onSendMessage(y), D = e && this._stepCompletable && !this._agentResponding, L = t.steps.every((y) => y.status === "Complete"), B = e && s && L, H = this._providerError ? r`<div class="main-placeholder">Configure an AI provider in Umbraco.AI before workflows can run.</div>` : r`
@@ -1396,4 +1396,4 @@ export {
   u as AgentRunInstanceDetailElement,
   ft as default
 };
-//# sourceMappingURL=agentrun-instance-detail.element-Dd-oPAuS.js.map
+//# sourceMappingURL=agentrun-instance-detail.element-BrboE38p.js.map

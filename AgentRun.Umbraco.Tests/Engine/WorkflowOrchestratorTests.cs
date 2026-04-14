@@ -271,6 +271,153 @@ public class WorkflowOrchestratorTests
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
+    // ---------------- Story 10.8: linked-token wiring ---------------- //
+
+    private WorkflowOrchestrator CreateOrchestratorWithRegistry(IActiveInstanceRegistry registry)
+    {
+        return new WorkflowOrchestrator(
+            _instanceManager,
+            _workflowRegistry,
+            _stepExecutor,
+            Substitute.For<IConversationStore>(),
+            registry,
+            NullLoggerFactory.Instance,
+            NullLogger<WorkflowOrchestrator>.Instance);
+    }
+
+    // Story 10.8 Task 7.1: linked token cancels on per-instance CTS
+    [Test]
+    public async Task LinkedToken_CancelsOnInstanceCts()
+    {
+        SetUpWorkflow("interactive", 1);
+        var beforeExec = CreateInstance(0, 1);
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>())
+            .Returns(beforeExec);
+
+        using var registry = new ActiveInstanceRegistry();
+        var orchestrator = CreateOrchestratorWithRegistry(registry);
+
+        var stepStarted = new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _stepExecutor.ExecuteStepAsync(Arg.Any<StepExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(async callInfo =>
+            {
+                var token = callInfo.Arg<CancellationToken>();
+                stepStarted.TrySetResult(token);
+                await Task.Delay(Timeout.Infinite, token);
+            });
+
+        var httpCts = new CancellationTokenSource();
+        var runTask = orchestrator.ExecuteNextStepAsync("test-wf", "inst-001", _emitter, httpCts.Token);
+
+        var stepToken = await stepStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.That(stepToken.CanBeCanceled, Is.True, "StepExecutor received a non-cancellable token");
+
+        registry.RequestCancellation("inst-001");
+
+        var oce = Assert.CatchAsync<OperationCanceledException>(async () => await runTask.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.That(oce, Is.Not.Null);
+    }
+
+    // Story 10.8 Task 7.2: linked token cancels on HTTP request token (preserves existing behaviour)
+    [Test]
+    public async Task LinkedToken_CancelsOnHttpToken()
+    {
+        SetUpWorkflow("interactive", 1);
+        var beforeExec = CreateInstance(0, 1);
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>())
+            .Returns(beforeExec);
+
+        using var registry = new ActiveInstanceRegistry();
+        var orchestrator = CreateOrchestratorWithRegistry(registry);
+
+        var stepStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _stepExecutor.ExecuteStepAsync(Arg.Any<StepExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(async callInfo =>
+            {
+                stepStarted.TrySetResult();
+                await Task.Delay(Timeout.Infinite, callInfo.Arg<CancellationToken>());
+            });
+
+        using var httpCts = new CancellationTokenSource();
+        var runTask = orchestrator.ExecuteNextStepAsync("test-wf", "inst-001", _emitter, httpCts.Token);
+
+        await stepStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        httpCts.Cancel();
+
+        var oce = Assert.CatchAsync<OperationCanceledException>(async () => await runTask.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.That(oce, Is.Not.Null);
+    }
+
+    // Story 10.8 Task 7.3: registry unregistered in finally even on cancellation
+    [Test]
+    public async Task LinkedToken_RegistryUnregisteredInFinally_OnCancel()
+    {
+        SetUpWorkflow("interactive", 1);
+        var beforeExec = CreateInstance(0, 1);
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>())
+            .Returns(beforeExec);
+
+        var registry = Substitute.For<IActiveInstanceRegistry>();
+        using var cts = new CancellationTokenSource();
+        registry.RegisterInstance("inst-001").Returns(System.Threading.Channels.Channel.CreateUnbounded<string>().Reader);
+        registry.GetCancellationToken("inst-001").Returns(cts.Token);
+
+        var orchestrator = CreateOrchestratorWithRegistry(registry);
+
+        var stepStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _stepExecutor.ExecuteStepAsync(Arg.Any<StepExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(async callInfo =>
+            {
+                stepStarted.TrySetResult();
+                await Task.Delay(Timeout.Infinite, callInfo.Arg<CancellationToken>());
+            });
+
+        var runTask = orchestrator.ExecuteNextStepAsync("test-wf", "inst-001", _emitter, CancellationToken.None);
+        await stepStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        cts.Cancel();
+
+        Assert.CatchAsync<OperationCanceledException>(async () => await runTask.WaitAsync(TimeSpan.FromSeconds(5)));
+        registry.Received(1).UnregisterInstance("inst-001");
+    }
+
+    // Story 10.8 Task 7.4: step-loop top ThrowIfCancellationRequested fires between steps
+    [Test]
+    public async Task LinkedToken_CancelBetweenSteps_StopsAutonomousLoopBeforeNextStep()
+    {
+        SetUpWorkflow("autonomous", 2);
+
+        var first = CreateInstance(0, 2);
+        var afterFirst = CreateInstance(0, 2);
+        afterFirst.Steps[0].Status = StepStatus.Complete;
+
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>())
+            .Returns(first, afterFirst);
+
+        var afterAdvance = CreateInstance(1, 2);
+        _instanceManager.AdvanceStepAsync("test-wf", "inst-001", Arg.Any<CancellationToken>())
+            .Returns(afterAdvance);
+
+        using var registry = new ActiveInstanceRegistry();
+        var orchestrator = CreateOrchestratorWithRegistry(registry);
+
+        // First step completes instantly; signal cancel AFTER step 1 finishes so
+        // the top-of-loop ThrowIfCancellationRequested on iteration 2 fires.
+        _stepExecutor.ExecuteStepAsync(Arg.Any<StepExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                registry.RequestCancellation("inst-001");
+                return Task.CompletedTask;
+            });
+
+        var runTask = orchestrator.ExecuteNextStepAsync("test-wf", "inst-001", _emitter, CancellationToken.None);
+        Assert.CatchAsync<OperationCanceledException>(async () => await runTask.WaitAsync(TimeSpan.FromSeconds(5)));
+
+        // StepExecutor was only called once — the second iteration's top check fired.
+        await _stepExecutor.Received(1).ExecuteStepAsync(
+            Arg.Any<StepExecutionContext>(), Arg.Any<CancellationToken>());
+    }
+
     [Test]
     public async Task SseEventsEmittedInCorrectOrder()
     {

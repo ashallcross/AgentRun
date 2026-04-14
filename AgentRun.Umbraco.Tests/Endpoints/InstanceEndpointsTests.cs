@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using NSubstitute;
 using AgentRun.Umbraco.Endpoints;
+using AgentRun.Umbraco.Engine;
 using AgentRun.Umbraco.Instances;
 using AgentRun.Umbraco.Models.ApiModels;
 using AgentRun.Umbraco.Workflows;
@@ -14,6 +15,7 @@ public class InstanceEndpointsTests
 {
     private IInstanceManager _instanceManager = null!;
     private IWorkflowRegistry _workflowRegistry = null!;
+    private IActiveInstanceRegistry _activeInstanceRegistry = null!;
     private InstanceEndpoints _endpoints = null!;
 
     private static readonly WorkflowDefinition TestDefinition = new()
@@ -55,7 +57,8 @@ public class InstanceEndpointsTests
     {
         _instanceManager = Substitute.For<IInstanceManager>();
         _workflowRegistry = Substitute.For<IWorkflowRegistry>();
-        _endpoints = new InstanceEndpoints(_instanceManager, _workflowRegistry);
+        _activeInstanceRegistry = Substitute.For<IActiveInstanceRegistry>();
+        _endpoints = new InstanceEndpoints(_instanceManager, _workflowRegistry, _activeInstanceRegistry);
 
         var identity = new ClaimsIdentity(
             [new Claim(ClaimTypes.Name, "admin@example.com")], "test");
@@ -475,5 +478,75 @@ public class InstanceEndpointsTests
         var responses = okResult!.Value as InstanceResponse[];
         Assert.That(responses, Is.Not.Null);
         Assert.That(responses!, Is.Empty);
+    }
+
+    // Story 10.8 Task 9.1: cancel calls RequestCancellation on registry
+    [Test]
+    public async Task CancelInstance_CallsRequestCancellationOnRegistry()
+    {
+        var state = CreateTestInstance(status: InstanceStatus.Running);
+        _instanceManager.FindInstanceAsync("abc123", Arg.Any<CancellationToken>())
+            .Returns(state);
+        _instanceManager.SetInstanceStatusAsync("content-audit", "abc123", InstanceStatus.Cancelled, Arg.Any<CancellationToken>())
+            .Returns(CreateTestInstance(status: InstanceStatus.Cancelled));
+
+        await _endpoints.CancelInstance("abc123", CancellationToken.None);
+
+        _activeInstanceRegistry.Received(1).RequestCancellation("abc123");
+    }
+
+    // Story 10.8 Task 9.2: cancel order — persist before signal (locked decision 3)
+    [Test]
+    public async Task CancelInstance_PersistsCancelledBeforeSignallingCts()
+    {
+        var state = CreateTestInstance(status: InstanceStatus.Running);
+        _instanceManager.FindInstanceAsync("abc123", Arg.Any<CancellationToken>())
+            .Returns(state);
+        _instanceManager.SetInstanceStatusAsync("content-audit", "abc123", InstanceStatus.Cancelled, Arg.Any<CancellationToken>())
+            .Returns(CreateTestInstance(status: InstanceStatus.Cancelled));
+
+        var callOrder = new List<string>();
+        _instanceManager
+            .When(m => m.SetInstanceStatusAsync("content-audit", "abc123", InstanceStatus.Cancelled, Arg.Any<CancellationToken>()))
+            .Do(_ => callOrder.Add("persist"));
+        _activeInstanceRegistry
+            .When(r => r.RequestCancellation("abc123"))
+            .Do(_ => callOrder.Add("signal"));
+
+        await _endpoints.CancelInstance("abc123", CancellationToken.None);
+
+        Assert.That(callOrder, Is.EqualTo(new[] { "persist", "signal" }));
+    }
+
+    // Story 10.8 F2 / AC8: 409 rejections do not reach the registry
+    [Test]
+    public async Task CancelInstance_DoesNotCallRequestCancellation_When409()
+    {
+        var state = CreateTestInstance(status: InstanceStatus.Completed);
+        _instanceManager.FindInstanceAsync("abc123", Arg.Any<CancellationToken>())
+            .Returns(state);
+
+        await _endpoints.CancelInstance("abc123", CancellationToken.None);
+
+        _activeInstanceRegistry.DidNotReceive().RequestCancellation(Arg.Any<string>());
+    }
+
+    // Story 10.8 AC2: cancel is safe when no orchestrator is active (registry no-op)
+    [Test]
+    public async Task CancelInstance_ReturnsOk_WhenRegistryHasNoEntry()
+    {
+        var state = CreateTestInstance(status: InstanceStatus.Pending);
+        _instanceManager.FindInstanceAsync("abc123", Arg.Any<CancellationToken>())
+            .Returns(state);
+        _instanceManager.SetInstanceStatusAsync("content-audit", "abc123", InstanceStatus.Cancelled, Arg.Any<CancellationToken>())
+            .Returns(CreateTestInstance(status: InstanceStatus.Cancelled));
+
+        // RequestCancellation is a no-op by default on the substitute; no setup needed.
+        var result = await _endpoints.CancelInstance("abc123", CancellationToken.None);
+
+        var okResult = result as OkObjectResult;
+        Assert.That(okResult, Is.Not.Null);
+        Assert.That(okResult!.StatusCode, Is.EqualTo(200));
+        _activeInstanceRegistry.Received(1).RequestCancellation("abc123");
     }
 }

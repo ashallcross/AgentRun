@@ -173,6 +173,45 @@ public class ExecutionEndpoints : ControllerBase
         }
         catch (OperationCanceledException)
         {
+            // Story 10.8: if the cancel endpoint already persisted Cancelled,
+            // preserve that status. Writing Failed here would overwrite the
+            // user's explicit cancel with a disconnect-style failure. A fresh
+            // FindInstanceAsync is required because the in-memory `instance`
+            // variable was loaded before the cancel endpoint mutated the YAML.
+            // Story 10.9 will refine the disconnect path (status=Running) —
+            // 10.8 only touches the cancel path here.
+            var current = await _instanceManager.FindInstanceAsync(
+                instance.InstanceId, CancellationToken.None);
+
+            if (current is not null && current.Status == InstanceStatus.Cancelled)
+            {
+                // Deliberate server-initiated cancellation (cancel endpoint
+                // already persisted Cancelled). The SSE stream ends cleanly —
+                // do NOT rethrow. Rethrowing produces a 100-line "unhandled
+                // exception" log every time Cancel is clicked because the OCE
+                // surfaces as an aborted controller action, even though the
+                // run was stopped correctly. Emit a terminal run.finished event
+                // so non-initiating observers can distinguish cancel from a
+                // dropped connection.
+                _logger.LogInformation(
+                    "Cancellation observed for instance {InstanceId}; preserving Cancelled status",
+                    instance.InstanceId);
+
+                try
+                {
+                    await emitter.EmitRunFinishedAsync(
+                        instance.InstanceId, "Cancelled", CancellationToken.None);
+                }
+                catch (Exception emitEx)
+                {
+                    _logger.LogDebug(emitEx,
+                        "Failed to emit run.finished(Cancelled) for instance {InstanceId}; client stream likely already closed",
+                        instance.InstanceId);
+                }
+
+                return new EmptyResult();
+            }
+
             try
             {
                 await _instanceManager.SetInstanceStatusAsync(

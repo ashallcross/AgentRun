@@ -210,6 +210,20 @@ public sealed partial class InstanceManager : IInstanceManager
                 $"Instance {instanceId} is already running. Concurrent execution is not permitted.");
         }
 
+        // Terminal-status guard (Story 10.8 code review): if the persisted state is
+        // already terminal, refuse to transition out of it. Protects against the race
+        // where an endpoint read state as Running, then a concurrent operation moved
+        // it to a terminal state before this write lands. Without this guard a cancel
+        // can overwrite a freshly-Completed or freshly-Failed run.
+        if (state.Status is InstanceStatus.Completed or InstanceStatus.Failed or InstanceStatus.Cancelled
+            && state.Status != status)
+        {
+            _logger.LogInformation(
+                "Ignored status transition for instance {InstanceId}: already in terminal state {CurrentStatus}, refused transition to {NewStatus}",
+                instanceId, state.Status, status);
+            return state;
+        }
+
         state.Status = status;
         state.UpdatedAt = DateTime.UtcNow;
 

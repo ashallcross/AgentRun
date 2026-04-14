@@ -817,11 +817,19 @@ export class AgentRunInstanceDetailElement extends UmbLitElement {
     this._cancelling = true;
     try {
       const token = await this.#authContext?.getLatestToken();
-      await cancelInstance(this._instance.id, token);
+      try {
+        await cancelInstance(this._instance.id, token);
+      } catch (err) {
+        // A 409 means the run is already in a non-cancellable state (Completed /
+        // Failed / Cancelled) — treat as idempotent. Any other error is preserved.
+        const message = err instanceof Error ? err.message : String(err);
+        if (!message.includes("409")) {
+          console.warn("Failed to cancel instance");
+        }
+      }
+      // Always reload so the view reflects the current server state regardless of
+      // whether the POST won the race, lost the race, or was a no-op.
       await this._loadData();
-    } catch {
-      // Don't set _error — preserve the existing valid view (Story 3.3 review learning)
-      console.warn("Failed to cancel instance");
     } finally {
       this._cancelling = false;
     }
@@ -912,10 +920,12 @@ export class AgentRunInstanceDetailElement extends UmbLitElement {
       && inst.status === "Running" && !hasActiveStep && !this._streaming
       && inst.steps.some((s) => s.status === "Pending");
 
-    // Cancel button: autonomous mode when running/pending, or any mode when Failed
-    const showCancel = (!isInteractive
-      && (inst.status === "Running" || inst.status === "Pending") && !this._streaming)
-      || (inst.status === "Failed" && !this._streaming);
+    // Cancel button (Story 10.8): shown whenever a run is in flight regardless of mode
+    // or streaming state — the engine-level CTS wiring makes mid-stream cancel the
+    // primary scenario (otherwise tokens burn on a run the user thought was stopped).
+    // Failed is not included — the server's CancelInstance rejects Failed with 409, and
+    // Retry is the correct action for failed runs.
+    const showCancel = inst.status === "Running" || inst.status === "Pending";
 
     // Input enablement: interactive vs autonomous
     let inputEnabled: boolean;
