@@ -2005,7 +2005,156 @@ _Full story spec to be created by product owner with SM support._
 
 ## Epic 10: Ship Readiness & Public Launch
 
-_Updated 2026-04-07 — post-beta stability work and public 1.0 launch. Story 10.3 (Multi-Turn Interactive Fix) was pulled forward into Story 9.0 as a beta blocker after live testing on 2026-04-07 confirmed the bug prevents the scanner from completing the first example workflow. This epic is now the fast-follower stability + launch epic, executed after beta feedback has been collected._
+_Updated 2026-04-12 — revised based on pre-launch code review findings, beta known-issues list, and Umbraco content tools context. Priority order reflects beta tester experience: fix what they'll report first, then what blocks public launch._
+
+_Story priority order: 10.2 → 10.8 → 10.9 → 10.10 → 10.1 → 10.6 → 10.11 → 10.7 → 10.4 → 10.5._
+
+### Story 10.2: Context Management for Long Conversations
+
+_Priority raised 2026-04-12 — the Umbraco content tools make this more urgent. A content audit on a 100+ node site will exhaust the context window. The `fetch_url` stall was on 5-URL batches; a content audit is a much larger surface. See deferred-work.md "Context bloat risk for Umbraco content tools" for full analysis._
+
+As a developer,
+I want the engine to manage conversation context size for long-running steps,
+So that workflows on larger content sets don't stall or fail from context window exhaustion.
+
+**Candidate mitigations (architect to select during story refinement):**
+
+- Tool result offloading for content tools (same pattern as Story 9.7's `.fetch-cache/` handles)
+- Conversation truncation — drop old tool results while preserving a summary
+- Batched sub-invocation — split large scans into sub-steps with fresh context
+
+_Full story spec to be created by SM before development begins._
+
+### Story 10.12: First-Run Experience — Package Migration, Profile Fallback & Provider Error Handling
+
+_Added 2026-04-13 — driven by Warren Buckley's beta testing feedback. Three high-impact first-run issues that collectively determine whether a new user's first 5 minutes with the package are smooth or frustrating._
+
+As a developer installing AgentRun for the first time,
+I want the package to set itself up automatically, work with whatever AI profile I already have configured, and tell me clearly when something is wrong with my provider,
+So that I don't have to manually copy files, edit YAML, or guess why the chat is blank.
+
+**Three items bundled into one story:**
+
+#### A. Package Migration — Auto-Copy Workflows & Grant Section Permissions
+
+_Warren's feedback: "Having to manually copy files out of the NuGet cache is sketchy" and "you could have a migration step to add the section to the Admin group."_
+
+Implement a `PackageMigrationPlan` following the same pattern as Umbraco.AI's own migrations (`Umbraco.AI.Core.Migrations`):
+
+1. **`AddAgentRunSectionToAdminGroup`** — `AsyncMigrationBase` that inserts the AgentRun section permission into the Administrators user group via raw SQL (same approach as Umbraco.AI's `AddAISectionToAdminGroup`). Checks if already present before inserting.
+2. **`CopyExampleWorkflowsToDisk`** — `AsyncMigrationBase` that extracts embedded workflow files (YAML + agent prompts) to `App_Data/AgentRun.Umbraco/workflows/`. Only copies if the target workflow folder doesn't already exist (never overwrites user edits). Workflow files must be embedded resources in the assembly.
+
+**Migration plan:**
+```csharp
+public class AgentRunMigrationPlan : PackageMigrationPlan
+{
+    protected override void DefinePlan()
+    {
+        From("{agentrun-init-state}")
+            .To<AddAgentRunSectionToAdminGroup>("GUID-1")
+            .To<CopyExampleWorkflowsToDisk>("GUID-2");
+    }
+}
+```
+
+**What this removes from the README:** The entire "Copy the example workflows" section, the OS-specific shell commands, and the "Grant section permissions" manual step. Install becomes: add NuGet package, run the site, open the backoffice. Done.
+
+**Reference implementation:** `https://github.com/umbraco/Umbraco.AI/tree/main/Umbraco.AI/src/Umbraco.AI.Core/Migrations`
+
+#### B. Profile Fallback — Remove Mandatory `default_profile` Editing
+
+_Warren's feedback: "Having to edit the YAML file is cumbersome."_
+
+Extend the profile resolution chain in `ProfileResolver` to add a final fallback: if no profile is configured at step, workflow, or site level, attempt to use the first available Umbraco.AI profile. Most sites have exactly one profile configured — the one they set up for Copilot. AgentRun should just use it.
+
+**Current chain:** `step.profile → workflow.default_profile → site AgentRun:DefaultProfile → throw ProfileNotFoundException`
+
+**New chain:** `step.profile → workflow.default_profile → site AgentRun:DefaultProfile → first available Umbraco.AI profile → throw ProfileNotFoundException`
+
+**What this enables:** Shipped example workflows can omit `default_profile` entirely. A user who has configured Umbraco.AI for Copilot can install AgentRun and run a workflow immediately without editing any files.
+
+**Implementation:** `ProfileResolver.ResolveProfileAlias()` adds a final fallback that calls `IAIChatService` to discover available profiles. If exactly one exists, use it. If multiple exist, use the first and log an info message suggesting the user set `default_profile` explicitly. If none exist, throw with a clear message.
+
+#### C. Provider Error Surfacing — Silent Failure on Bad API Keys / Expired Credit
+
+_Warren's feedback: configured Gemini with no credit, got a blank chat with no error._
+
+Two failure modes to address:
+
+1. **Provider throws but `LlmErrorClassifier` doesn't recognise the error format** — test the classifier against error responses from all three supported providers (Anthropic, OpenAI, Azure OpenAI). Add patterns for: billing/quota exceeded, invalid API key, rate limit, and authentication failure. Surface clear messages in the SSE stream.
+
+2. **Provider returns 200 with empty/null completion** — detect empty completions that follow a provider call (no pending tool results) and surface "The AI provider returned an empty response — check your provider configuration and API credit" before attempting stall recovery. Currently this falls through to stall detection and the user sees a blank chat.
+
+**Acceptance Criteria:**
+
+**Given** a fresh Umbraco 17.3.2 site with Umbraco.AI configured
+**When** the user installs AgentRun.Umbraco via NuGet and runs the site
+**Then** the AgentRun section appears in the backoffice without manual permission grants
+**And** example workflows are present in `App_Data/AgentRun.Umbraco/workflows/` without manual copying
+**And** the user can start a workflow without editing any YAML files (profile auto-detected)
+
+**Given** a user has a single Umbraco.AI profile configured
+**When** they start a workflow that has no `default_profile` set
+**Then** the workflow uses the available profile automatically
+
+**Given** a user's API key is invalid or has no credit remaining
+**When** they start a workflow
+**Then** a clear error message appears in the chat panel within seconds (not a blank screen)
+**And** the message identifies the problem as provider-related (not an AgentRun error)
+
+**Failure & Edge Cases:**
+
+- Workflow folder already exists on disk → migration skips that workflow (never overwrite)
+- Section permission already granted → migration is a no-op
+- Multiple Umbraco.AI profiles configured → use the first, log info suggesting explicit `default_profile`
+- No Umbraco.AI profiles configured → clear error: "No AI provider configured. Go to Settings > AI to set up a provider."
+- Provider returns error in unexpected format → fall through to generic "AI provider error" message rather than blank screen
+- **Deny-by-default:** any unrecognised provider error must surface *something* in the chat, never silently swallow
+
+**What NOT to Build:**
+
+- Do NOT build a backoffice UI for profile selection — that's a future polish item
+- Do NOT build a YAML editor in the backoffice — out of scope
+- Do NOT test against Gemini or other unofficial providers — focus on the three official ones (Anthropic, OpenAI, Azure OpenAI)
+- Do NOT change the migration to run in attended mode — unattended (auto on startup) is the right default
+
+_Full story spec to be created by SM before development begins._
+
+### Story 10.8: Cancel Wiring — CancellationToken Per Instance
+
+_Added 2026-04-12 — identified in pre-launch code review (Codex, confirmed against code by Winston). The cancel endpoint only updates persisted status; it does not signal a CancellationToken to stop the running tool loop. A cancelled run continues calling the LLM provider and executing tools. Listed as a beta known issue._
+
+As a backoffice user,
+I want clicking Cancel to actually stop the running workflow step,
+So that I'm not burning LLM tokens on a run I've already cancelled.
+
+**Implementation approach:** Keep a per-instance `CancellationTokenSource` in `ActiveInstanceRegistry`. The cancel endpoint triggers it. The orchestrator and tool loop check the token between step boundaries and after tool calls. The existing `cancellationToken` parameter plumbing is already in place — it just needs to be wired to an instance-specific source rather than the HTTP request lifetime.
+
+_Full story spec to be created by SM before development begins._
+
+### Story 10.9: SSE Disconnect Resilience
+
+_Added 2026-04-12 — identified in pre-launch code review (Codex, confirmed against code by Winston). When the SSE connection drops (browser close, network blip, proxy timeout), `OperationCanceledException` is caught and the instance is marked Failed. A perfectly good run dies because the client disconnected. Listed as a beta known issue._
+
+As a backoffice user,
+I want a dropped SSE connection to not kill my running workflow,
+So that closing a browser tab or a network interruption doesn't destroy a run that was progressing normally.
+
+**Minimum fix:** Distinguish `OperationCanceledException` (client disconnect) from actual execution failure. Mark disconnected runs as `Disconnected` or `Interrupted`, not `Failed`. Allow retry/resume. **Full fix (v2):** Move execution to a background service so the SSE stream observes execution rather than owning it.
+
+_Full story spec to be created by SM before development begins._
+
+### Story 10.10: Instance Resume After Step Completion
+
+_Added 2026-04-12 — bug found during Story 9.1c manual E2E (2026-04-10). After a step completes, navigating away and returning causes the chat input to reject all messages with "Failed to send message. Try again." Listed as a beta known issue. Full finding: `planning-artifacts/bug-finding-2026-04-10-instance-resume-after-step-completion.md`._
+
+As a backoffice user,
+I want to navigate away from a running workflow and return without the UI breaking,
+So that I don't have to stay on the page for the entire workflow duration.
+
+**Two hypotheses to investigate:** (1) the orchestrator doesn't advance to the next step on reopen; (2) the chat surface posts to the completed step index instead of the active one.
+
+_Full story spec to be created by SM before development begins._
 
 ### Story 10.1: Instance Concurrency Locking
 
@@ -2015,17 +2164,23 @@ So that simultaneous requests don't corrupt instance state.
 
 _Full story spec to be created by SM before development begins._
 
-### Story 10.2: Context Management for Long Conversations
-
-As a developer,
-I want the engine to manage conversation context size for multi-step workflows,
-So that token waste is reduced and long workflows don't hit context limits.
-
-_Full story spec to be created by SM before development begins._
-
 ### Story 10.3: _MOVED to Story 9.0 — ToolLoop Stall Recovery & Completion Logic_
 
 _This story was originally scoped as "Multi-Turn Interactive Fix" — a narrow fix for the ToolLoop exiting when the LLM asks a question. Live testing on 2026-04-07 (instance 642b6c583e3540cda11a8d88938f37e1) revealed a broader root cause: the ToolLoop's exit conditions are too eager and collapse stall, question-to-user, and completion into a single "wait for input" state. The fix was expanded in scope and pulled forward into Story 9.0 as a beta blocker. See Story 9.0 for the full spec._
+
+### Story 10.11: SSE Keepalive and Engine Boundary Cleanup
+
+_Added 2026-04-12 — two small items from the pre-launch code review that are individually too small for their own stories but both improve production readiness._
+
+As a developer,
+I want SSE streams to send periodic keepalive comments and the Engine/ boundary violation in ProfileResolver to be corrected,
+So that proxy/load balancer timeouts don't kill SSE connections and the engine boundary rule is honoured.
+
+**SSE keepalive:** Periodic `: keepalive\n\n` SSE comment lines during long LLM calls in `SseEventEmitter`. Without this, reverse proxies with 30-60s idle timeouts will close connections.
+
+**ProfileResolver boundary:** Extract `IAIChatClientFactory` interface at the Engine boundary. Move the `Umbraco.AI.Core.Chat` dependency to an implementation outside `Engine/`. Small refactor.
+
+_Full story spec to be created by SM before development begins._
 
 ### Story 10.4: Open Source Licence Decision
 
@@ -2107,13 +2262,27 @@ _Full story spec to be created by SM before development begins._
 
 ## Epic 11: Adoption Accelerators
 
-Additional workflow templates, tree navigation, and token usage logging drive adoption after launch. Market research found that the skill gap (developers don't know how to design AI workflows) is the #1 adoption barrier. Templates solve this.
+_Updated 2026-04-12 — template choices revised to prioritise Umbraco-connected workflows that use the in-process content tools (Story 9.12). Templates that require only the current tool set ship first; templates that would need new tools (write-back, Management API) are deferred. The skill gap (developers don't know how to design AI workflows) is the #1 adoption barrier — templates solve this._
 
 ### Story 11.1: Additional Workflow Templates
 
+_Updated 2026-04-12 — template choices should prioritise workflows that use the Umbraco content tools (`list_content`, `get_content`, `list_content_types`) since those are the package's differentiator. Workflows that only use `fetch_url` are less compelling — anyone can build those with a generic AI tool._
+
 As a developer,
-I want 2-3 additional workflow templates (SEO metadata generator, content translation pipeline, content model auditor),
-So that I have more starting points for building AI workflows.
+I want 2-3 additional workflow templates that demonstrate the package's Umbraco-connected capabilities,
+So that I have more starting points for building AI workflows and can see the value of in-process Umbraco access.
+
+**Template candidates (prioritised by feasibility with current tool set):**
+
+| Template | Tools Required | New Tools Needed? | Value |
+|----------|---------------|-------------------|-------|
+| **Content Model Health Check** | `list_content_types`, `list_content`, `write_file` | No | Analyses document type structure: unused types, over-composed types, types with no instances, properties that are never populated. Agencies would use this for site health assessments. |
+| **SEO Metadata Audit** | `list_content`, `get_content`, `write_file` | No | Checks every content node for meta title, meta description, Open Graph properties. Reports missing/thin/duplicate metadata. Uses the in-process tools, not external URL fetching. |
+| **Content Freshness Report** | `list_content`, `get_content`, `write_file` | No | Identifies stale content — pages not updated in 6/12/24 months, pages with no publish date, orphaned pages with no parent link. Editorial planning tool. |
+| Content Translation Pipeline | `list_content`, `get_content`, `write_file` + write-back | Yes (`update_content`) | Needs write-back tools — defer to post-Epic 12 |
+| Content Migration Planner | `fetch_url` + `list_content_types` + write-back | Yes (`create_content`) | Needs write-back tools and remote source access — defer to post-Epic 12 |
+
+**Recommendation:** Ship the top 2-3 from the "No new tools needed" group. They all use the existing in-process content tools and demonstrate genuine Umbraco-native value.
 
 _Full story spec to be created by SM before development begins._
 
@@ -2123,7 +2292,7 @@ As a developer or editor,
 I want workflows and instances organised in the Umbraco section tree (following Umbraco's native pattern),
 So that navigation feels native and familiar.
 
-_Note: This is a significant UX refactor — V2 scope assessment from the brief is accurate._
+_Note: This is a significant UX refactor — V2 scope assessment from the brief is accurate. See also deferred-work.md entry from Story 3.4 manual testing and v2-future-considerations.md Ideas Backlog._
 
 _Full story spec to be created by SM before development begins._
 
@@ -2134,6 +2303,18 @@ I want structured log events emitted per-step with token usage data,
 So that I can monitor LLM costs via existing log infrastructure.
 
 _Note: Not a dashboard — just structured log events. Pro prerequisite without being a Pro feature._
+
+_Full story spec to be created by SM before development begins._
+
+### Story 11.4: `list_media` Tool
+
+_Added 2026-04-12 — deferred from Story 9.12. The media listing tool was identified as useful but not required for the initial content audit workflow. Adding it here enables media-focused workflow templates (orphaned media report, alt text audit, media library health check)._
+
+As a workflow author,
+I want a `list_media` tool that returns media items from the Umbraco media library,
+So that I can build workflows that audit media for alt text, unused files, oversized images, and other media hygiene concerns.
+
+**Implementation:** Same pattern as `list_content` — `IMediaService` / published media cache, returns name, type, file size, dimensions, alt text presence, URL. Registered as `IWorkflowTool`.
 
 _Full story spec to be created by SM before development begins._
 

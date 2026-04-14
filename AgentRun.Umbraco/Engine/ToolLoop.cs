@@ -146,6 +146,19 @@ public static class ToolLoop
 
             if (functionCalls.Count == 0)
             {
+                // Story 10.12: First-turn empty completion detection.
+                // Provider returned 200 but no content on the very first assistant turn
+                // (no prior tool results in context). This is a provider configuration
+                // error (bad API key, no credit), not a mid-workflow stall. Surface
+                // immediately as a provider error instead of entering stall detection.
+                if (assistantTurnCount == 1
+                    && string.IsNullOrWhiteSpace(accumulatedText)
+                    && !messages.Any(m => m.Contents.OfType<FunctionResultContent>().Any()))
+                {
+                    throw new ProviderEmptyResponseException(
+                        context.StepId, context.InstanceId, context.WorkflowAlias);
+                }
+
                 // Permanent structured engine telemetry: capture the API
                 // FinishReason (Anthropic stop_reason equivalent) on every
                 // empty assistant turn. Established as permanent in Story

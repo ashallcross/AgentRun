@@ -202,6 +202,24 @@ Architect-triaged (Winston, 2026-04-10). Full review: `planning-artifacts/codeba
 - **`WorkflowOrchestrator.cs` (181 lines) — defer.** Rewrite comes with background execution; refactoring now is wasted.
 - **`agentrun-chat-message.element.ts` (235 lines) — skip.** DOM-to-HTML pattern is correct for sanitisation + streaming; small file, works.
 
+## IMPORTANT: Silent failure on non-Anthropic LLM providers (2026-04-13)
+
+Reported by Warren Buckley during beta testing. Configured Google Gemini as a provider with an account that had no remaining credit. Started a workflow and got a blank chat with no error, no notification, nothing. Had to figure out himself that the issue was expired API credit.
+
+**Root cause (likely):** The Gemini provider either returns an empty completion (200 with no content) instead of throwing an exception, or throws an error in a format that `LlmErrorClassifier` (Story 7.1) doesn't recognise. Story 7.1 was tested against Anthropic only. The classifier's pattern matching may not cover error shapes from OpenAI, Azure OpenAI, or Gemini providers.
+
+**Two failure modes to investigate:**
+
+1. **Provider throws but classifier doesn't recognise it** — the error falls through to a generic catch that doesn't surface a clear message in the SSE stream. Fix: test `LlmErrorClassifier` against error responses from all three supported providers (Anthropic, OpenAI, Azure OpenAI) and add patterns for common failures (billing, rate limit, invalid key, quota exceeded).
+
+2. **Provider returns 200 with empty/null completion** — the `ToolLoop` sees it as a "no content" turn and triggers stall detection. The user sees a blank chat, then eventually a stall error, with no indication that the LLM provider itself is the problem. Fix: detect empty completions that follow a provider call (no tool results pending) and surface "The AI provider returned an empty response — check your provider configuration and API credit" before attempting stall recovery.
+
+**Impact:** High. The package is positioned as provider-agnostic ("use any Umbraco.AI provider"). If the first experience with a non-Anthropic provider is a silent blank screen, it undermines trust in the entire package. This is especially important as beta testers will use whichever provider they already have configured — not necessarily Anthropic.
+
+**Supported providers to test against:** Anthropic (`Umbraco.AI.Anthropic`), OpenAI (`Umbraco.AI.OpenAI`), Azure OpenAI (`Umbraco.AI.AzureOpenAI`). Gemini is not currently an official Umbraco.AI provider package — Warren may have been using a community or custom integration.
+
+**Suggested home:** Epic 10 story or a patch to Story 7.1's `LlmErrorClassifier`. Should ship before public 1.0 launch — not acceptable for the Marketplace listing to have silent failures on mainstream providers.
+
 ## Context bloat risk for Umbraco content tools on larger sites (2026-04-12)
 
 Identified during manual testing of Story 9.12 content tools. On a 26-node test site the agent calls `get_content` for every node and accumulates all results in conversation context. On sites with 100+ nodes this will exhaust the context window and trigger the same stall/failure pattern that Story 9.7 solved for `fetch_url`.
@@ -226,5 +244,11 @@ Identified during manual testing of Story 9.12 content tools. On a 26-node test 
 - **Duplicated helper methods across 3 content tools** — RejectUnknownParameters, ExtractOptionalStringArgument, ExtractOptionalIntArgument, ExtractRequiredIntArgument copy-pasted verbatim. DRY violation. Refactor to shared static helper when 10-7 (code shape cleanup) is tackled.
 - **O(n²) truncation loop on large result sets** — ListContentTool and ListContentTypesTool remove one item per iteration and re-serialize. Only triggers when result exceeds 256 KB. Performance story candidate for post-beta.
 - **BFS loads full content tree before truncation** — ListContentTool materialises entire published tree into memory before truncation. On sites with 10k+ nodes this is expensive. Consider streaming/early-exit approach in a future performance pass.
+
+## Deferred from: code review of story 10-12-first-run-experience (2026-04-13)
+
+- **Hardcoded `userGroupId = 1` for Administrators in migration** — `AddAgentRunSectionToAdminGroup` assumes Administrators group has DB `id = 1`. Follows the Umbraco.AI `AddAISectionToAdminGroup` pattern, so this is a known limitation, not a bug. Non-standard installs where the admin group was deleted/recreated may need manual section permission grant. Low risk for beta.
+- **`ProfileNotFoundException` has no dedicated StepExecutor error code** — falls into generic `AgentRunException` → `"step_failed"` arm. SSE consumers cannot distinguish "profile not found" from other step failures. Consider adding a dedicated `"profile_not_found"` switch arm if UX needs to show profile-specific guidance.
+- **Input artifact validation failure doesn't populate `context.LlmError`** — pre-existing gap in `StepExecutor`. When `ValidateInputArtifactsAsync` fails (line 71) or completion check fails (line 203), step status is set to Error but `context.LlmError` remains null. The `run.error` SSE event has nothing to emit. User sees Error status with no chat-panel explanation. Not introduced by 10.12.
 
 - **Instance resume after step completion fails — chat input rejects all messages with "Failed to send message. Try again."** Found by Adam during 9.1c Task 7.4 manual E2E. After completing the scanner step on instance `f95d49e1ca1c485faeb79313d453e958` (5-URL multi-fetch run), Adam navigated away and then reopened the instance from the instance list. The scanner had completed (`Step scanner completed` … `Advanced CurrentStepIndex to 1`), but on resume the chat input rejected every message — `ok whats next`, `hello`, `hi` — with the UI error "Failed to send message. Try again." No engine log entries for the failed sends, so the failure is UI-side, not engine-side. **Two distinct hypotheses, both plausible, both need investigation:** (1) the orchestrator pauses workflow advancement when an instance is suspended in the UI and does not pick the analyser back up on reopen; (2) the chat surface in resumed instances posts to the wrong step (the completed scanner index 0 instead of the active analyser index 1) and the engine silently rejects the post. Reproduction: start a CQA instance, run the scanner to completion, navigate away, reopen, attempt to send any chat message. Severity: Medium — affects basic "I left and came back" UX expectations but does not block any happy path that runs to completion in one sitting. **Not** a 9.1c regression and **not** a 9.1b regression — pre-existing instance-lifecycle gap surfaced by exploratory QA. Suggested home: a new Epic 10 story (e.g. **10.X — Instance resume after step completion**) before public 1.0; safe to ship private beta with this open if it's documented in known-issues. Full finding artefact: [bug-finding-2026-04-10-instance-resume-after-step-completion.md](../planning-artifacts/bug-finding-2026-04-10-instance-resume-after-step-completion.md).

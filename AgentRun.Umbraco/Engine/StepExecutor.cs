@@ -246,6 +246,7 @@ public class StepExecutor : IStepExecutor
             // which would otherwise mask them as a generic "provider_error".
             context.LlmError = ex switch
             {
+                ProviderEmptyResponseException empty => ("provider_empty_response", empty.Message),
                 StallDetectedException stall => ("stall_detected", stall.Message),
                 AgentRunException agentEx => ("step_failed", agentEx.Message),
                 _ => LlmErrorClassifier.Classify(ex),

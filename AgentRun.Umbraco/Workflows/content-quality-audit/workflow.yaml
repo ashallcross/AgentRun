@@ -2,8 +2,6 @@
 name: Content Quality Audit
 description: Scans, analyses, and reports on content quality
 mode: interactive
-# Change this to match your configured Umbraco.AI profile alias
-default_profile: anthropic-sonnet-4-6
 # Story 9.6: workflow-configurable tool tuning. Marketing pages routinely
 # exceed the 1 MB engine default in size only marginally — but live testing
 # on 2026-04-07 found that some homepages need ~2 MB headroom. Bump to 2 MB

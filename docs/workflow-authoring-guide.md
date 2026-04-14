@@ -205,8 +205,12 @@ in the Umbraco backoffice under **Settings > AI**.
 2. **Workflow `default_profile`** -- applies to all steps that don't override
 3. **Site `AgentRun:DefaultProfile`** in `appsettings.json` -- fallback for workflows that
    don't specify a default
+4. **Auto-detection** -- if none of the above are set, AgentRun uses the first available
+   Umbraco.AI profile (by alias alphabetical order). No configuration needed for sites
+   with a single AI profile.
 
-At least one of these must resolve to a valid profile alias, or the step fails at startup.
+If no profile can be resolved (including auto-detection), the step fails with a clear error
+directing the user to configure a provider in Settings > AI.
 
 ### When to Use Step-Level Profiles
 
@@ -499,7 +503,8 @@ steps:
         - artifacts/summary.md
 ```
 
-Update `default_profile` to match your configured Umbraco.AI profile alias.
+If you have multiple Umbraco.AI profiles, set `default_profile` to your preferred alias.
+Otherwise, auto-detection picks up your single configured profile automatically.
 
 ### Step 3: Write the Fetcher Prompt (`agents/fetcher.md`)
 

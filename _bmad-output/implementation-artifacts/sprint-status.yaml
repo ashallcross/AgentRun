@@ -44,7 +44,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-30
-last_updated: 2026-04-13 (Story 10.2 done — code review passed, 1 patch applied; Epic 10 in-progress)
+last_updated: 2026-04-14 (Story 10.12 → DONE — full beta-test-plan walkthrough verified all 9 ACs; docs updated in same pass)
 project: AgentRun.Umbraco
 project_key: NOKEY
 tracking_system: file-system
@@ -144,7 +144,7 @@ development_status:
   # Priority order: 10-2 → 10-12 → 10-8 → 10-9 → 10-10 → 10-1 → 10-6 → 10-11 → 10-7 → 10-4 → 10-5.
   epic-10: in-progress
   10-2-context-management-for-long-conversations: done  # Tasks 1–6 done, code review passed (1 patch: WorkflowValidator compaction_turns), 540/540 tests; manual E2E (7.1–7.5) pending Adam's browser testing
-  10-12-first-run-experience-migration-profile-provider: backlog  # added 2026-04-13 — Warren Buckley feedback: package migration (auto-copy workflows + section perms), profile fallback (no YAML editing), provider error surfacing (silent failure on bad API keys)
+  10-12-first-run-experience-migration-profile-provider: done   # done 2026-04-14 — code review PASS + 2 patches applied + full beta-test-plan walkthrough on freshly-created Umbraco 17 site against repacked nupkg; all 9 ACs verified E2E; beta-test-plan.md updated for accuracy in same pass (migration log check + Step 9b provider error handling); 3 deferred to deferred-work.md
   10-8-cancel-wiring-cancellation-token-per-instance: backlog   # added 2026-04-12 — cancel endpoint must signal CancellationTokenSource to stop in-flight work
   10-9-sse-disconnect-resilience: backlog                        # added 2026-04-12 — distinguish client disconnect from execution failure; don't mark runs Failed on connection drop
   10-10-instance-resume-after-step-completion: backlog           # added 2026-04-12 — bug from 9.1c E2E; chat input rejects messages after step completion + navigation away
