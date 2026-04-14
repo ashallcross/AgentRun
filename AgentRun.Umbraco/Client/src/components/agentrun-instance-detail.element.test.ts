@@ -363,6 +363,81 @@ describe("agentrun-instance-detail", () => {
       expect(shouldShowCancel("Cancelled", "interactive", false)).to.be.false;
     });
 
+    // Story 10.9: Retry button extends to Interrupted status; Cancel stays hidden.
+    describe("Interrupted status (Story 10.9)", () => {
+      // Mirror of the component's showRetry computation at
+      // agentrun-instance-detail.element.ts: `(status === "Failed" || status === "Interrupted") && !_streaming`.
+      const shouldShowRetry = (status: string, streaming: boolean) =>
+        (status === "Failed" || status === "Interrupted") && !streaming;
+
+      // Mirror of showCancel: unchanged — Interrupted is not Running|Pending.
+      const shouldShowCancel = (status: string) =>
+        status === "Running" || status === "Pending";
+
+      // Mirror of inputEnabled/inputPlaceholder Interrupted branch (hoisted above
+      // isInteractive so it applies to both modes).
+      const placeholderFor = (status: string, isTerminal: boolean, isInteractive: boolean, activeStep: boolean): { enabled: boolean; text: string } => {
+        if (status === "Interrupted") {
+          return { enabled: false, text: "Run interrupted — click Retry to resume." };
+        }
+        if (isInteractive) {
+          if (isTerminal) return { enabled: false, text: "Workflow complete" };
+          return { enabled: true, text: "Message the agent..." };
+        }
+        return {
+          enabled: false,
+          text: isTerminal ? "Workflow complete" : activeStep ? "Step complete" : "Click 'Start' to begin the workflow.",
+        };
+      };
+
+      it("Retry button renders when status is Interrupted (and not streaming)", () => {
+        expect(shouldShowRetry("Interrupted", false)).to.be.true;
+        // Retry is suppressed while a new stream is already in flight (prevents double-retry race).
+        expect(shouldShowRetry("Interrupted", true)).to.be.false;
+        // Regression guard: Failed path is unchanged.
+        expect(shouldShowRetry("Failed", false)).to.be.true;
+        // Not shown for in-flight or terminal states.
+        expect(shouldShowRetry("Running", false)).to.be.false;
+        expect(shouldShowRetry("Completed", false)).to.be.false;
+        expect(shouldShowRetry("Cancelled", false)).to.be.false;
+        expect(shouldShowRetry("Pending", false)).to.be.false;
+      });
+
+      it("Cancel button hidden when status is Interrupted (locked decision 5)", () => {
+        // Interrupted is not Running|Pending, so the existing showCancel rule
+        // correctly hides Cancel — no code change needed, this test pins it.
+        expect(shouldShowCancel("Interrupted")).to.be.false;
+      });
+
+      it("input placeholder reads 'Run interrupted — click Retry to resume.' for Interrupted in both modes", () => {
+        // Interactive mode
+        const interactive = placeholderFor("Interrupted", false, true, false);
+        expect(interactive.enabled).to.be.false;
+        expect(interactive.text).to.equal("Run interrupted — click Retry to resume.");
+
+        // Autonomous mode
+        const autonomous = placeholderFor("Interrupted", false, false, false);
+        expect(autonomous.enabled).to.be.false;
+        expect(autonomous.text).to.equal("Run interrupted — click Retry to resume.");
+      });
+
+      it("input is disabled for Interrupted (independent of streaming/activeStep)", () => {
+        expect(placeholderFor("Interrupted", false, true, true).enabled).to.be.false;
+        expect(placeholderFor("Interrupted", false, true, false).enabled).to.be.false;
+        expect(placeholderFor("Interrupted", false, false, true).enabled).to.be.false;
+        expect(placeholderFor("Interrupted", false, false, false).enabled).to.be.false;
+      });
+
+      it("Interrupted placeholder is distinct from terminal 'Workflow complete' placeholder", () => {
+        // If Interrupted accidentally fell through to the isTerminal branch, the
+        // user would see "Workflow complete" which is misleading — the run is
+        // recoverable via Retry, not finished.
+        const interrupted = placeholderFor("Interrupted", false, true, false);
+        const completed = placeholderFor("Completed", true, true, false);
+        expect(interrupted.text).to.not.equal(completed.text);
+      });
+    });
+
     // 8.12: run number computation
     it("run number is correctly computed from instance list position", () => {
       const instances: InstanceResponse[] = [

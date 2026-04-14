@@ -56,6 +56,8 @@ export function displayStatus(status: string, mode?: string): string {
       return "Pending";
     case "Cancelled":
       return "Cancelled";
+    case "Interrupted":
+      return "Interrupted";
     default:
       return status;
   }
@@ -70,6 +72,8 @@ export function statusColor(status: string, mode?: string): string | undefined {
       return isInteractive ? undefined : "danger";
     case "Running":
       return isInteractive ? undefined : "warning";
+    case "Interrupted":
+      return "warning";
     default:
       return undefined;
   }

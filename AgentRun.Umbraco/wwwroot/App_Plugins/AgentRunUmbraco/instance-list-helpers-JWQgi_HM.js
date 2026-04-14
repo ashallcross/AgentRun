@@ -5,10 +5,10 @@ function a(e) {
   if (t < 60) return `${t} minute${t === 1 ? "" : "s"} ago`;
   const s = Math.floor(t / 60);
   if (s < 24) return `${s} hour${s === 1 ? "" : "s"} ago`;
-  const o = Math.floor(s / 24);
-  if (o < 30) return `${o} day${o === 1 ? "" : "s"} ago`;
-  const r = Math.floor(o / 30);
-  return `${r} month${r === 1 ? "" : "s"} ago`;
+  const r = Math.floor(s / 24);
+  if (r < 30) return `${r} day${r === 1 ? "" : "s"} ago`;
+  const o = Math.floor(r / 30);
+  return `${o} month${o === 1 ? "" : "s"} ago`;
 }
 function i(e) {
   const n = e.split("/"), t = n[n.length - 1];
@@ -35,6 +35,8 @@ function l(e, n) {
       return "Pending";
     case "Cancelled":
       return "Cancelled";
+    case "Interrupted":
+      return "Interrupted";
     default:
       return e;
   }
@@ -48,6 +50,8 @@ function d(e, n) {
       return t ? void 0 : "danger";
     case "Running":
       return t ? void 0 : "warning";
+    case "Interrupted":
+      return "warning";
     default:
       return;
   }
@@ -63,8 +67,8 @@ function f(e) {
 }
 function g(e) {
   const t = [...e].sort(
-    (s, o) => new Date(s.createdAt).getTime() - new Date(o.createdAt).getTime()
-  ).map((s, o) => ({ ...s, runNumber: o + 1 }));
+    (s, r) => new Date(s.createdAt).getTime() - new Date(r.createdAt).getTime()
+  ).map((s, r) => ({ ...s, runNumber: r + 1 }));
   return t.reverse(), t;
 }
 export {
@@ -77,4 +81,4 @@ export {
   a as r,
   d as s
 };
-//# sourceMappingURL=instance-list-helpers-Cp7Qb08Y.js.map
+//# sourceMappingURL=instance-list-helpers-JWQgi_HM.js.map

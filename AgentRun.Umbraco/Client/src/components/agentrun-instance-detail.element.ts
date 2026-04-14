@@ -404,6 +404,11 @@ export class AgentRunInstanceDetailElement extends UmbLitElement {
 
   private async _onRetryClick(): Promise<void> {
     if (this._retrying || this._streaming || !this._instance) return;
+    if (
+      this._instance.status !== "Failed" &&
+      this._instance.status !== "Interrupted"
+    )
+      return;
 
     this._retrying = true;
     this._chatMessages = [];
@@ -912,8 +917,10 @@ export class AgentRunInstanceDetailElement extends UmbLitElement {
     const showStart = inst.status === "Pending" && !this._streaming;
     const startLabel = "Start";
 
-    // Retry button: shows for Failed instances
-    const showRetry = inst.status === "Failed" && !this._streaming;
+    // Retry button: shows for Failed or Interrupted instances (Story 10.9 —
+    // Interrupted is a recoverable state left by a dropped SSE connection;
+    // Retry is the correct resume affordance, same as for Failed).
+    const showRetry = (inst.status === "Failed" || inst.status === "Interrupted") && !this._streaming;
 
     // Continue button (header): autonomous mode only — step advancement between steps
     const showContinue = !isInteractive
@@ -930,10 +937,19 @@ export class AgentRunInstanceDetailElement extends UmbLitElement {
     // Input enablement: interactive vs autonomous
     let inputEnabled: boolean;
     let inputPlaceholder: string;
-    if (isInteractive) {
+    if (inst.status === "Interrupted") {
+      // Story 10.9: Interrupted is recoverable — disable input and point the
+      // user at Retry. Applies to both interactive and autonomous modes;
+      // distinct from the "Workflow complete" terminal-state placeholder.
+      inputEnabled = false;
+      inputPlaceholder = "Run interrupted — click Retry to resume.";
+    } else if (isInteractive) {
       if (isTerminal) {
         inputEnabled = false;
-        inputPlaceholder = "Workflow complete";
+        inputPlaceholder =
+          inst.status === "Cancelled" ? "Run cancelled."
+          : inst.status === "Failed" ? "Run failed — click Retry to resume."
+          : "Workflow complete.";
       } else if (this._viewingStepId) {
         inputEnabled = false;
         inputPlaceholder = "Viewing step history";
@@ -951,7 +967,9 @@ export class AgentRunInstanceDetailElement extends UmbLitElement {
     } else {
       inputEnabled = this._streaming && !this._viewingStepId;
       inputPlaceholder = isTerminal
-        ? "Workflow complete"
+        ? (inst.status === "Cancelled" ? "Run cancelled."
+           : inst.status === "Failed" ? "Run failed — click Retry to resume."
+           : "Workflow complete.")
         : activeStep ? "Step complete" : "Click 'Start' to begin the workflow.";
     }
 

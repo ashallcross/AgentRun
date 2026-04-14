@@ -17,33 +17,25 @@ If this is a new site, run the Umbraco install wizard first (`dotnet run`, compl
 ```bash
 dotnet add package Umbraco.AI
 dotnet add package Umbraco.AI.Anthropic
-dotnet add package AgentRun.Umbraco --version 1.0.0-beta.1
+dotnet add package AgentRun.Umbraco --version 1.0.0-beta.2
 ```
 
 All three packages auto-register — no `Program.cs` changes needed.
 
-## Copy the example workflows
-
-NuGet links content files from its cache rather than copying them into your project. You need to copy them manually:
+## Run the site
 
 ```bash
-mkdir -p App_Data/AgentRun.Umbraco/workflows
-cp -r ~/.nuget/packages/agentrun.umbraco/1.0.0-beta.1/contentFiles/any/any/App_Data/AgentRun.Umbraco/workflows/ App_Data/AgentRun.Umbraco/workflows/
+dotnet run
 ```
 
-On Windows, replace `~/.nuget` with `%USERPROFILE%\.nuget` and use `xcopy` or `robocopy`:
+On first startup, AgentRun automatically:
 
-```powershell
-mkdir App_Data\AgentRun.Umbraco\workflows
-xcopy /E /I "%USERPROFILE%\.nuget\packages\agentrun.umbraco\1.0.0-beta.1\contentFiles\any\any\App_Data\AgentRun.Umbraco\workflows" "App_Data\AgentRun.Umbraco\workflows"
-```
+- Copies the three example workflows to `App_Data/AgentRun.Umbraco/workflows/`
+- Grants the AgentRun section permission to the Administrators user group
 
-## Set up permissions
+Umbraco.AI does the same for its own AI section. No manual file copying or permission toggling needed.
 
-1. Run the site: `dotnet run`
-2. Go to **Users > User Groups > Administrators**
-3. Grant both the **AI** and **AgentRun** section permissions
-4. Save, then **log out and back in** (the auth token needs refreshing)
+**Log out and back in** once the site is running — the auth token needs to refresh to pick up the new section permissions.
 
 ## Configure an AI provider
 
@@ -52,29 +44,26 @@ xcopy /E /I "%USERPROFILE%\.nuget\packages\agentrun.umbraco\1.0.0-beta.1\content
 3. Select your provider (e.g. Anthropic), give it a name and alias, and enter your API key
 4. Click **Profiles > Create Profile**
 5. Select the connection, choose a model, and set an alias
-6. Note the profile alias — you'll need it next
 
-## Point the workflows at your profile
-
-Edit the `default_profile` field in each workflow file to match your profile alias:
-
-- `App_Data/AgentRun.Umbraco/workflows/umbraco-content-audit/workflow.yaml`
-- `App_Data/AgentRun.Umbraco/workflows/content-quality-audit/workflow.yaml`
-- `App_Data/AgentRun.Umbraco/workflows/accessibility-quick-scan/workflow.yaml`
-
-Restart the site after editing.
+That's it — AgentRun auto-detects your profile. No YAML editing needed for first run. If you have multiple profiles, you can set `default_profile` in each workflow's `workflow.yaml` for deterministic selection.
 
 ## Try it
 
 Navigate to the **Agent Workflows** section in the backoffice. I'd suggest starting with the **Umbraco Content Audit** — it reads your published content directly, so you'll see results straight away.
 
+## What's new in beta.2
+
+- **Auto-setup on install** — no more manual file copying or permission grants
+- **Profile auto-detection** — no YAML editing, just configure Umbraco.AI as normal
+- **Clearer provider errors** — if your API key is invalid or out of credit, you'll see a proper error instead of a silent blank chat
+- **Larger site audits** — context management prevents stalls on sites with lots of content
+
 ## Known limitations
 
-- Content audit on large sites (100+ nodes) may stall — use content type filters to audit in sections
-- Cancel is cosmetic — it updates the label but doesn't stop the in-flight LLM call
-- If you close the browser tab during a run, it gets marked as Failed even if it partially completed
-- Don't navigate away from an instance while it's running — the chat input breaks if you return after a step completes
-- Don't run two instances of the same workflow simultaneously
+- Cancel is cosmetic — it updates the label but doesn't stop the in-flight LLM call (fix planned)
+- If you close the browser tab during a run, it gets marked as Failed even if it partially completed (fix planned)
+- Don't navigate away from an instance while it's running — the chat input breaks if you return after a step completes (fix planned)
+- Don't run two instances of the same workflow simultaneously — no concurrency locking yet
 
 ## Feedback
 

@@ -210,13 +210,18 @@ public sealed partial class InstanceManager : IInstanceManager
                 $"Instance {instanceId} is already running. Concurrent execution is not permitted.");
         }
 
-        // Terminal-status guard (Story 10.8 code review): if the persisted state is
-        // already terminal, refuse to transition out of it. Protects against the race
-        // where an endpoint read state as Running, then a concurrent operation moved
-        // it to a terminal state before this write lands. Without this guard a cancel
-        // can overwrite a freshly-Completed or freshly-Failed run.
+        // Terminal-status guard (Story 10.8 code review, tightened in Story 10.9
+        // manual E2E): if the persisted state is terminal, refuse *sideways*
+        // terminal transitions (e.g., Cancel overwriting a freshly-written
+        // Completed). But Retry is a deliberate recovery — it resets a terminal
+        // Failed to Running, and Retry is the only path that ever writes Running
+        // to a terminal state (the RetryInstance gate only admits Failed or
+        // Interrupted, and StartInstance rejects all three terminals). Allow
+        // transitions INTO Running so Retry(Failed) works; everything else into
+        // a terminal state still refuses.
         if (state.Status is InstanceStatus.Completed or InstanceStatus.Failed or InstanceStatus.Cancelled
-            && state.Status != status)
+            && state.Status != status
+            && status != InstanceStatus.Running)
         {
             _logger.LogInformation(
                 "Ignored status transition for instance {InstanceId}: already in terminal state {CurrentStatus}, refused transition to {NewStatus}",
@@ -255,10 +260,10 @@ public sealed partial class InstanceManager : IInstanceManager
             return false;
         }
 
-        if (state.Status is not (InstanceStatus.Completed or InstanceStatus.Failed or InstanceStatus.Cancelled))
+        if (state.Status is not (InstanceStatus.Completed or InstanceStatus.Failed or InstanceStatus.Cancelled or InstanceStatus.Interrupted))
         {
             throw new InvalidOperationException(
-                $"Cannot delete instance {instanceId} with status {state.Status}. Only completed, failed, or cancelled instances can be deleted.");
+                $"Cannot delete instance {instanceId} with status {state.Status}. Only completed, failed, cancelled, or interrupted instances can be deleted.");
         }
 
         Directory.Delete(instanceDir, recursive: true);

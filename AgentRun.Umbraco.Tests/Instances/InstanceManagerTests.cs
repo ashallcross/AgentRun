@@ -334,6 +334,142 @@ public class InstanceManagerTests
         Assert.That(result, Is.Null);
     }
 
+    // ---------------- Story 10.9: Interrupted status ---------------- //
+
+    // Story 10.9 AC10 + locked decision 3: Interrupted is NOT a terminal state.
+    // The terminal-transition guard must allow Interrupted → Running so Retry can
+    // recover the run. Adding Interrupted to the guard would break Retry.
+    [Test]
+    public async Task SetInstanceStatusAsync_InterruptedToRunning_Allowed()
+    {
+        var definition = CreateTestDefinition();
+        var created = await _manager.CreateInstanceAsync("test-workflow", definition, "admin@example.com", CancellationToken.None);
+
+        // Pending → Interrupted (via Running → Interrupted to stay on a plausible code path).
+        await _manager.SetInstanceStatusAsync("test-workflow", created.InstanceId, InstanceStatus.Running, CancellationToken.None);
+        await _manager.SetInstanceStatusAsync("test-workflow", created.InstanceId, InstanceStatus.Interrupted, CancellationToken.None);
+
+        // Interrupted → Running must succeed (this is the Retry transition).
+        var resumed = await _manager.SetInstanceStatusAsync("test-workflow", created.InstanceId, InstanceStatus.Running, CancellationToken.None);
+
+        Assert.That(resumed.Status, Is.EqualTo(InstanceStatus.Running));
+
+        // Verify the on-disk YAML reflects the transition (guard didn't silently refuse).
+        var readBack = await _manager.GetInstanceAsync("test-workflow", created.InstanceId, CancellationToken.None);
+        Assert.That(readBack!.Status, Is.EqualTo(InstanceStatus.Running));
+    }
+
+    // Story 10.9 AC4: Interrupted round-trips through the YAML serializer/deserializer.
+    [Test]
+    public async Task SetInstanceStatusAsync_Interrupted_RoundTripsThroughYaml()
+    {
+        var definition = CreateTestDefinition();
+        var created = await _manager.CreateInstanceAsync("test-workflow", definition, "admin@example.com", CancellationToken.None);
+
+        await _manager.SetInstanceStatusAsync("test-workflow", created.InstanceId, InstanceStatus.Running, CancellationToken.None);
+        await _manager.SetInstanceStatusAsync("test-workflow", created.InstanceId, InstanceStatus.Interrupted, CancellationToken.None);
+
+        // Read-back via FindInstanceAsync exercises the full deserialization path.
+        var readBack = await _manager.FindInstanceAsync(created.InstanceId, CancellationToken.None);
+
+        Assert.That(readBack, Is.Not.Null);
+        Assert.That(readBack!.Status, Is.EqualTo(InstanceStatus.Interrupted));
+    }
+
+    // Story 10.9 AC7 (engine side): DeleteInstanceAsync accepts Interrupted.
+    [Test]
+    public async Task DeleteInstanceAsync_OnInterrupted_Succeeds()
+    {
+        var definition = CreateTestDefinition();
+        var created = await _manager.CreateInstanceAsync("test-workflow", definition, "admin@example.com", CancellationToken.None);
+
+        await _manager.SetInstanceStatusAsync("test-workflow", created.InstanceId, InstanceStatus.Running, CancellationToken.None);
+        await _manager.SetInstanceStatusAsync("test-workflow", created.InstanceId, InstanceStatus.Interrupted, CancellationToken.None);
+
+        var deleted = await _manager.DeleteInstanceAsync("test-workflow", created.InstanceId, CancellationToken.None);
+
+        Assert.That(deleted, Is.True);
+        var instanceDir = Path.Combine(_tempDir, "test-workflow", created.InstanceId);
+        Assert.That(Directory.Exists(instanceDir), Is.False);
+    }
+
+    // Story 10.9 AC4: JSON serialization of Interrupted produces "Interrupted".
+    [Test]
+    public void InstanceStatus_Interrupted_SerializesAsInterruptedString()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(InstanceStatus.Interrupted);
+
+        Assert.That(json, Is.EqualTo("\"Interrupted\""));
+
+        // Round-trip through deserialization.
+        var parsed = System.Text.Json.JsonSerializer.Deserialize<InstanceStatus>(json);
+        Assert.That(parsed, Is.EqualTo(InstanceStatus.Interrupted));
+    }
+
+    // Story 10.9 manual E2E code review: Retry(Failed) must transition Failed → Running.
+    // Pre-10.9 the terminal-transition guard refused this silently, leaving Retry broken —
+    // RetryInstance would reset the step, call SetInstanceStatusAsync(Running) which no-op'd,
+    // and the orchestrator ran with the stale Failed status so the UI stayed stuck on Retry.
+    // The fix narrows the guard to allow transitions INTO Running (Retry is the only path
+    // that ever writes Running to a terminal state; RetryInstance's gate only admits
+    // Failed|Interrupted, and StartInstance rejects all terminals).
+    [Test]
+    public async Task SetInstanceStatusAsync_FailedToRunning_Allowed()
+    {
+        var definition = CreateTestDefinition();
+        var created = await _manager.CreateInstanceAsync("test-workflow", definition, "admin@example.com", CancellationToken.None);
+
+        await _manager.SetInstanceStatusAsync("test-workflow", created.InstanceId, InstanceStatus.Running, CancellationToken.None);
+        await _manager.SetInstanceStatusAsync("test-workflow", created.InstanceId, InstanceStatus.Failed, CancellationToken.None);
+
+        var retried = await _manager.SetInstanceStatusAsync("test-workflow", created.InstanceId, InstanceStatus.Running, CancellationToken.None);
+
+        Assert.That(retried.Status, Is.EqualTo(InstanceStatus.Running));
+
+        var readBack = await _manager.GetInstanceAsync("test-workflow", created.InstanceId, CancellationToken.None);
+        Assert.That(readBack!.Status, Is.EqualTo(InstanceStatus.Running));
+    }
+
+    // Story 10.9 manual E2E code review: same for Cancelled → Running (defensive —
+    // RetryInstance's gate does not admit Cancelled, but the engine-level method
+    // allows the transition for symmetry. If a future Retry-Cancelled path is
+    // introduced, the guard won't need to change.)
+    [Test]
+    public async Task SetInstanceStatusAsync_CancelledToRunning_Allowed()
+    {
+        var definition = CreateTestDefinition();
+        var created = await _manager.CreateInstanceAsync("test-workflow", definition, "admin@example.com", CancellationToken.None);
+
+        await _manager.SetInstanceStatusAsync("test-workflow", created.InstanceId, InstanceStatus.Running, CancellationToken.None);
+        await _manager.SetInstanceStatusAsync("test-workflow", created.InstanceId, InstanceStatus.Cancelled, CancellationToken.None);
+
+        var recovered = await _manager.SetInstanceStatusAsync("test-workflow", created.InstanceId, InstanceStatus.Running, CancellationToken.None);
+
+        Assert.That(recovered.Status, Is.EqualTo(InstanceStatus.Running));
+    }
+
+    // Story 10.8 regression guard for Story 10.9: terminal-transition guard still
+    // refuses sideways transitions between terminal states (Completed → Interrupted,
+    // Completed → Cancelled, Failed → Cancelled, etc.). Only transitions INTO Running
+    // are permitted post-10.9 guard tightening.
+    [Test]
+    public async Task SetInstanceStatusAsync_TerminalToAnything_Refused()
+    {
+        var definition = CreateTestDefinition();
+        var created = await _manager.CreateInstanceAsync("test-workflow", definition, "admin@example.com", CancellationToken.None);
+
+        await _manager.SetInstanceStatusAsync("test-workflow", created.InstanceId, InstanceStatus.Running, CancellationToken.None);
+        await _manager.SetInstanceStatusAsync("test-workflow", created.InstanceId, InstanceStatus.Completed, CancellationToken.None);
+
+        // Terminal → anything else: guard returns state unchanged (does NOT throw, logs Info).
+        var attempted = await _manager.SetInstanceStatusAsync("test-workflow", created.InstanceId, InstanceStatus.Interrupted, CancellationToken.None);
+
+        Assert.That(attempted.Status, Is.EqualTo(InstanceStatus.Completed));
+
+        var readBack = await _manager.GetInstanceAsync("test-workflow", created.InstanceId, CancellationToken.None);
+        Assert.That(readBack!.Status, Is.EqualTo(InstanceStatus.Completed));
+    }
+
     [Test]
     public async Task AtomicWrites_NoTmpFilePersistedAfterWrite()
     {

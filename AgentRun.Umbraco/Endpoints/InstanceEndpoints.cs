@@ -132,12 +132,12 @@ public class InstanceEndpoints : ControllerBase
             });
         }
 
-        if (state.Status is not (InstanceStatus.Completed or InstanceStatus.Failed or InstanceStatus.Cancelled))
+        if (state.Status is not (InstanceStatus.Completed or InstanceStatus.Failed or InstanceStatus.Cancelled or InstanceStatus.Interrupted))
         {
             return Conflict(new ErrorResponse
             {
                 Error = "invalid_status",
-                Message = $"Cannot delete instance with status '{state.Status}'. Only completed, failed, or cancelled instances can be deleted."
+                Message = $"Cannot delete instance with status '{state.Status}'. Only completed, failed, cancelled, or interrupted instances can be deleted."
             });
         }
 

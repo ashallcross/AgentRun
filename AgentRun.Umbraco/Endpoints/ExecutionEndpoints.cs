@@ -60,8 +60,8 @@ public class ExecutionEndpoints : ControllerBase
             });
         }
 
-        // Reject completed/failed/cancelled
-        if (instance.Status is InstanceStatus.Completed or InstanceStatus.Failed or InstanceStatus.Cancelled)
+        // Reject completed/failed/cancelled/interrupted (Interrupted uses Retry, not Start — Story 10.9)
+        if (instance.Status is InstanceStatus.Completed or InstanceStatus.Failed or InstanceStatus.Cancelled or InstanceStatus.Interrupted)
         {
             return Conflict(new ErrorResponse
             {
@@ -122,39 +122,78 @@ public class ExecutionEndpoints : ControllerBase
             });
         }
 
-        if (instance.Status != InstanceStatus.Failed)
+        if (instance.Status is not (InstanceStatus.Failed or InstanceStatus.Interrupted))
         {
             return Conflict(new ErrorResponse
             {
                 Error = "invalid_state",
-                Message = "Instance is not in a failed state"
+                Message = "Instance is not in a failed or interrupted state"
             });
         }
 
-        // Find the step in error
-        var errorStepIndex = instance.Steps.FindIndex(s => s.Status == StepStatus.Error);
-        if (errorStepIndex == -1)
+        // Reject if an orchestrator is still draining for this instance — mirrors
+        // StartInstance's already_running guard to prevent a parallel orchestrator
+        // from racing with a prior one that has not released its SSE writer slot
+        // (e.g., rapid double-click Retry before the first stream tore down).
+        if (_activeInstanceRegistry.GetMessageWriter(id) is not null)
+        {
+            return Conflict(new ErrorResponse
+            {
+                Error = "already_running",
+                Message = $"Instance '{id}' is already running. Concurrent execution is not permitted."
+            });
+        }
+
+        // Story 10.9: Failed paths resume from the StepStatus.Error step;
+        // Interrupted paths resume from the StepStatus.Active step (the orphan
+        // left when the SSE stream was torn down mid-execution).
+        var stepStatusToFind = instance.Status == InstanceStatus.Failed
+            ? StepStatus.Error
+            : StepStatus.Active;
+
+        var stepIndex = instance.Steps.FindIndex(s => s.Status == stepStatusToFind);
+        if (stepIndex == -1)
         {
             return Conflict(new ErrorResponse
             {
                 Error = "invalid_state",
-                Message = "No step in error state found"
+                Message = instance.Status == InstanceStatus.Failed
+                    ? "No errored step found to resume"
+                    : "No active step found to resume"
             });
         }
 
-        var errorStep = instance.Steps[errorStepIndex];
+        var targetStep = instance.Steps[stepIndex];
 
-        // Truncate the failed assistant message from conversation
-        await _conversationStore.TruncateLastAssistantEntryAsync(
-            instance.WorkflowAlias, instance.InstanceId, errorStep.Id, cancellationToken);
+        // Story 10.9: truncate JSONL only for Failed. For Interrupted, the stream
+        // was torn down mid-response — no failed assistant message was committed
+        // to JSONL (ConversationRecorder writes on completion boundaries, not deltas).
+        if (instance.Status == InstanceStatus.Failed)
+        {
+            await _conversationStore.TruncateLastAssistantEntryAsync(
+                instance.WorkflowAlias, instance.InstanceId, targetStep.Id, cancellationToken);
+        }
 
         // Reset step to Pending so the executor handles the Active transition
         await _instanceManager.UpdateStepStatusAsync(
-            instance.WorkflowAlias, instance.InstanceId, errorStepIndex, StepStatus.Pending, cancellationToken);
+            instance.WorkflowAlias, instance.InstanceId, stepIndex, StepStatus.Pending, cancellationToken);
 
-        // Set instance back to Running
-        instance = await _instanceManager.SetInstanceStatusAsync(
-            instance.WorkflowAlias, instance.InstanceId, InstanceStatus.Running, cancellationToken);
+        // Set instance back to Running. Map the manager's "already running"
+        // InvalidOperationException into a 409 — otherwise a concurrent Retry
+        // that wins the state-read race surfaces as an unhandled 500.
+        try
+        {
+            instance = await _instanceManager.SetInstanceStatusAsync(
+                instance.WorkflowAlias, instance.InstanceId, InstanceStatus.Running, cancellationToken);
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("already running"))
+        {
+            return Conflict(new ErrorResponse
+            {
+                Error = "already_running",
+                Message = $"Instance '{id}' is already running. Concurrent execution is not permitted."
+            });
+        }
 
         return await ExecuteSseAsync(instance, cancellationToken);
     }
@@ -209,6 +248,49 @@ public class ExecutionEndpoints : ControllerBase
                         instance.InstanceId);
                 }
 
+                return new EmptyResult();
+            }
+
+            // Story 10.9: distinguish client disconnect (tab close, network
+            // drop, F5, proxy idle timeout) from a provider-internal OCE.
+            // The controller `cancellationToken` parameter is bound from
+            // `HttpContext.RequestAborted` by the ASP.NET model binder — it
+            // fires iff the HTTP request is aborted. Provider-internal OCEs
+            // (e.g., a nested HttpClient timeout) do NOT cancel this token.
+            // When the client has gone away, persisting Failed is semantically
+            // wrong — the run was progressing normally. Persist Interrupted
+            // instead and return cleanly (same "don't rethrow a handled OCE"
+            // pattern as the Cancelled branch above; see 10.8 amendment 1.2).
+            // Gate on current.Status == Running: if the orchestrator has already
+            // transitioned the run to a terminal state (Completed/Failed/Cancelled)
+            // before the OCE propagated here, we must NOT attempt an Interrupted
+            // write. The terminal-transition guard in InstanceManager would refuse
+            // silently, but the "marking Interrupted" log would lie about what
+            // happened. For Pending/Interrupted, the same write would refresh
+            // UpdatedAt for no user-visible gain.
+            if (current is not null
+                && current.Status == InstanceStatus.Running
+                && cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogInformation(
+                    "SSE client disconnected for instance {InstanceId}; marking Interrupted",
+                    instance.InstanceId);
+
+                try
+                {
+                    await _instanceManager.SetInstanceStatusAsync(
+                        instance.WorkflowAlias, instance.InstanceId,
+                        InstanceStatus.Interrupted, CancellationToken.None);
+                }
+                catch (Exception statusEx)
+                {
+                    _logger.LogError(statusEx,
+                        "Failed to set instance {InstanceId} status to Interrupted after disconnect",
+                        instance.InstanceId);
+                }
+
+                // Do NOT emit run.finished(Interrupted) — the client is gone;
+                // the emit would fail on a half-closed stream (locked decision 8).
                 return new EmptyResult();
             }
 

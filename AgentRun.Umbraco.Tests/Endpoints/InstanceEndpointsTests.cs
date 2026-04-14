@@ -531,6 +531,52 @@ public class InstanceEndpointsTests
         _activeInstanceRegistry.DidNotReceive().RequestCancellation(Arg.Any<string>());
     }
 
+    // ---------------- Story 10.9: Interrupted guards ---------------- //
+
+    // Story 10.9 AC8: cancel on an Interrupted instance returns 409 — the existing
+    // `not (Running or Pending)` guard already handles this. No code change required;
+    // this test pins the behaviour so a future refactor of the guard catches regressions.
+    [Test]
+    public async Task CancelInstance_Returns409_WhenInterrupted()
+    {
+        var state = CreateTestInstance(status: InstanceStatus.Interrupted);
+        _instanceManager.FindInstanceAsync("abc123", Arg.Any<CancellationToken>())
+            .Returns(state);
+
+        var result = await _endpoints.CancelInstance("abc123", CancellationToken.None);
+
+        var conflictResult = result as ConflictObjectResult;
+        Assert.That(conflictResult, Is.Not.Null);
+        Assert.That(conflictResult!.StatusCode, Is.EqualTo(409));
+
+        var error = conflictResult.Value as ErrorResponse;
+        Assert.That(error?.Error, Is.EqualTo("invalid_status"));
+
+        // No CTS signal attempted — guard short-circuits before RequestCancellation.
+        _activeInstanceRegistry.DidNotReceive().RequestCancellation(Arg.Any<string>());
+    }
+
+    // Story 10.9 AC7: delete on an Interrupted instance returns 204 — users need
+    // an exit other than Retry.
+    [Test]
+    public async Task DeleteInstance_Returns204_WhenInterrupted()
+    {
+        var state = CreateTestInstance(status: InstanceStatus.Interrupted);
+        _instanceManager.FindInstanceAsync("abc123", Arg.Any<CancellationToken>())
+            .Returns(state);
+        _instanceManager.DeleteInstanceAsync("content-audit", "abc123", Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var result = await _endpoints.DeleteInstance("abc123", CancellationToken.None);
+
+        var noContentResult = result as NoContentResult;
+        Assert.That(noContentResult, Is.Not.Null);
+        Assert.That(noContentResult!.StatusCode, Is.EqualTo(204));
+
+        await _instanceManager.Received(1).DeleteInstanceAsync(
+            "content-audit", "abc123", Arg.Any<CancellationToken>());
+    }
+
     // Story 10.8 AC2: cancel is safe when no orchestrator is active (registry no-op)
     [Test]
     public async Task CancelInstance_ReturnsOk_WhenRegistryHasNoEntry()

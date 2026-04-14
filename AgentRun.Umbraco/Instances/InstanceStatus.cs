@@ -9,5 +9,6 @@ public enum InstanceStatus
     Running,
     Completed,
     Failed,
-    Cancelled
+    Cancelled,
+    Interrupted
 }

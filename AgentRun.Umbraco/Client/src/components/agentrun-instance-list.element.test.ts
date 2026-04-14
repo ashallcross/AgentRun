@@ -249,6 +249,27 @@ describe("agentrun-instance-list", () => {
     });
   });
 
+  // Story 10.9: Interrupted status surfacing
+  describe("Interrupted status (Story 10.9)", () => {
+    it("displayStatus returns 'Interrupted' in both interactive and autonomous modes", () => {
+      expect(displayStatus("Interrupted", "interactive")).to.equal("Interrupted");
+      expect(displayStatus("Interrupted", "autonomous")).to.equal("Interrupted");
+      expect(displayStatus("Interrupted")).to.equal("Interrupted");
+    });
+
+    it("statusColor returns 'warning' for Interrupted in both modes", () => {
+      expect(statusColor("Interrupted", "interactive")).to.equal("warning");
+      expect(statusColor("Interrupted", "autonomous")).to.equal("warning");
+      expect(statusColor("Interrupted")).to.equal("warning");
+    });
+
+    it("isTerminalStatus returns false for Interrupted (recoverable, not terminal)", () => {
+      // Locked decision 3: Interrupted is NOT terminal — the UI uses isTerminalStatus
+      // to gate "Workflow complete" input state, which would be wrong for Interrupted.
+      expect(isTerminalStatus("Interrupted")).to.be.false;
+    });
+  });
+
   describe("empty state", () => {
     it("empty instances array triggers empty state rendering", () => {
       const instances: InstanceResponse[] = [];
