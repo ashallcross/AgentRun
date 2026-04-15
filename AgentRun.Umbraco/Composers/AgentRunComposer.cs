@@ -50,6 +50,9 @@ public class AgentRunComposer : IComposer
         builder.Services.AddSingleton<IActiveInstanceRegistry, ActiveInstanceRegistry>();
 
         // Step execution engine
+        // Story 10.7a Track C: StepExecutor delegates failure classification to
+        // IStepExecutionFailureHandler (preserves AgentRunException bypass invariant).
+        builder.Services.AddSingleton<IStepExecutionFailureHandler, StepExecutionFailureHandler>();
         builder.Services.AddSingleton<IStepExecutor, StepExecutor>();
 
         // Workflow orchestrator (step sequencing + mode logic)

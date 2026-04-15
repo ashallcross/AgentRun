@@ -72,6 +72,11 @@ public class StepExecutorTests
 
     private StepExecutor CreateExecutor(IEnumerable<IWorkflowTool>? tools = null)
     {
+        // Story 10.7a Track C: StepExecutor takes IStepExecutionFailureHandler.
+        // Real handler injected (stateless, pure classification; dedicated tests
+        // in StepExecutionFailureHandlerTests). Existing failure-path assertions
+        // remain identical because the handler preserves the AgentRunException
+        // bypass invariant verbatim.
         return new StepExecutor(
             _profileResolver,
             _promptAssembler,
@@ -81,6 +86,7 @@ public class StepExecutorTests
             _artifactValidator,
             _completionChecker,
             new StubToolLimitResolver(),
+            new StepExecutionFailureHandler(),
             _logger);
     }
 
@@ -215,7 +221,7 @@ public class StepExecutorTests
     {
         // AC #11: structured logging with WorkflowAlias, InstanceId, StepId
         var loggerSub = Substitute.For<ILogger<StepExecutor>>();
-        var executor = new StepExecutor(_profileResolver, _promptAssembler, [], _instanceManager, _conversationStore, _artifactValidator, _completionChecker, new StubToolLimitResolver(), loggerSub);
+        var executor = new StepExecutor(_profileResolver, _promptAssembler, [], _instanceManager, _conversationStore, _artifactValidator, _completionChecker, new StubToolLimitResolver(), new StepExecutionFailureHandler(), loggerSub);
         var context = MakeExecutionContext();
 
         await executor.ExecuteStepAsync(context, CancellationToken.None);

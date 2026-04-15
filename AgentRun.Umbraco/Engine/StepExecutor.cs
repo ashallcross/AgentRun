@@ -14,6 +14,7 @@ public class StepExecutor : IStepExecutor
     private readonly IArtifactValidator _artifactValidator;
     private readonly ICompletionChecker _completionChecker;
     private readonly IToolLimitResolver _toolLimitResolver;
+    private readonly IStepExecutionFailureHandler _failureHandler;
     private readonly ILogger<StepExecutor> _logger;
 
     public StepExecutor(
@@ -25,6 +26,7 @@ public class StepExecutor : IStepExecutor
         IArtifactValidator artifactValidator,
         ICompletionChecker completionChecker,
         IToolLimitResolver toolLimitResolver,
+        IStepExecutionFailureHandler failureHandler,
         ILogger<StepExecutor> logger)
     {
         _profileResolver = profileResolver;
@@ -35,6 +37,7 @@ public class StepExecutor : IStepExecutor
         _artifactValidator = artifactValidator;
         _completionChecker = completionChecker;
         _toolLimitResolver = toolLimitResolver;
+        _failureHandler = failureHandler;
         _logger = logger;
     }
 
@@ -240,17 +243,10 @@ public class StepExecutor : IStepExecutor
                 "Step {StepId} failed for workflow {WorkflowAlias} instance {InstanceId}",
                 step.Id, instance.WorkflowAlias, instance.InstanceId);
 
-            // Engine-domain exceptions (AgentRunException and subclasses such as
-            // StallDetectedException from Story 9.0) carry their own user-facing
-            // message and must NOT be reformatted by the LLM provider classifier,
-            // which would otherwise mask them as a generic "provider_error".
-            context.LlmError = ex switch
-            {
-                ProviderEmptyResponseException empty => ("provider_empty_response", empty.Message),
-                StallDetectedException stall => ("stall_detected", stall.Message),
-                AgentRunException agentEx => ("step_failed", agentEx.Message),
-                _ => LlmErrorClassifier.Classify(ex),
-            };
+            // Story 10.7a Track C: classification delegated to
+            // IStepExecutionFailureHandler (Engine/). The handler preserves the
+            // AgentRunException → bypass-classifier invariant; see its test file.
+            context.LlmError = _failureHandler.Classify(ex);
 
             try
             {
@@ -343,24 +339,4 @@ public class StepExecutor : IStepExecutor
         }
     }
 
-    /// <summary>
-    /// Non-executable tool declaration that carries only metadata for the LLM.
-    /// FunctionInvokingChatClient in the Umbraco.AI middleware pipeline cannot auto-execute
-    /// this — our ToolLoop handles execution via the declaredTools dictionary.
-    /// </summary>
-    private sealed class ToolDeclaration : AIFunctionDeclaration
-    {
-        private static readonly JsonElement EmptySchema = JsonDocument.Parse("""{"type":"object","properties":{}}""").RootElement;
-
-        public override string Name { get; }
-        public override string Description { get; }
-        public override JsonElement JsonSchema { get; }
-
-        public ToolDeclaration(string name, string description, JsonElement? parameterSchema)
-        {
-            Name = name;
-            Description = description;
-            JsonSchema = parameterSchema ?? EmptySchema;
-        }
-    }
 }
