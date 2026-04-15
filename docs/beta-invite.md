@@ -42,7 +42,7 @@ Umbraco.AI does the same for its own AI section. No manual file copying or permi
 1. Go to the **AI** section in the backoffice
 2. Click **Connections > Create Connection**
 3. Select your provider (e.g. Anthropic), give it a name and alias, and enter your API key
-4. Click **Profiles > Create Profile**
+4. Click **Profiles > Create > Chat**
 5. Select the connection, choose a model, and set an alias
 
 That's it — AgentRun auto-detects your profile. No YAML editing needed for first run. If you have multiple profiles, you can set `default_profile` in each workflow's `workflow.yaml` for deterministic selection.

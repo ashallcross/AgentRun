@@ -2241,6 +2241,10 @@ So that future changes are lower-risk, easier to reason about, and the codebase 
 | `Client/agentrun-chat-message.element.ts` (235 lines) | Simplify | Skip | DOM-to-HTML pattern is correct for sanitisation + streaming; 235 lines, works |
 | Comment hygiene | Phase 4 | Pre-public-launch polish pass | Strip story refs and gate notes; keep technical rationale only |
 
+**UX polish items to include in the frontend pass:**
+
+- **Chat cursor flashes during tool calls / waiting states** (Tom Madden beta feedback, 2026-04-15). The block cursor (▋) in `agentrun-chat-message.element.ts` should only show during active text streaming, not for the entire SSE connection lifetime. One-line fix in `agentrun-chat-panel.element.ts:184` — swap `this.isStreaming` for `msg.isStreaming === true` to use the message-level flag that's already correctly toggled by `_handleSseEvent`. See deferred-work.md entry for full detail.
+
 **Timing:** This story should be worked after Epic 10 stability stories (10.1, 10.2) and alongside or after any feature work that naturally touches these files. Refactoring should compound with feature changes, not precede them.
 
 **What NOT to Build:**

@@ -157,7 +157,7 @@ public class ExecutionEndpointsTests
     }
 
     [Test]
-    public async Task RetryInstance_FailedInstance_CallsTruncationAndResetsStep()
+    public async Task RetryInstance_FailedInstance_WipesConversationAndResetsStep()
     {
         var instance = new InstanceState
         {
@@ -188,9 +188,12 @@ public class ExecutionEndpointsTests
             // Expected — no real HttpResponse in test context
         }
 
-        // Verify truncation was called for the error step
-        await _conversationStore.Received(1).TruncateLastAssistantEntryAsync(
+        // Story 10.6: Failed retries wipe the conversation (archive + fresh
+        // restart), replacing the pre-10.6 truncate-last-assistant-entry path.
+        await _conversationStore.Received(1).WipeHistoryAsync(
             "test-wf", "inst-001", "step-1", Arg.Any<CancellationToken>());
+        await _conversationStore.DidNotReceive().TruncateLastAssistantEntryAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
 
         // Verify step was reset to Pending
         await _instanceManager.Received(1).UpdateStepStatusAsync(
@@ -479,11 +482,12 @@ public class ExecutionEndpointsTests
             Arg.Any<string>(), Arg.Any<string>(), InstanceStatus.Interrupted, Arg.Any<CancellationToken>());
     }
 
-    // Story 10.9 code-review P4 / Task 8.7: regression guard that the Failed-path
-    // Retry still truncates the JSONL. The branching change in Task 4 must not
-    // accidentally skip truncation for Failed.
+    // Story 10.9 code-review P4 / Task 8.7 (amended for Story 10.6): Failed-path
+    // Retry now WIPES the JSONL (Option 3) instead of truncating. The branching
+    // change in 10.9 Task 4 must not accidentally skip the recovery primitive
+    // for Failed, and the 10.6 change must not accidentally regress Interrupted.
     [Test]
-    public async Task Retry_OnFailed_StillTruncatesConversation()
+    public async Task Retry_OnFailed_StillWipesConversation()
     {
         var instance = new InstanceState
         {
@@ -512,9 +516,163 @@ public class ExecutionEndpointsTests
             // Expected — no real HttpResponse in test context.
         }
 
-        // AC5 regression guard: Failed path must still call truncation.
-        await _conversationStore.Received(1).TruncateLastAssistantEntryAsync(
+        // Story 10.6 AC1: Failed path must call the wipe-and-restart primitive.
+        await _conversationStore.Received(1).WipeHistoryAsync(
             "test-wf", "inst-001", "step-1", Arg.Any<CancellationToken>());
+    }
+
+    // Story 10.6 Task 2.6: after FindIndex locates the step to resume, if the
+    // discovered index differs from CurrentStepIndex, reconciliation writes
+    // back the discovered index before dispatching execution.
+    [Test]
+    public async Task Retry_OnFailed_CurrentStepIndexDrift_IsReconciledToFindIndexResult()
+    {
+        // CurrentStepIndex persisted as 0 (drift); the Error step is at index 2.
+        var instance = new InstanceState
+        {
+            InstanceId = "inst-001",
+            WorkflowAlias = "test-wf",
+            Status = InstanceStatus.Failed,
+            Steps =
+            [
+                new StepState { Id = "step-0", Status = StepStatus.Complete },
+                new StepState { Id = "step-1", Status = StepStatus.Complete },
+                new StepState { Id = "step-2", Status = StepStatus.Error }
+            ],
+            CurrentStepIndex = 0
+        };
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>()).Returns(instance);
+        _instanceManager.SetCurrentStepIndexAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(instance);
+        _instanceManager.UpdateStepStatusAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<StepStatus>(), Arg.Any<CancellationToken>())
+            .Returns(instance);
+        _instanceManager.SetInstanceStatusAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<InstanceStatus>(), Arg.Any<CancellationToken>())
+            .Returns(instance);
+
+        try
+        {
+            await _endpoints.RetryInstance("inst-001", CancellationToken.None);
+        }
+        catch (NullReferenceException)
+        {
+            // Expected — no real HttpResponse in test context.
+        }
+
+        // Reconciliation fired with the discovered index (2), not the persisted 0.
+        await _instanceManager.Received(1).SetCurrentStepIndexAsync(
+            "test-wf", "inst-001", 2, Arg.Any<CancellationToken>());
+
+        // And the subsequent pipeline ran against the same discovered step.
+        await _conversationStore.Received(1).WipeHistoryAsync(
+            "test-wf", "inst-001", "step-2", Arg.Any<CancellationToken>());
+        await _instanceManager.Received(1).UpdateStepStatusAsync(
+            "test-wf", "inst-001", 2, StepStatus.Pending, Arg.Any<CancellationToken>());
+    }
+
+    // Story 10.6 Task 2.6: reconciliation is a no-op when CurrentStepIndex
+    // already matches the discovered index — avoids a spurious disk write.
+    [Test]
+    public async Task Retry_OnFailed_CurrentStepIndexAlreadyInSync_DoesNotReconcile()
+    {
+        var instance = new InstanceState
+        {
+            InstanceId = "inst-001",
+            WorkflowAlias = "test-wf",
+            Status = InstanceStatus.Failed,
+            Steps =
+            [
+                new StepState { Id = "step-0", Status = StepStatus.Complete },
+                new StepState { Id = "step-1", Status = StepStatus.Error }
+            ],
+            CurrentStepIndex = 1
+        };
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>()).Returns(instance);
+        _instanceManager.UpdateStepStatusAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<StepStatus>(), Arg.Any<CancellationToken>())
+            .Returns(instance);
+        _instanceManager.SetInstanceStatusAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<InstanceStatus>(), Arg.Any<CancellationToken>())
+            .Returns(instance);
+
+        try
+        {
+            await _endpoints.RetryInstance("inst-001", CancellationToken.None);
+        }
+        catch (NullReferenceException) { }
+
+        await _instanceManager.DidNotReceive().SetCurrentStepIndexAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+
+    // Story 10.6 Task 1.4 — wipe failure must surface to the caller as a 409
+    // with a clear error. The retry MUST NOT proceed against a stale
+    // conversation, and the claim must be released so the user can retry.
+    [Test]
+    public async Task Retry_OnFailed_WipeFails_Returns409AndReleasesClaim()
+    {
+        var instance = new InstanceState
+        {
+            InstanceId = "inst-001",
+            WorkflowAlias = "test-wf",
+            Status = InstanceStatus.Failed,
+            Steps =
+            [
+                new StepState { Id = "step-0", Status = StepStatus.Error }
+            ],
+            CurrentStepIndex = 0
+        };
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>()).Returns(instance);
+
+        _conversationStore
+            .When(s => s.WipeHistoryAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()))
+            .Do(_ => throw new InvalidOperationException("archive conversation file collision"));
+
+        var result = await _endpoints.RetryInstance("inst-001", CancellationToken.None);
+
+        Assert.That(result, Is.InstanceOf<ConflictObjectResult>());
+        var conflict = (ConflictObjectResult)result;
+        var error = conflict.Value as ErrorResponse;
+        Assert.That(error?.Error, Is.EqualTo("retry_recovery_failed"));
+        Assert.That(error?.Message, Does.Contain("archive conversation file collision"));
+
+        // MUST NOT have proceeded to step reset or status transition after a failed wipe.
+        await _instanceManager.DidNotReceive().UpdateStepStatusAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<StepStatus>(), Arg.Any<CancellationToken>());
+        await _instanceManager.DidNotReceive().SetInstanceStatusAsync(
+            Arg.Any<string>(), Arg.Any<string>(), InstanceStatus.Running, Arg.Any<CancellationToken>());
+
+        // Claim released so the user can retry without the slot leaking.
+        _activeInstanceRegistry.Received(1).UnregisterInstance("inst-001");
+    }
+
+    // Story 10.6 AC #2: Interrupted path must still work — Option 3's wipe-
+    // and-restart is a Failed-only surgery; Interrupted remains a truncate-skip
+    // no-op. Regression guard against the 10.6 change touching the wrong branch.
+    [Test]
+    public async Task Retry_OnInterrupted_DoesNotWipe()
+    {
+        var instance = new InstanceState
+        {
+            InstanceId = "inst-001",
+            WorkflowAlias = "test-wf",
+            Status = InstanceStatus.Interrupted,
+            Steps = [new StepState { Id = "step-0", Status = StepStatus.Active }],
+            CurrentStepIndex = 0
+        };
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>()).Returns(instance);
+        _instanceManager.UpdateStepStatusAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<StepStatus>(), Arg.Any<CancellationToken>())
+            .Returns(instance);
+        _instanceManager.SetInstanceStatusAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<InstanceStatus>(), Arg.Any<CancellationToken>())
+            .Returns(instance);
+
+        try
+        {
+            await _endpoints.RetryInstance("inst-001", CancellationToken.None);
+        }
+        catch (NullReferenceException) { }
+
+        await _conversationStore.DidNotReceive().WipeHistoryAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _conversationStore.DidNotReceive().TruncateLastAssistantEntryAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     // Story 10.9 code-review P2: concurrent Retry must not surface as 500.

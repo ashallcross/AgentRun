@@ -405,6 +405,51 @@ public sealed partial class InstanceManager : IInstanceManager
         }
     }
 
+    public async Task<InstanceState> SetCurrentStepIndexAsync(
+        string workflowAlias,
+        string instanceId,
+        int stepIndex,
+        CancellationToken cancellationToken)
+    {
+        var instanceDir = GetInstanceDirectory(workflowAlias, instanceId);
+        var yamlPath = Path.Combine(instanceDir, "instance.yaml");
+
+        var sem = GetOrCreateInstanceLock(instanceId);
+        await sem.WaitAsync(cancellationToken);
+        try
+        {
+            var state = await ReadStateAsync(yamlPath, cancellationToken)
+                ?? throw new InvalidOperationException($"Instance {instanceId} not found for workflow {workflowAlias}.");
+
+            if (stepIndex < 0 || stepIndex >= state.Steps.Count)
+            {
+                throw new ArgumentOutOfRangeException(nameof(stepIndex),
+                    $"Step index {stepIndex} is out of range. Instance has {state.Steps.Count} steps.");
+            }
+
+            if (state.CurrentStepIndex == stepIndex)
+            {
+                return state;
+            }
+
+            var previous = state.CurrentStepIndex;
+            state.CurrentStepIndex = stepIndex;
+            state.UpdatedAt = DateTime.UtcNow;
+
+            await WriteStateAtomicAsync(instanceDir, state, cancellationToken);
+
+            _logger.LogInformation(
+                "Reconciled CurrentStepIndex {Previous} -> {StepIndex} for instance {InstanceId} of workflow {WorkflowAlias}",
+                previous, stepIndex, instanceId, workflowAlias);
+
+            return state;
+        }
+        finally
+        {
+            sem.Release();
+        }
+    }
+
     public string GetInstanceFolderPath(string workflowAlias, string instanceId)
         => GetInstanceDirectory(workflowAlias, instanceId);
 

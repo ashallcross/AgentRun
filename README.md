@@ -66,7 +66,7 @@ The three example workflows:
 In the backoffice, go to the **AI** section:
 
 1. **Create a Connection** -- select your provider (e.g., Anthropic), enter your API key
-2. **Create a Profile** -- select the connection, choose a model, set an alias
+2. **Create a Chat Profile** (Profiles > Create > Chat) -- select the connection, choose a model, set an alias
 
 AgentRun auto-detects your Umbraco.AI profile -- no YAML editing needed for first run.
 If you have multiple profiles, you can set `default_profile` in each workflow's `workflow.yaml`

@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using AgentRun.Umbraco.Engine;
 using AgentRun.Umbraco.Security;
 using AngleSharp.Html.Parser;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AgentRun.Umbraco.Tools;
 
@@ -46,6 +47,7 @@ public class FetchUrlTool : IWorkflowTool
     private readonly SsrfProtection _ssrfProtection;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IToolLimitResolver _limitResolver;
+    private readonly ILogger<FetchUrlTool> _logger;
 
     public string Name => "fetch_url";
 
@@ -57,11 +59,13 @@ public class FetchUrlTool : IWorkflowTool
     public FetchUrlTool(
         SsrfProtection ssrfProtection,
         IHttpClientFactory httpClientFactory,
-        IToolLimitResolver limitResolver)
+        IToolLimitResolver limitResolver,
+        ILogger<FetchUrlTool>? logger = null)
     {
         _ssrfProtection = ssrfProtection;
         _httpClientFactory = httpClientFactory;
         _limitResolver = limitResolver;
+        _logger = logger ?? NullLogger<FetchUrlTool>.Instance;
     }
 
     public async Task<object> ExecuteAsync(
@@ -109,6 +113,21 @@ public class FetchUrlTool : IWorkflowTool
         try
         {
             await _ssrfProtection.ValidateUrlAsync(uri, timeoutCts.Token);
+
+            // Story 10.6 Task 0.5 — cache-on-hit short-circuit (raw mode only).
+            // Re-issued fetch_url calls for the same URL within the same instance
+            // return the existing .fetch-cache/{hash}.html content without hitting
+            // the network. Makes Story 10.6's Option 3 retry-restart cheap when
+            // the conversation was wiped but the cache survives. Structured mode
+            // does not cache (Q1 (a), 9.1b), so cache-on-hit does not apply there.
+            // Known limitation: the original Content-Type header is not preserved
+            // across cache reuse — the handle defaults to "text/html".
+            if (extractMode == ExtractMode.Raw)
+            {
+                var cacheHit = TryReadCachedHandle(urlString, context.InstanceFolderPath!);
+                if (cacheHit is not null)
+                    return cacheHit;
+            }
 
             var client = _httpClientFactory.CreateClient("FetchUrl");
 
@@ -323,6 +342,85 @@ public class FetchUrlTool : IWorkflowTool
         var bytes = Encoding.UTF8.GetBytes(url);
         var hash  = SHA256.HashData(bytes);
         return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    // Story 10.6 Task 0.5 — probe the instance's .fetch-cache/ for a prior
+    // response to this URL and build a handle indistinguishable from the
+    // cache-miss case (status, content_type, size_bytes, saved_to, truncated
+    // all populated from the on-disk file). Returns null on any miss,
+    // malformed cache path, or IO failure — callers fall through to the
+    // normal HTTP path.
+    private string? TryReadCachedHandle(string urlString, string instanceFolderPath)
+    {
+        var relPath = $".fetch-cache/{ComputeUrlHash(urlString)}.html";
+
+        string validatedPath;
+        try
+        {
+            validatedPath = PathSandbox.ValidatePath(relPath, instanceFolderPath);
+        }
+        catch (Exception ex) when (ex is ArgumentException or UnauthorizedAccessException)
+        {
+            _logger.LogDebug(ex,
+                "fetch_url cache lookup skipped: path validation failed for {RelPath}", relPath);
+            return null;
+        }
+
+        if (!File.Exists(validatedPath))
+            return null;
+
+        long size;
+        bool truncated;
+        try
+        {
+            var info = new FileInfo(validatedPath);
+            size = info.Length;
+            truncated = FileTailContainsTruncationMarker(validatedPath, size);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogDebug(ex,
+                "fetch_url cache lookup skipped: IO error reading {RelPath}", relPath);
+            return null;
+        }
+
+        // Content-Type is not persisted with the cached body. Default to
+        // text/html (the overwhelming majority of fetch_url usage); documented
+        // in ExecuteAsync as a known limitation.
+        var handle = new FetchUrlHandle(
+            urlString,
+            200,
+            "text/html",
+            size,
+            relPath,
+            truncated);
+
+        return JsonSerializer.Serialize(handle, HandleJsonOptions);
+    }
+
+    private static bool FileTailContainsTruncationMarker(string path, long fileSize)
+    {
+        // The marker written by the cache-miss path is
+        //   "\n\n[Response truncated at <N> bytes]"
+        // where <N> fits in a signed int. A 64-byte tail comfortably covers it.
+        const int tailBytes = 64;
+        var readLength = (int)Math.Min(tailBytes, fileSize);
+        if (readLength <= 0)
+            return false;
+
+        using var fs = new FileStream(
+            path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
+        fs.Seek(fileSize - readLength, SeekOrigin.Begin);
+        var buffer = new byte[readLength];
+        var read = 0;
+        while (read < readLength)
+        {
+            var n = fs.Read(buffer, read, readLength - read);
+            if (n == 0) break;
+            read += n;
+        }
+        var tail = Encoding.UTF8.GetString(buffer, 0, read);
+        return tail.Contains("[Response truncated at ", StringComparison.Ordinal);
     }
 
     private enum ExtractMode { Raw, Structured }

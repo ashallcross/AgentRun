@@ -211,15 +211,63 @@ public class ExecutionEndpoints : ControllerBase
                 });
             }
 
+            // Story 10.6 Task 2.6: reconcile CurrentStepIndex with the step
+            // FindIndex actually resumes from. Pre-existing drift — the Failed
+            // and Interrupted branches both use FindIndex as authority but
+            // never wrote the discovered index back when CurrentStepIndex
+            // disagreed. Fixed in-place here because we are already inside the
+            // retry endpoint's serialised mutation path. No-op if already
+            // in sync. See deferred-work.md 2026-04-14 / Story 10.9 review.
+            if (instance.CurrentStepIndex != stepIndex)
+            {
+                instance = await _instanceManager.SetCurrentStepIndexAsync(
+                    instance.WorkflowAlias, instance.InstanceId, stepIndex, cancellationToken);
+            }
+
+            // Capture targetStep from the post-reconciliation instance so
+            // downstream uses (WipeHistoryAsync, UpdateStepStatusAsync) see
+            // the step from the state we just wrote back, not the pre-read.
             var targetStep = instance.Steps[stepIndex];
 
-            // Story 10.9: truncate JSONL only for Failed. For Interrupted, the stream
-            // was torn down mid-response — no failed assistant message was committed
-            // to JSONL (ConversationRecorder writes on completion boundaries, not deltas).
+            // Story 10.6 Option 3 (Winston, 2026-04-08): for Failed retries,
+            // wipe the conversation log and restart the step from scratch. The
+            // original JSONL is archived to
+            //   conversation-{stepId}.failed-{ISO8601-UTC}.jsonl
+            // so the retry sees a fresh empty conversation. The model never
+            // witnesses the degenerate "all my tools have already run" state
+            // that caused Story 9.0's StallDetector to fire on retry.
+            // Story 9.7's .fetch-cache/ + Story 10.6 Task 0.5's cache-on-hit
+            // together make the re-issued fetch_url calls cheap (ms, no HTTP).
+            //
+            // For Interrupted, the stream was torn down mid-response — no
+            // failed assistant message was committed to JSONL
+            // (ConversationRecorder writes on completion boundaries, not
+            // deltas; see Task 4.5 regression test). No wipe, no truncate —
+            // the conversation is already at a clean boundary.
             if (instance.Status == InstanceStatus.Failed)
             {
-                await _conversationStore.TruncateLastAssistantEntryAsync(
-                    instance.WorkflowAlias, instance.InstanceId, targetStep.Id, cancellationToken);
+                string? archivedTo;
+                try
+                {
+                    archivedTo = await _conversationStore.WipeHistoryAsync(
+                        instance.WorkflowAlias, instance.InstanceId, targetStep.Id, cancellationToken);
+                }
+                catch (InvalidOperationException ex)
+                {
+                    _logger.LogError(ex,
+                        "Retry failed: could not wipe conversation history for {InstanceId}/{StepId}",
+                        instance.InstanceId, targetStep.Id);
+                    _activeInstanceRegistry.UnregisterInstance(id);
+                    return Conflict(new ErrorResponse
+                    {
+                        Error = "retry_recovery_failed",
+                        Message = $"Failed to prepare conversation for retry: {ex.Message}"
+                    });
+                }
+
+                _logger.LogInformation(
+                    "Retry recovery for {WorkflowAlias}/{InstanceId}/{StepId}: RecoveryStrategy={RecoveryStrategy} ArchivedTo={ArchivedTo}",
+                    instance.WorkflowAlias, instance.InstanceId, targetStep.Id, "wipe-and-restart", archivedTo ?? "(none)");
             }
 
             // Reset step to Pending so the executor handles the Active transition

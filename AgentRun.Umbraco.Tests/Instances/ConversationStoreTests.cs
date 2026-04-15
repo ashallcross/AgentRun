@@ -412,4 +412,136 @@ public class ConversationStoreTests
         Assert.That(roundTripped.ToolArguments, Is.EqualTo("{\"path\":\"content.md\"}"));
         Assert.That(roundTripped.ToolResult, Is.EqualTo("# Page Title\nContent here..."));
     }
+
+    // --- Story 10.6 Task 1: WipeHistoryAsync ---
+
+    [Test]
+    public async Task WipeHistoryAsync_MissingFile_IsNoOp()
+    {
+        var instanceDir = Path.Combine(_tempDir, "test-workflow", "inst-001");
+        Directory.CreateDirectory(instanceDir);
+
+        await _store.WipeHistoryAsync("test-workflow", "inst-001", "step-one", CancellationToken.None);
+
+        Assert.That(Directory.GetFiles(instanceDir), Is.Empty);
+    }
+
+    [Test]
+    public async Task WipeHistoryAsync_SingleEntry_RenamesToArchivedFilename()
+    {
+        var instanceDir = Path.Combine(_tempDir, "test-workflow", "inst-001");
+        Directory.CreateDirectory(instanceDir);
+
+        await _store.AppendAsync("test-workflow", "inst-001", "step-one", CreateTestEntry(), CancellationToken.None);
+
+        var original = Path.Combine(instanceDir, "conversation-step-one.jsonl");
+        Assert.That(File.Exists(original), Is.True);
+
+        await _store.WipeHistoryAsync("test-workflow", "inst-001", "step-one", CancellationToken.None);
+
+        Assert.That(File.Exists(original), Is.False, "original conversation file must be moved, not left behind");
+
+        var archived = Directory.GetFiles(instanceDir, "conversation-step-one.failed-*.jsonl");
+        Assert.That(archived, Has.Length.EqualTo(1));
+        Assert.That(Path.GetFileName(archived[0]),
+            Does.Match(@"^conversation-step-one\.failed-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z\.jsonl$"));
+    }
+
+    [Test]
+    public async Task WipeHistoryAsync_MultipleEntries_ArchivesAtomically()
+    {
+        var instanceDir = Path.Combine(_tempDir, "test-workflow", "inst-001");
+        Directory.CreateDirectory(instanceDir);
+
+        for (var i = 0; i < 5; i++)
+            await _store.AppendAsync(
+                "test-workflow", "inst-001", "step-one",
+                CreateTestEntry(content: $"entry-{i}"), CancellationToken.None);
+
+        var original = Path.Combine(instanceDir, "conversation-step-one.jsonl");
+        var originalBytes = await File.ReadAllBytesAsync(original);
+
+        await _store.WipeHistoryAsync("test-workflow", "inst-001", "step-one", CancellationToken.None);
+
+        Assert.That(File.Exists(original), Is.False);
+
+        var archived = Directory.GetFiles(instanceDir, "conversation-step-one.failed-*.jsonl");
+        Assert.That(archived, Has.Length.EqualTo(1));
+
+        var archivedBytes = await File.ReadAllBytesAsync(archived[0]);
+        Assert.That(archivedBytes, Is.EqualTo(originalBytes),
+            "archive is an atomic rename — contents are preserved bit-for-bit");
+    }
+
+    [Test]
+    public async Task WipeHistoryAsync_AfterWipe_GetHistoryReturnsEmpty()
+    {
+        var instanceDir = Path.Combine(_tempDir, "test-workflow", "inst-001");
+        Directory.CreateDirectory(instanceDir);
+
+        await _store.AppendAsync("test-workflow", "inst-001", "step-one", CreateTestEntry(), CancellationToken.None);
+        await _store.WipeHistoryAsync("test-workflow", "inst-001", "step-one", CancellationToken.None);
+
+        var history = await _store.GetHistoryAsync("test-workflow", "inst-001", "step-one", CancellationToken.None);
+        Assert.That(history, Is.Empty, "the next retry must start from an empty conversation");
+    }
+
+    [Test]
+    public async Task WipeHistoryAsync_CalledTwice_SecondIsNoOp()
+    {
+        var instanceDir = Path.Combine(_tempDir, "test-workflow", "inst-001");
+        Directory.CreateDirectory(instanceDir);
+
+        await _store.AppendAsync("test-workflow", "inst-001", "step-one", CreateTestEntry(), CancellationToken.None);
+
+        await _store.WipeHistoryAsync("test-workflow", "inst-001", "step-one", CancellationToken.None);
+        // Second call with no current conversation must be a no-op (idempotent).
+        await _store.WipeHistoryAsync("test-workflow", "inst-001", "step-one", CancellationToken.None);
+
+        var archived = Directory.GetFiles(instanceDir, "conversation-step-one.failed-*.jsonl");
+        Assert.That(archived, Has.Length.EqualTo(1), "only the first wipe produced an archive");
+    }
+
+    [Test]
+    public async Task WipeHistoryAsync_CollisionWithExistingArchive_SurfacesClearError()
+    {
+        var instanceDir = Path.Combine(_tempDir, "test-workflow", "inst-001");
+        Directory.CreateDirectory(instanceDir);
+
+        await _store.AppendAsync("test-workflow", "inst-001", "step-one", CreateTestEntry(), CancellationToken.None);
+
+        // Pre-create an archive file for the SAME UTC second the wipe will use.
+        // We can't pin DateTime.UtcNow without an abstraction — instead we
+        // saturate every possible filename for the current + next second.
+        var now = DateTime.UtcNow;
+        for (var delta = 0; delta < 2; delta++)
+        {
+            var ts = now.AddSeconds(delta).ToString("yyyy-MM-ddTHH-mm-ssZ");
+            var collision = Path.Combine(instanceDir, $"conversation-step-one.failed-{ts}.jsonl");
+            await File.WriteAllTextAsync(collision, "blocker");
+        }
+
+        var ex = Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await _store.WipeHistoryAsync(
+                "test-workflow", "inst-001", "step-one", CancellationToken.None));
+
+        Assert.That(ex!.Message, Does.Contain("archive conversation file"));
+        Assert.That(File.Exists(Path.Combine(instanceDir, "conversation-step-one.jsonl")), Is.True,
+            "on wipe failure the original conversation must NOT have been deleted — the caller needs a clean error, not silent data loss");
+    }
+
+    [Test]
+    public async Task WipeHistoryAsync_RespectsCancellation()
+    {
+        var instanceDir = Path.Combine(_tempDir, "test-workflow", "inst-001");
+        Directory.CreateDirectory(instanceDir);
+        await _store.AppendAsync("test-workflow", "inst-001", "step-one", CreateTestEntry(), CancellationToken.None);
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        Assert.That(
+            async () => await _store.WipeHistoryAsync("test-workflow", "inst-001", "step-one", cts.Token),
+            Throws.InstanceOf<OperationCanceledException>());
+    }
 }

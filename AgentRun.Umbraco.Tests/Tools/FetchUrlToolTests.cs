@@ -1535,6 +1535,165 @@ public class FetchUrlToolTests
         Assert.That(links.GetProperty("external").ValueKind, Is.EqualTo(JsonValueKind.Number));
     }
 
+    // ============================================================================
+    // Story 10.6 Task 0.5 — cache-on-hit short-circuit
+    // ============================================================================
+
+    [Test]
+    public async Task Story10_6_CacheOnHit_DoesNotMakeHttpRequest()
+    {
+        // Pre-populate the cache file with known bytes.
+        var url = "https://example.com/cached";
+        var expectedHash = Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(url)))
+            .ToLowerInvariant();
+        var cacheDir = Path.Combine(_instanceRoot, ".fetch-cache");
+        Directory.CreateDirectory(cacheDir);
+        var cachedPath = Path.Combine(cacheDir, $"{expectedHash}.html");
+        var cachedBody = Encoding.UTF8.GetBytes("<html>prior body</html>");
+        await File.WriteAllBytesAsync(cachedPath, cachedBody);
+
+        // Install an HTTP handler that FAILS the test if invoked.
+        var callCount = 0;
+        SetupHttpClient((_, _) =>
+        {
+            Interlocked.Increment(ref callCount);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("NETWORK_BODY_MUST_NOT_BE_REACHED", Encoding.UTF8, "text/html")
+            });
+        });
+
+        var args = new Dictionary<string, object?> { ["url"] = url };
+        var handle = Parse(await _tool.ExecuteAsync(args, _context, CancellationToken.None));
+
+        Assert.That(callCount, Is.EqualTo(0), "cache-on-hit must not make an HTTP request");
+        Assert.That(handle.status, Is.EqualTo(200));
+        Assert.That(handle.saved_to, Is.EqualTo($".fetch-cache/{expectedHash}.html"));
+        Assert.That(handle.size_bytes, Is.EqualTo(cachedBody.Length));
+        Assert.That(handle.truncated, Is.False);
+        Assert.That(handle.content_type, Is.EqualTo("text/html"),
+            "cached handle defaults content_type to text/html (known 10.6 Task 0.5 limitation)");
+    }
+
+    [Test]
+    public async Task Story10_6_CacheOnHit_TruncatedMarkerDetectedInFileTail()
+    {
+        var url = "https://example.com/was-truncated";
+        var expectedHash = Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(url)))
+            .ToLowerInvariant();
+        var cacheDir = Path.Combine(_instanceRoot, ".fetch-cache");
+        Directory.CreateDirectory(cacheDir);
+        var cachedPath = Path.Combine(cacheDir, $"{expectedHash}.html");
+
+        // File that ends with the exact marker the cache-miss path writes.
+        var body = new string('A', 5000) + "\n\n[Response truncated at 5000 bytes]";
+        await File.WriteAllBytesAsync(cachedPath, Encoding.UTF8.GetBytes(body));
+
+        SetupHttpClient((_, _) => throw new InvalidOperationException("HTTP must not be called"));
+
+        var args = new Dictionary<string, object?> { ["url"] = url };
+        var handle = Parse(await _tool.ExecuteAsync(args, _context, CancellationToken.None));
+
+        Assert.That(handle.truncated, Is.True, "truncation marker in the file tail must be reflected in the handle");
+    }
+
+    [Test]
+    public async Task Story10_6_CacheOnMiss_StillHitsNetwork_AndWritesCache()
+    {
+        // No pre-populated cache file. First call must hit the network
+        // exactly once and write the cache — i.e. Story 9.7's behaviour.
+        var callCount = 0;
+        var body = "<html>first fetch</html>";
+        SetupHttpClient((_, _) =>
+        {
+            Interlocked.Increment(ref callCount);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "text/html")
+            });
+        });
+
+        var args = new Dictionary<string, object?> { ["url"] = "https://example.com/uncached" };
+        var handle = Parse(await _tool.ExecuteAsync(args, _context, CancellationToken.None));
+
+        Assert.That(callCount, Is.EqualTo(1), "cache-miss regression: the existing 9.7 path must still make exactly one HTTP call");
+        Assert.That(handle.size_bytes, Is.EqualTo(Encoding.UTF8.GetByteCount(body)));
+        var fullPath = Path.Combine(_instanceRoot, handle.saved_to!.Replace('/', Path.DirectorySeparatorChar));
+        Assert.That(File.Exists(fullPath), Is.True, "cache-miss still writes to the cache");
+    }
+
+    [Test]
+    public async Task Story10_6_SameUrlTwice_SecondInvocationIsCacheOnHit_AndHandleShapesMatch()
+    {
+        var url = "https://example.com/same-twice";
+        var httpCalls = 0;
+        var body = "<html>indistinguishable</html>";
+
+        SetupHttpClient((_, _) =>
+        {
+            Interlocked.Increment(ref httpCalls);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "text/html")
+            });
+        });
+
+        var args = new Dictionary<string, object?> { ["url"] = url };
+        var first  = Parse(await _tool.ExecuteAsync(args, _context, CancellationToken.None));
+        var second = Parse(await _tool.ExecuteAsync(args, _context, CancellationToken.None));
+
+        Assert.That(httpCalls, Is.EqualTo(1), "second invocation must come from cache — no HTTP");
+
+        // Handle indistinguishability: url, status, content_type, size_bytes,
+        // saved_to, truncated all match. (There are no timing fields on the
+        // FetchUrlHandle record — the full handle must be equal.)
+        Assert.That(second.url,          Is.EqualTo(first.url));
+        Assert.That(second.status,       Is.EqualTo(first.status));
+        Assert.That(second.content_type, Is.EqualTo(first.content_type));
+        Assert.That(second.size_bytes,   Is.EqualTo(first.size_bytes));
+        Assert.That(second.saved_to,     Is.EqualTo(first.saved_to));
+        Assert.That(second.truncated,    Is.EqualTo(first.truncated));
+    }
+
+    [Test]
+    public async Task Story10_6_StructuredMode_IgnoresCache_AlwaysHitsNetwork()
+    {
+        // Structured mode does not use .fetch-cache (9.1b Q1 (a)), so Task 0.5's
+        // cache-on-hit must not apply. A pre-populated file for the same URL
+        // must not prevent the parser from seeing live bytes.
+        var url = "https://example.com/struct-cache";
+        var expectedHash = Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(url)))
+            .ToLowerInvariant();
+        var cacheDir = Path.Combine(_instanceRoot, ".fetch-cache");
+        Directory.CreateDirectory(cacheDir);
+        var cachedPath = Path.Combine(cacheDir, $"{expectedHash}.html");
+        await File.WriteAllBytesAsync(cachedPath, Encoding.UTF8.GetBytes("<html><title>CACHED</title></html>"));
+
+        var httpCalls = 0;
+        SetupHttpClient((_, _) =>
+        {
+            Interlocked.Increment(ref httpCalls);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("<html><title>LIVE</title></html>", Encoding.UTF8, "text/html")
+            });
+        });
+
+        var args = new Dictionary<string, object?>
+        {
+            ["url"]     = url,
+            ["extract"] = "structured"
+        };
+        var result = (string)await _tool.ExecuteAsync(args, _context, CancellationToken.None);
+
+        Assert.That(httpCalls, Is.EqualTo(1), "structured mode must never short-circuit via the fetch cache");
+        Assert.That(result, Does.Contain("LIVE"));
+        Assert.That(result, Does.Not.Contain("CACHED"));
+    }
+
     private class MockHttpHandler : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> _handler;

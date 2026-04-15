@@ -1,5 +1,5 @@
 # generated: 2026-03-30
-# last_updated: 2026-04-15 (story 10-1 done — per-instance locking + atomic TryClaim; code review 8 patches applied; 636/636 tests green; Task 11 manual E2E pending Adam)
+# last_updated: 2026-04-15 (story 10-6 → done — code review applied 6 patches, 16 deferred, 10 dismissed; tests 659/659 green)
 # project: AgentRun.Umbraco
 # project_key: NOKEY
 # tracking_system: file-system
@@ -44,7 +44,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-30
-last_updated: 2026-04-15 (Story 10.1 → review — Tasks 1–10 done, 19 new tests, 635/635 backend + 183/183 frontend green; 6 deferred-work items resolved (28/34/35/52/74/138); Task 11 manual E2E pending Adam)
+last_updated: 2026-04-15 (Story 10.6 → done — code review applied 6 patches, 16 deferred, 10 dismissed; tests 659/659 green)
 project: AgentRun.Umbraco
 project_key: NOKEY
 tracking_system: file-system
@@ -150,7 +150,7 @@ development_status:
   10-10-instance-resume-after-step-completion: done               # done 2026-04-14 — Tasks 1–9 ALL complete (manual E2E walked end-to-end by Adam; AC9/10/11/15 verified on disk via instance a69dd6af876a4455b489f42efaec2f82). Code review applied 3 patches + extracted shouldShowContinueButton + computeChatInputGate to instance-detail-helpers (closes predicate-mirror drift). One in-scope E2E fix for duplicate Continue affordance (header Continue gated on !showCompletionBanner; gate uses isBetweenSteps decoupled from button visibility). Two related fast-follows logged to deferred-work.md as combined Story 10.13 candidate (chat-window terminal-state messaging — run.finished hardcodes Completed AND Pending-cancel leaves chat blank). Backend 616/616, frontend 183/183, build clean.
   10-1-instance-concurrency-locking: done                       # done 2026-04-15 — Tasks 1–10 + code review 8 patches applied. Per-instance SemaphoreSlim in InstanceManager + atomic TryClaim in ActiveInstanceRegistry. Review round added typed InstanceAlreadyRunningException (removed message-prose coupling), restructured WorkflowOrchestrator so AttachOrClaim runs first inside try/finally (fixes HIGH claim-leak when GetWorkflow throws), added AC12 cancel-vs-orchestrator integration test with real InstanceManager, strengthened concurrency tests with 50× iteration + lost-update assertion, swapped timing-based lock-isolation test to deterministic semaphore reflection. 636/636 backend tests green; 6 deferred-work items resolved (28/34/35/52/74/138) + 4 review-deferred items; Task 11 manual E2E pending Adam
   10-3-multi-turn-interactive-fix: moved                        # moved into 9-0 on 2026-04-07
-  10-6-retry-replay-degeneration-recovery: backlog              # created via SCP 2026-04-08; fast-follower with beta-blocker escalation criteria
+  10-6-retry-replay-degeneration-recovery: done                 # done 2026-04-15 — Option 3 (wipe-and-restart) shipped; synthetic Failed E2E on instance ed51eca8 validated full recovery contract. Code review: 6 patches applied (endpoint log structured fields + ArchivedTo via Task<string?> return on WipeHistoryAsync; duplicate NSubstitute stub removed; SetCurrentStepIndexAsync XML doc reconciled with defensive throw; ILogger<FetchUrlTool> added for cache-lookup LogDebug; targetStep re-captured after Task 2.6 reconciliation; DoD checkboxes reconciled with skipped Task 8.5/9 rationale). 1 finding dismissed on re-analysis (existing IOException catch filter covers the FileStream escape path). 16 items deferred to deferred-work.md under story-10-6 heading. Tests 659/659 green. Task 8.5 (5-run sampling) + Task 9 (fresh-install smoke) deliberately skipped per fast-follower rationale; re-open if Beta-Blocker Escalation Criteria trip in private beta.
   10-11-sse-keepalive-and-engine-boundary-cleanup: backlog      # added 2026-04-12 — SSE heartbeat + ProfileResolver Umbraco.AI dependency extraction
   10-7-code-shape-cleanup-hotspot-refactoring: backlog          # added 2026-04-10 — compound with feature work, not standalone
   10-4-open-source-licence-decision: backlog                    # product/legal decision; ships before marketplace listing

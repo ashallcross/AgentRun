@@ -157,6 +157,53 @@ public sealed class ConversationStore : IConversationStore
         File.Move(tmpPath, filePath, overwrite: true);
     }
 
+    public Task<string?> WipeHistoryAsync(string workflowAlias, string instanceId, string stepId, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var filePath = GetConversationFilePath(workflowAlias, instanceId, stepId);
+
+        if (!File.Exists(filePath))
+        {
+            _logger.LogDebug(
+                "No conversation file to wipe for {WorkflowAlias}/{InstanceId}/{StepId}",
+                workflowAlias, instanceId, stepId);
+            return Task.FromResult<string?>(null);
+        }
+
+        // ISO-8601 UTC with colons replaced by hyphens (colons are illegal on
+        // NTFS and awkward in shells; hyphens are portable across Windows,
+        // macOS, and Linux). Example: 2026-04-08T19-47-23Z.
+        var timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH-mm-ssZ");
+        var archiveFileName = $"conversation-{stepId}.failed-{timestamp}.jsonl";
+        var archivePath = Path.Combine(Path.GetDirectoryName(filePath)!, archiveFileName);
+
+        try
+        {
+            // File.Move with overwrite:false is atomic on the same volume.
+            // Collision-safe: if an archive for this exact second already
+            // exists the call throws IOException; we surface it to the caller
+            // rather than silently overwriting. A second retry in the same
+            // second is vanishingly rare — the caller (retry endpoint) treats
+            // it as a hard failure.
+            File.Move(filePath, archivePath, overwrite: false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogError(ex,
+                "Failed to archive conversation file for wipe: {WorkflowAlias}/{InstanceId}/{StepId} -> {ArchivePath}",
+                workflowAlias, instanceId, stepId, archivePath);
+            throw new InvalidOperationException(
+                $"Failed to archive conversation file to '{archiveFileName}' during wipe: {ex.Message}", ex);
+        }
+
+        _logger.LogInformation(
+            "Wiped conversation history for {WorkflowAlias}/{InstanceId}/{StepId}; original archived to {ArchivedTo}",
+            workflowAlias, instanceId, stepId, archiveFileName);
+
+        return Task.FromResult<string?>(archiveFileName);
+    }
+
     private string GetConversationFilePath(string workflowAlias, string instanceId, string stepId)
     {
         string instanceFolder;

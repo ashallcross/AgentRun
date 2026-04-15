@@ -202,6 +202,28 @@ Architect-triaged (Winston, 2026-04-10). Full review: `planning-artifacts/codeba
 - **`WorkflowOrchestrator.cs` (181 lines) — defer.** Rewrite comes with background execution; refactoring now is wasted.
 - **`agentrun-chat-message.element.ts` (235 lines) — skip.** DOM-to-HTML pattern is correct for sanitisation + streaming; small file, works.
 
+## Chat cursor flashes during tool calls and waiting states (2026-04-15)
+
+Reported by Tom Madden during beta testing. The block cursor (▋) in the chat panel is "a bit off-putting" — it flashes during tool execution and waiting states, making it look like the UI is waiting for user input when actually the agent is working.
+
+**Root cause:** In `agentrun-chat-panel.element.ts:184`, the per-message `is-streaming` attribute uses the panel-level `this.isStreaming` (which is `true` for the entire SSE connection lifetime) rather than the message-level `msg.isStreaming` (which is correctly toggled `false` when `tool.start` fires and `true` only during active `text.delta` events).
+
+**Current behaviour:**
+```ts
+?is-streaming=${i === lastIndex && msg.role === "agent" && this.isStreaming}
+```
+
+**Fix (one-line change):**
+```ts
+?is-streaming=${i === lastIndex && msg.role === "agent" && this.isStreaming && msg.isStreaming === true}
+```
+
+The message-level `isStreaming` flag already exists on `ChatMessage` (`types.ts:63`) and is correctly managed by `_handleSseEvent` in `agentrun-instance-detail.element.ts` — set to `true` on `text.delta` and `false` on `tool.start` / `_finaliseStreamingMessage`. The fix just wires that existing signal into the cursor visibility.
+
+**Scope:** One-line change + frontend test to verify cursor only appears during text streaming (not during tool calls, not during waiting states).
+
+**Suggested home:** Story 10.7 (Code Shape Cleanup — Hotspot Refactoring). The frontend split in 10.7 already touches `agentrun-chat-message.element.ts` and `agentrun-instance-detail.element.ts`; the cursor fix lives in the sibling `agentrun-chat-panel.element.ts` and should be applied as part of the same frontend pass so the work compounds rather than being scattered across stories.
+
 ## IMPORTANT: Silent failure on non-Anthropic LLM providers (2026-04-13)
 
 Reported by Warren Buckley during beta testing. Configured Google Gemini as a provider with an account that had no remaining credit. Started a workflow and got a blank chat with no error, no notification, nothing. Had to figure out himself that the issue was expired API credit.
@@ -304,3 +326,22 @@ Identified during manual testing of Story 9.12 content tools. On a 26-node test 
 - **StartInstance fast-path 409 on stale reading** — `ExecutionEndpoints.cs:75-86`. When `instance.Status == Running` and `GetMessageWriter(id)` returns non-null, the endpoint 409s *before* `TryClaim`. Between the two reads, the prior orchestrator may have released — so the fast-path 409 fires on an idle slot. User sees transient `already_running` that self-resolves on next click. Pre-existing UX-hint behaviour; `TryClaim` is authoritative.
 - **`UnregisterInstance` lacks null/empty input validation** — `ActiveInstanceRegistry.cs`. `TryClaim` and `AttachOrClaim` throw `ArgumentException` on null/empty instanceId; `UnregisterInstance` silently TryRemoves nothing. Asymmetric boundary hides future misuse (e.g., an endpoint passing an empty id). Pre-existing pattern; consistency-only fix.
 - **Retry-path claim release on pre-`UpdateStepStatusAsync` throw untested** — `ExecutionEndpointsTests.cs`. Start-path has `Start_SetStatusThrowsAlreadyRunning_Returns409AndReleasesClaim`; Retry's symmetric case (a throw between `TryClaim` and `SetInstanceStatusAsync`, e.g., JSONL truncate I/O error) is uncovered. The outer `catch { UnregisterInstance; throw }` at line 251 handles this correctly; this is a test-only gap.
+
+## Deferred from: code review of story-10-6-retry-replay-degeneration-recovery (2026-04-15)
+
+- **Collision test + `Task.Delay(1100)` integration test rely on wall-clock** — `ConversationStoreTests.cs:312-338` + `ToolLoopRetryReplayTests.cs:~1669`. Root cause: no `IClock` abstraction; both tests saturate current+next UTC second / sleep 1.1s to get distinct archive timestamps. Flaky across second boundaries; adds ~1.1s to suite. Compound with any future InstanceManager clock-injection work rather than introducing `IClock` for a test-only win.
+- **Cached handle fabricates `content_type="text/html"` + `status=200` regardless of origin response** — `FetchUrlTool.cs:881-889`. Documented limitation in the code comment. CQA + Accessibility workflows fetch HTML only, so cache-hit fidelity is acceptable today. Revisit when a non-HTML workflow (RSS, JSON, PDF) enters the portfolio — options are a `.ct`/`.meta` sidecar or refusing to cache non-2xx / non-text/html responses.
+- **`NullReferenceException` catches in endpoint tests swallow NREs as "expected (no real HttpResponse)"** — `ExecutionEndpointsTests.cs` 7 occurrences, pre-existing test-harness pattern propagated into new Story 10.6 tests. Masks genuine NREs from the SUT (null `instance`, null `Steps`, etc.). Belongs with a dedicated `HttpResponse` fake / endpoint-test-harness refactor story; scope creep for Story 10.6.
+- **AC #3 dangling-cache composition not tested end-to-end through `ToolLoop`** — `ToolLoopRetryReplayTests.cs:1613-1637` asserts wipe leaves `.fetch-cache/` alone but does not run a post-wipe retry through `ToolLoop` with a fake `IChatClient` that re-issues `fetch_url` against a partially-populated cache. Composed path exercised by manual E2E on instance `ed51eca8`; belt-and-braces composed test is disproportionate for a fast-follower.
+- **Task 5 symptom variants (empty-turn, duplicate `fetch_url`) not tested** — `ToolLoopRetryReplayTests.cs`. Spec Task 5 enumerated three symptom variants; only the text-narration variant is tested. Recovery design is symptom-agnostic by construction (wipe-everything), so the additional variants are belt-and-braces.
+- **`WipeHistoryAsync` not serialised against concurrent `ConversationRecorder.AppendAsync` writes** — `ConversationStore.cs:663-708`. Theoretical race only today (instance must be Failed before wipe; orchestrator is not writing in Failed state). Worth flagging for Epic 12 storage-provider abstraction — a DB-backed provider will need explicit transaction semantics here.
+- **`ErrorResponse.Message` surfaces raw `ex.Message` including filesystem paths** — `ExecutionEndpoints.cs:260`. Internal-tool scope today; revisit for 1.0 GA / marketplace listing where an Umbraco admin may see the endpoint response and the archive filename/path leak has information-disclosure potential.
+- **`Interrupted` branch in retry endpoint has no defensive assertion that conversation is at a clean boundary** — `ExecutionEndpoints.cs:244`. The "no wipe, no truncate" correctness depends on `ConversationRecorder` never writing partials, an invariant currently pinned by a single reflection-based snapshot test in `ConversationRecorderTests`. Consider a `Debug.Assert` on entry or a structured log line for observability.
+- **Reflection-based `ConversationRecorder` API-surface snapshot test is blunt** — `ConversationRecorderTests.cs:~387-404`. Any new public method on `ConversationRecorder` (including innocuous ones like `Flush`) breaks this test even if it does not violate the partial-write invariant. Prefer an attribute-based marker (`[CompletionBoundary]`) or a behavioural test. Acceptable today given the narrow API.
+- **`SetCurrentStepIndexAsync` no-op path returns `state` without bumping `UpdatedAt`** — `InstanceManager.cs:~788`. No caller depends on `UpdatedAt` being bumped on reconciliation-no-op; flagging for the future InstanceManager refactor.
+- **`SetCurrentStepIndexAsync` `ArgumentOutOfRangeException` surfaces as 500** — `ExecutionEndpoints.cs:225` callers do not catch it explicitly. Callers already range-check via `FindIndex != -1`; defence-in-depth gap only.
+- **`Path.GetDirectoryName` null-guard missing in `WipeHistoryAsync`** — `ConversationStore.cs:~682`. Theoretical; `filePath` comes from `GetConversationFilePath` internal construction, not user input.
+- **Cross-volume rename (EXDEV) would fail `File.Move` in `WipeHistoryAsync`** — `ConversationStore.cs:~692`. App_Data is a single volume in all supported Umbraco deployments; irrelevant unless a customer mounts `.fetch-cache/` or `App_Data/instances/` on a separate volume.
+- **`CacheOnHit` test asserts the `saved_to` path but not URL→hash mapping fidelity** — `FetchUrlToolTests.cs:~431-465`. Could seed two distinct URL hashes and prove the right one is read. Test hardening only.
+- **Endpoint retry log fires before `UpdateStepStatusAsync`/`SetInstanceStatusAsync` succeed** — `ExecutionEndpoints.cs:264-266`. If a subsequent status write throws, the log implies completed recovery that actually left the system half-way. Paired with the Task 2.3 log-field patch in Story 10.6.
+- **`File.Move` IOException catch-all translates all IO failures into the same `InvalidOperationException`** — `ConversationStore.cs:~685-700`. Collision is the realistic case; other `IOException` sources (disk full, sharing violation, cross-device) are surfaced via `ex.Message` so forensics are preserved, but a typed distinction would help support triage.

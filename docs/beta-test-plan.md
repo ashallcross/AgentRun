@@ -75,7 +75,7 @@ Log out and back in to pick up the new section permission.
 
 ### 6. Create a Profile
 
-1. Click **Profiles > Create Profile**
+1. Click **Profiles > Create > Chat**
 2. Select the connection you just created, choose a model, and set an alias
 
 AgentRun auto-detects your Umbraco.AI profile -- no YAML editing needed for first run.
