@@ -118,6 +118,25 @@ These decisions were locked in the parent story on 2026-04-15 and are preserved 
 **And** `dotnet test AgentRun.Umbraco.slnx` still green at whatever count 10.7a left it (no backend regressions)
 **And** `grep -rn "using Umbraco\." AgentRun.Umbraco/Engine/ --include="*.cs"` returns **0** matches (Story 10.11 invariant preserved — no backend work in this story, but the repo-wide invariant check is part of DoD)
 
+### AC5: Chat-panel retry clears stale banner + unlocks input (bug found during 10.7a E2E)
+
+**Given** a workflow run is in Failed OR Interrupted state and the user clicks Retry
+**When** the backend transitions the step back to Active (verified server-side during 10.7a E2E — Failed path fires `RecoveryStrategy=wipe-and-restart`; Interrupted path resumes the Active step in place)
+**Then** the chat-panel input becomes enabled
+**And** the stale banner text ("Run failed — click Retry to resume" OR "Run interrupted — click Retry to resume") clears
+**And** the "Agent is responding…" indicator reflects the live retry state, not the prior failure/interrupt state
+**Evidence:**
+- Failed→Retry path: uniform repro on fresh instance `fad4b0f4a5c64747bbc153d26401fdd1` 2026-04-15 during E2E Test 4. Hard-refresh does not fix it — rules out ephemeral state. UI simultaneously shows three mutually-exclusive states ("Run failed" + "Agent is responding…" + locked input).
+- Interrupted→Retry path: repro on instance `9ef84e8e26a44dabb68ee9c90138a2f1` 2026-04-15 during E2E Test 5. After F5 mid-stream → instance Interrupted → user clicks Retry → backend resumes the Active step and runs the scanner to completion → UI still shows "Run interrupted — click Retry to resume" banner throughout the retry execution, only clearing when the step completes and the "Click Continue to run the next step" prompt renders.
+- Both paths point to the same missing `retry.started` / `step.restart` action in the chat-panel reducer that should clear the stale banner flag when a new LLM turn begins.
+
+### AC6: SSE text-delta renders reliably across the full run (bug found during 10.7a E2E)
+
+**Given** a workflow run completes normally on the backend (verified via `conversation-scanner.jsonl` containing all assistant text entries)
+**When** the chat panel is connected to the SSE stream throughout the run
+**Then** every `text.delta` event renders in the chat panel (no silent drops)
+**Evidence:** Intermittent repro during 10.7a E2E Test 1 — run `b6180e96` 2026-04-15 backend emitted 12 assistant entries into the JSONL but the UI showed none of them; the preceding run on the same server build rendered normally. Backend-side instrumentation added in 10.7a (`engine.streaming.text_delta_emitted` at Debug) lets the dev localise whether the flake is backend emit or frontend render. The dev agent should repro with browser DevTools → Network → EventStream filter active: if `text.delta` frames arrive at the browser and the UI does not render them, the bug is in the SSE reducer (in-scope for this story). If frames do not arrive at the browser, escalate back to 10.7a engine review.
+
 ## Tasks / Subtasks
 
 ### Task 1: Track D — Extract `instance-detail-store.ts` + `instance-detail-sse-reducer.ts` (AC1, AC2)

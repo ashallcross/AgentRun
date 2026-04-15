@@ -1,5 +1,5 @@
 # generated: 2026-03-30
-# last_updated: 2026-04-15 (Story 10.7a → DONE — review gate closed; 705/705 tests; E2E Test 1 passed backend-side; OPEN ISSUE: SSE text-delta UI-dropout under watch — see open_issues section)
+# last_updated: 2026-04-15 (Story 10.7a → DONE — review gate closed; 705/705 tests; E2E Tests 1/3/4 backend-side passed; 2 chat-panel UI bugs found during E2E added to 10.7b scope)
 # project: AgentRun.Umbraco
 # project_key: NOKEY
 # tracking_system: file-system
@@ -176,40 +176,3 @@ development_status:
   12-2-database-storage-provider: backlog
   12-3-package-split: backlog
   epic-12-retrospective: optional
-
-# ========================================================================
-# OPEN ISSUES — visible tracking for regressions / flakes under active watch
-# ========================================================================
-# Lifecycle: `watching` (reproducing, need evidence) → `confirmed` (repro'd,
-# root cause known) → promoted into a proper story, then removed from here.
-# Deferred-work.md is for "known pre-existing issues we're NOT actively
-# debugging"; this section is for "things we're actively monitoring".
-
-open_issues:
-  sse-text-delta-ui-dropout-post-10-7a:
-    status: watching
-    opened: 2026-04-15
-    reporter: Adam (manual E2E Test 1)
-    symptom: >
-      Chat-UI intermittently does not render assistant text deltas during
-      an otherwise-successful workflow run. Backend emits normally (verified
-      via conversation-scanner.jsonl — all assistant entries present), step
-      completes cleanly, but the frontend chat panel stays blank from the
-      first turn onward. Started occurring AFTER 10.7a review patch pass
-      (2026-04-15, Apr 15 ~21:00 local). Not observed in prior epic testing
-      per Adam.
-    hypotheses:
-      - "P12 catch-filter rewrite in StreamingResponseAccumulator changes timing/unwind behaviour under cancellation"
-      - "Extra async frame from AccumulateAsync class method vs old inline code exposes a pre-existing frontend SSE race"
-      - "Pre-existing Story 10.9 SSE-resilience flake that coincidentally surfaced after restart"
-    evidence_collected:
-      - "Run b6180e96 (20:58:... UTC): backend emitted 12 assistant entries; UI dropped them"
-      - "Run 06fc809f (20:57:... UTC): backend emitted + UI rendered normally on the preceding run"
-      - "Instrumentation added 2026-04-15: StreamingResponseAccumulator now logs engine.streaming.text_delta_emitted (Debug), engine.streaming.completed (Debug), engine.streaming.aborted (Warning) for correlating backend emit with frontend receipt"
-    next_action: >
-      Adam to reproduce with browser DevTools → Network → EventStream filter
-      active. Capture whether text.delta frames arrive at the browser. If
-      they do, bug is in frontend reducer (fold into 10.7b chat-panel work).
-      If they don't, reopen 10.7a and audit StreamingResponseAccumulator
-      vs the pre-refactor inline ToolLoop streaming code.
-    blocking: "No — does not block 10.7b start, but monitor closely"
