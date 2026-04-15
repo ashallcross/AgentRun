@@ -183,7 +183,8 @@ export class AgentRunChatPanelElement extends UmbLitElement {
                 .toolCalls=${msg.toolCalls ?? []}
                 ?is-streaming=${i === lastIndex &&
                 msg.role === "agent" &&
-                this.isStreaming}
+                this.isStreaming &&
+                msg.isStreaming === true}
               ></agentrun-chat-message>
             `,
           )}

@@ -2,7 +2,7 @@ import { UmbLitElement as M } from "@umbraco-cms/backoffice/lit-element";
 import { css as I, property as d, state as b, customElement as z, html as c, nothing as u } from "@umbraco-cms/backoffice/external/lit";
 import { UMB_AUTH_CONTEXT as W } from "@umbraco-cms/backoffice/auth";
 import { umbConfirmModal as j } from "@umbraco-cms/backoffice/modal";
-import { s as U, e as K, b as q, r as J, d as G, f as X, a as Y, h as T, m as E, i as Q } from "./index-D-gGkm5y.js";
+import { s as U, e as K, b as q, r as J, d as G, f as X, a as Y, h as T, m as E, i as Q } from "./index-BH_yTY2V.js";
 import { n as Z } from "./instance-list-helpers-JWQgi_HM.js";
 var ee = Object.defineProperty, te = Object.getOwnPropertyDescriptor, w = (e, t, s, a) => {
   for (var n = a > 1 ? void 0 : a ? te(t, s) : t, r = e.length - 1, i; r >= 0; r--)
@@ -436,7 +436,7 @@ let g = class extends M {
                 .content=${t.content}
                 .timestamp=${t.timestamp}
                 .toolCalls=${t.toolCalls ?? []}
-                ?is-streaming=${s === e && t.role === "agent" && this.isStreaming}
+                ?is-streaming=${s === e && t.role === "agent" && this.isStreaming && t.isStreaming === !0}
               ></agentrun-chat-message>
             `
     )}
@@ -1315,4 +1315,4 @@ export {
   x as AgentRunInstanceDetailElement,
   Be as default
 };
-//# sourceMappingURL=agentrun-instance-detail.element-Buqdr-XC.js.map
+//# sourceMappingURL=agentrun-instance-detail.element-BGEt7UVN.js.map
