@@ -323,8 +323,13 @@ public class FetchUrlToolTests
         await Task.WhenAll(t1, t2);
 
         Assert.That(Directory.Exists(Path.Combine(_instanceRoot, ".fetch-cache")), Is.True);
+        // Story 10.7a review patch P4 — each URL now writes a body .html file and
+        // a .meta.json sidecar preserving the real status + content-type.
+        // 2 URLs × 2 files = 4 entries.
         var files = Directory.GetFiles(Path.Combine(_instanceRoot, ".fetch-cache"));
-        Assert.That(files.Length, Is.EqualTo(2));
+        Assert.That(files.Length, Is.EqualTo(4));
+        Assert.That(files.Count(f => f.EndsWith(".html")), Is.EqualTo(2));
+        Assert.That(files.Count(f => f.EndsWith(".meta.json")), Is.EqualTo(2));
     }
 
     [Test]

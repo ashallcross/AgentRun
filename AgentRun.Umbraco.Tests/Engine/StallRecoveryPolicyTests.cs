@@ -1,8 +1,6 @@
 using AgentRun.Umbraco.Engine;
 using AgentRun.Umbraco.Tools;
 using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AgentRun.Umbraco.Tests.Engine;
 
@@ -10,14 +8,12 @@ namespace AgentRun.Umbraco.Tests.Engine;
 public class StallRecoveryPolicyTests
 {
     private StallRecoveryPolicy _policy = null!;
-    private ILogger _logger = null!;
     private ToolExecutionContext _context = null!;
 
     [SetUp]
     public void SetUp()
     {
         _policy = new StallRecoveryPolicy();
-        _logger = NullLogger.Instance;
         _context = new ToolExecutionContext(
             InstanceFolderPath: "/tmp/inst",
             InstanceId: "inst-001",
@@ -34,7 +30,7 @@ public class StallRecoveryPolicyTests
             messages, accumulatedText: "", functionCalls: Array.Empty<FunctionCallContent>(),
             updates: Array.Empty<ChatResponseUpdate>(),
             assistantTurnCount: 2, nudgeAttempted: false, isInteractive: false,
-            completionCheck: null, _context, _logger, CancellationToken.None);
+            completionCheck: null, _context, CancellationToken.None);
 
         Assert.That(result.Action, Is.EqualTo(StallRecoveryAction.Terminate));
     }
@@ -49,7 +45,7 @@ public class StallRecoveryPolicyTests
             messages, accumulatedText: "", functionCalls: Array.Empty<FunctionCallContent>(),
             updates: Array.Empty<ChatResponseUpdate>(),
             assistantTurnCount: 3, nudgeAttempted: false, isInteractive: true,
-            completionCheck, _context, _logger, CancellationToken.None);
+            completionCheck, _context, CancellationToken.None);
 
         Assert.That(result.Action, Is.EqualTo(StallRecoveryAction.Terminate));
     }
@@ -64,7 +60,7 @@ public class StallRecoveryPolicyTests
             messages, accumulatedText: "", functionCalls: Array.Empty<FunctionCallContent>(),
             updates: Array.Empty<ChatResponseUpdate>(),
             assistantTurnCount: 3, nudgeAttempted: false, isInteractive: true,
-            completionCheck, _context, _logger, CancellationToken.None);
+            completionCheck, _context, CancellationToken.None);
 
         Assert.Multiple(() =>
         {
@@ -85,7 +81,7 @@ public class StallRecoveryPolicyTests
                 messages, accumulatedText: "", functionCalls: Array.Empty<FunctionCallContent>(),
                 updates: Array.Empty<ChatResponseUpdate>(),
                 assistantTurnCount: 4, nudgeAttempted: true, isInteractive: true,
-                completionCheck, _context, _logger, CancellationToken.None));
+                completionCheck, _context, CancellationToken.None));
     }
 
     [Test]
@@ -98,7 +94,25 @@ public class StallRecoveryPolicyTests
                 messages, accumulatedText: "", functionCalls: Array.Empty<FunctionCallContent>(),
                 updates: Array.Empty<ChatResponseUpdate>(),
                 assistantTurnCount: 1, nudgeAttempted: false, isInteractive: true,
-                completionCheck: null, _context, _logger, CancellationToken.None));
+                completionCheck: null, _context, CancellationToken.None));
+    }
+
+    [Test]
+    public void EvaluateAsync_FirstTurnEmptyContentNonInteractive_StillThrowsProviderEmpty()
+    {
+        // Story 10.7a review decision D5 — an empty-first-turn from a misconfigured
+        // provider is a provider failure, NOT a clean Terminate, even in
+        // non-interactive mode. This test locks the behaviour so a future regression
+        // that tries to "simplify" by short-circuiting non-interactive straight to
+        // Terminate can't mask a bad-provider handshake.
+        var messages = new List<ChatMessage> { new(ChatRole.System, "You are a scanner.") };
+
+        Assert.ThrowsAsync<ProviderEmptyResponseException>(async () =>
+            await _policy.EvaluateAsync(
+                messages, accumulatedText: "", functionCalls: Array.Empty<FunctionCallContent>(),
+                updates: Array.Empty<ChatResponseUpdate>(),
+                assistantTurnCount: 1, nudgeAttempted: false, isInteractive: false,
+                completionCheck: null, _context, CancellationToken.None));
     }
 
     private static List<ChatMessage> MessagesWithToolResult()

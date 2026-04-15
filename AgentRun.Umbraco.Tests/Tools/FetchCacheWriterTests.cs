@@ -51,11 +51,10 @@ public class FetchCacheWriterTests
     }
 
     [Test]
-    public async Task WriteHandleAsync_PathSandboxReject_ThrowsToolExecutionException()
+    public void WriteHandleAsync_EmptyInstanceFolderPath_ThrowsToolExecutionException()
     {
-        // Non-existent root with traversal-unfriendly name: PathSandbox still resolves
-        // the canonical path, but Directory.CreateDirectory should fail under an invalid
-        // root. A cleaner reject is an empty-string root which fails path validation.
+        // Argument-validation path: an empty instance folder fails PathSandbox's
+        // null/whitespace guard before any file I/O is attempted.
         var body = Encoding.UTF8.GetBytes("hi");
 
         Assert.ThrowsAsync<ToolExecutionException>(async () =>
@@ -68,6 +67,132 @@ public class FetchCacheWriterTests
                 unmarkedLength: body.Length,
                 truncated: false,
                 cancellationToken: CancellationToken.None));
+    }
+
+    [Test]
+    [Platform(Exclude = "Win", Reason = "Symlink creation requires admin on Windows")]
+    public void WriteHandleAsync_SymlinkedCacheDir_RejectedBySandbox()
+    {
+        // Defence-in-depth (architect review 2026-04-08, Story 9.10): PathSandbox
+        // must reject when the cache directory is a symlink. Proves the writer
+        // propagates the sandbox rejection as ToolExecutionException rather than
+        // silently writing through the symlink.
+        var fetchCacheDir = Path.Combine(_instanceRoot, ".fetch-cache");
+        var realTarget = Path.Combine(Path.GetTempPath(), "agentrun-symlink-target-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(realTarget);
+        try
+        {
+            Directory.CreateSymbolicLink(fetchCacheDir, realTarget);
+
+            var body = Encoding.UTF8.GetBytes("leak");
+            var ex = Assert.ThrowsAsync<ToolExecutionException>(async () =>
+                await _writer.WriteHandleAsync(
+                    _instanceRoot,
+                    "https://example.com/sym",
+                    status: 200,
+                    contentType: "text/html",
+                    body: body,
+                    unmarkedLength: body.Length,
+                    truncated: false,
+                    cancellationToken: CancellationToken.None));
+
+            Assert.That(ex!.Message, Does.Contain(".fetch-cache/"));
+            Assert.That(File.Exists(Path.Combine(realTarget, "leak.html")), Is.False,
+                "sandbox must not allow writes through the symlink target");
+        }
+        finally
+        {
+            if (Directory.Exists(fetchCacheDir))
+                Directory.Delete(fetchCacheDir);
+            if (Directory.Exists(realTarget))
+                Directory.Delete(realTarget, recursive: true);
+        }
+    }
+
+    [Test]
+    public void WriteHandleAsync_UnmarkedLengthOutOfRange_ThrowsArgumentOutOfRange()
+    {
+        // Story 10.7a review patch P5 — unguarded Buffer.BlockCopy used to escape
+        // the IOException filter on a bad unmarkedLength. Now explicitly rejected.
+        var body = Encoding.UTF8.GetBytes("hi");
+
+        Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () =>
+            await _writer.WriteHandleAsync(
+                _instanceRoot,
+                "https://example.com/bad",
+                status: 200,
+                contentType: "text/html",
+                body: body,
+                unmarkedLength: body.Length + 10,
+                truncated: false,
+                cancellationToken: CancellationToken.None));
+    }
+
+    [Test]
+    public async Task TryReadHandleAsync_RoundTripsStatusAndContentType()
+    {
+        // Story 10.7a review patch P4 — cache-hit must return the real HTTP status
+        // and Content-Type that were persisted on write, not the (200, text/html)
+        // defaults the pre-patch code hardcoded.
+        var body = Encoding.UTF8.GetBytes("{\"ok\":true}");
+        await _writer.WriteHandleAsync(
+            _instanceRoot,
+            "https://api.example.com/x",
+            status: 202,
+            contentType: "application/json",
+            body: body,
+            unmarkedLength: body.Length,
+            truncated: false,
+            cancellationToken: CancellationToken.None);
+
+        var hit = await _writer.TryReadHandleAsync(
+            _instanceRoot,
+            "https://api.example.com/x",
+            CancellationToken.None);
+
+        Assert.That(hit, Is.Not.Null);
+        using var handle = JsonDocument.Parse(hit!);
+        Assert.That(handle.RootElement.GetProperty("status").GetInt32(), Is.EqualTo(202));
+        Assert.That(handle.RootElement.GetProperty("content_type").GetString(), Is.EqualTo("application/json"));
+    }
+
+    [Test]
+    public async Task TryReadHandleAsync_LegacyCacheWithoutSidecar_FallsBackToDefaults()
+    {
+        // Backwards compat: caches written before patch P4 have no .meta.json.
+        // Reader must silently fall back to (200, text/html) rather than erroring.
+        var fetchCacheDir = Path.Combine(_instanceRoot, ".fetch-cache");
+        Directory.CreateDirectory(fetchCacheDir);
+        var hash = Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(
+                Encoding.UTF8.GetBytes("https://legacy.example.com"))).ToLowerInvariant();
+        await File.WriteAllBytesAsync(
+            Path.Combine(fetchCacheDir, $"{hash}.html"),
+            Encoding.UTF8.GetBytes("<html>legacy</html>"));
+
+        var hit = await _writer.TryReadHandleAsync(
+            _instanceRoot,
+            "https://legacy.example.com",
+            CancellationToken.None);
+
+        Assert.That(hit, Is.Not.Null);
+        using var handle = JsonDocument.Parse(hit!);
+        Assert.That(handle.RootElement.GetProperty("status").GetInt32(), Is.EqualTo(200));
+        Assert.That(handle.RootElement.GetProperty("content_type").GetString(), Is.EqualTo("text/html"));
+    }
+
+    [Test]
+    public void TryReadHandleAsync_CancellationRequested_ThrowsOperationCanceled()
+    {
+        // Story 10.7a review patch P2 — reader must honor the cancellation token.
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        Assert.ThrowsAsync<OperationCanceledException>(async () =>
+            await _writer.TryReadHandleAsync(
+                _instanceRoot,
+                "https://example.com",
+                cts.Token));
     }
 
     [Test]

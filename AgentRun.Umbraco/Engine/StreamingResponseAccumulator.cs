@@ -4,6 +4,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging.Abstractions;
 using AgentRun.Umbraco.Engine.Events;
 
 namespace AgentRun.Umbraco.Engine;
@@ -15,6 +16,13 @@ namespace AgentRun.Umbraco.Engine;
 // decision 5).
 public class StreamingResponseAccumulator : IStreamingResponseAccumulator
 {
+    private readonly ILogger<StreamingResponseAccumulator> _logger;
+
+    public StreamingResponseAccumulator(ILogger<StreamingResponseAccumulator>? logger = null)
+    {
+        _logger = logger ?? NullLogger<StreamingResponseAccumulator>.Instance;
+    }
+
     public async Task<AccumulatedResponse> AccumulateAsync(
         IAsyncEnumerable<ChatResponseUpdate> stream,
         ISseEventEmitter? emitter,
@@ -23,6 +31,13 @@ public class StreamingResponseAccumulator : IStreamingResponseAccumulator
     {
         var textBuilder = new StringBuilder();
         var updates = new List<ChatResponseUpdate>();
+        // Story 10.7a review monitoring (SSE-flake triage): count + total-chars
+        // instrumentation at the emit boundary. Logged at Debug so the default
+        // production level stays quiet; flip a single category to Debug in
+        // appsettings when reproducing the intermittent UI-dropout to correlate
+        // backend emit with frontend receipt. Zero cost when Debug is off.
+        var emitCount = 0;
+        var emitChars = 0;
 
         try
         {
@@ -37,19 +52,23 @@ public class StreamingResponseAccumulator : IStreamingResponseAccumulator
                     if (emitter is not null)
                     {
                         await emitter.EmitTextDeltaAsync(update.Text, cancellationToken);
+                        emitCount++;
+                        emitChars += update.Text.Length;
+                        _logger.LogDebug(
+                            "engine.streaming.text_delta_emitted: seq={Seq}, chars={Chars}, cumulative={Cumulative}",
+                            emitCount, update.Text.Length, emitChars);
                     }
                 }
             }
         }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // Flush any partial text accumulated before the error so the
             // recorder contains what was actually streamed before the break.
             var partialText = textBuilder.ToString();
+            _logger.LogWarning(ex,
+                "engine.streaming.aborted: emittedDeltas={EmitCount}, partialChars={PartialChars}",
+                emitCount, partialText.Length);
             if (!string.IsNullOrEmpty(partialText))
             {
                 await (recorder?.RecordAssistantTextAsync(partialText, CancellationToken.None) ?? Task.CompletedTask);
@@ -59,6 +78,10 @@ public class StreamingResponseAccumulator : IStreamingResponseAccumulator
         }
 
         var accumulatedText = textBuilder.ToString();
+        _logger.LogDebug(
+            "engine.streaming.completed: emittedDeltas={EmitCount}, totalChars={TotalChars}, updates={UpdateCount}",
+            emitCount, accumulatedText.Length, updates.Count);
+
         if (!string.IsNullOrEmpty(accumulatedText))
         {
             await (recorder?.RecordAssistantTextAsync(accumulatedText, cancellationToken) ?? Task.CompletedTask);

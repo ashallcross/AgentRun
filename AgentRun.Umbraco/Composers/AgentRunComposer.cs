@@ -53,11 +53,11 @@ public class AgentRunComposer : IComposer
         // Story 10.7a Track C: StepExecutor delegates failure classification to
         // IStepExecutionFailureHandler (preserves AgentRunException bypass invariant).
         builder.Services.AddSingleton<IStepExecutionFailureHandler, StepExecutionFailureHandler>();
-        // Story 10.7a Track B: ToolLoop static class uses these as default
-        // collaborators when not explicitly injected. Registered for future
-        // consumers + DI surface symmetry.
-        builder.Services.AddSingleton<IStreamingResponseAccumulator, StreamingResponseAccumulator>();
-        builder.Services.AddSingleton<IStallRecoveryPolicy, StallRecoveryPolicy>();
+        // Story 10.7a Track B: IStreamingResponseAccumulator + IStallRecoveryPolicy
+        // are instantiated directly by ToolLoop as stateless static-readonly
+        // defaults — DI resolution adds a dead branch (ToolLoop is a static class
+        // and cannot consume constructor-injected services). Replacement via DI
+        // is deferred to Epic 12 (background execution rewrite) if needed.
         builder.Services.AddSingleton<IStepExecutor, StepExecutor>();
 
         // Workflow orchestrator (step sequencing + mode logic)

@@ -36,7 +36,6 @@ public interface IStallRecoveryPolicy
         bool isInteractive,
         Func<CancellationToken, Task<bool>>? completionCheck,
         ToolExecutionContext context,
-        ILogger logger,
         CancellationToken cancellationToken);
 }
 

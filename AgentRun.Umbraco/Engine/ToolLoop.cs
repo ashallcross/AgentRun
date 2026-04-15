@@ -138,7 +138,7 @@ public static class ToolLoop
                     messages, accumulatedText, functionCalls, updates,
                     assistantTurnCount, nudgeAttempted,
                     isInteractive: userMessageReader is not null,
-                    completionCheck, context, logger, cancellationToken);
+                    completionCheck, context, cancellationToken);
 
                 if (stallDecision.Action == StallRecoveryAction.Terminate)
                 {
@@ -156,13 +156,14 @@ public static class ToolLoop
 
                 // NoStall — interactive mode falls through to user-input-wait
                 // sequencing below. The policy returns NoStall ONLY when
-                // userMessageReader is non-null (isInteractive: true), so the
-                // wait path can rely on that — but assert it explicitly so
-                // null-flow analysis stays honest.
+                // isInteractive: true (userMessageReader is non-null). If this
+                // invariant ever breaks, fail loud instead of silently
+                // terminating the run.
                 if (userMessageReader is null)
                 {
-                    return new ChatResponse(messages.Where(m => m.Role == ChatRole.Assistant).LastOrDefault()
-                        ?? new ChatMessage(ChatRole.Assistant, accumulatedText));
+                    throw new InvalidOperationException(
+                        "IStallRecoveryPolicy returned NoStall in non-interactive mode; " +
+                        "policy must return Terminate when userMessageReader is null.");
                 }
 
                 // Try non-blocking drain first

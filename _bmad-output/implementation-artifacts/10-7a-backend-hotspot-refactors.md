@@ -1,6 +1,6 @@
 # Story 10.7a: Backend Hotspot Refactors
 
-Status: review
+Status: done
 
 **Depends on:** Story 10.1 (concurrency locking — done), Story 10.11 (SSE keepalive + Engine boundary — done; establishes the Engine→Services adapter pattern reused here).
 **Followed by:** Story 10.7b (frontend instance-detail + chat cursor), Story 10.7c (content-tool DRY + comment hygiene). Split from the original [Story 10.7 parent spec](./10-7-code-shape-cleanup-hotspot-refactoring.md) on 2026-04-15 per Adam's quality-risk concern on single-PR delivery.
@@ -131,7 +131,7 @@ These decisions were locked in the parent story on 2026-04-15 and are preserved 
 **Then** it is ≤ 400 lines (down from 603)
 **And** the stall-recovery branch at old [lines 154–294](../../AgentRun.Umbraco/Engine/ToolLoop.cs#L154) is replaced with a single call to `IStallRecoveryPolicy.ClassifyAndRecoverAsync(...)`
 **And** the streaming accumulation at old [lines 99–141](../../AgentRun.Umbraco/Engine/ToolLoop.cs#L99) is replaced with a call to `IStreamingResponseAccumulator.AccumulateAsync(...)` whose return value is the accumulated text + last message
-**And** the tool dispatch loop, interactive-wait logic, and `IConversationRecorder` calls remain inside `ToolLoop`
+**And** the tool dispatch loop and interactive-wait logic remain inside `ToolLoop`; `IConversationRecorder.RecordAssistantTextAsync` moves into `StreamingResponseAccumulator` (text capture is a streaming concern — review correction S4) while tool-call, tool-result, and user-message recording stay in `ToolLoop`
 
 ### AC6: `StallRecoveryPolicy` + `StreamingResponseAccumulator` exist in `Engine/`
 
@@ -140,7 +140,7 @@ These decisions were locked in the parent story on 2026-04-15 and are preserved 
 **Then** neither file imports `Umbraco.*` (Engine boundary preserved — AC-invariant from Story 10.11)
 **And** each file has a dedicated test file: [`StallRecoveryPolicyTests.cs`](../../AgentRun.Umbraco.Tests/Engine/StallRecoveryPolicyTests.cs), [`StreamingResponseAccumulatorTests.cs`](../../AgentRun.Umbraco.Tests/Engine/StreamingResponseAccumulatorTests.cs)
 **And** `StallRecoveryPolicy` exposes at minimum: "classify stall (step.completion_check vs empty tool-call vs unknown)", "synthesise nudge message", "one-shot retry flag" — whatever the exact method shape ends up being, these three behaviours must live inside this class, not in `ToolLoop`
-**And** `StreamingResponseAccumulator` owns the text builder, updates list, and optional `ISseEventEmitter.EmitTextDeltaAsync` call — the FinishReason telemetry at [ToolLoop.cs:169-188](../../AgentRun.Umbraco/Engine/ToolLoop.cs#L169) stays inside `ToolLoop` (it reads the *accumulated* result, so it's a post-accumulation concern)
+**And** `StreamingResponseAccumulator` owns the text builder, updates list, and optional `ISseEventEmitter.EmitTextDeltaAsync` call — the FinishReason telemetry lives inside `StallRecoveryPolicy.EvaluateAsync` (review correction S1: telemetry only fires on empty turns, which is the policy's domain; relocated from the original "stays inside ToolLoop" wording because semantically cleaner there)
 
 ### AC7: `ToolLoopTests.cs` + sister files still pass; new collaborator tests exist
 
@@ -148,7 +148,7 @@ These decisions were locked in the parent story on 2026-04-15 and are preserved 
 **When** the test suite runs
 **Then** all existing tests pass with only SetUp changes (mocking the two new collaborators instead of the inline behaviour)
 **And** BDD intent of every existing test is preserved — no test renamed, no assertion weakened
-**And** the stall-recovery tests that previously asserted on inline behaviour now assert via `_stallRecoveryPolicy.Received(1).ClassifyAndRecoverAsync(...)` (Received-call verification)
+**And** the stall-recovery tests may either (a) stay as integration-level tests using a real `StallRecoveryPolicy` via `ToolLoop`'s static `DefaultStallPolicy` (preserves BDD intent) OR (b) swap to `_stallRecoveryPolicy.Received(1).EvaluateAsync(...)` boundary verification when injecting a mock policy — dev's choice (review correction S3)
 **And** new `StallRecoveryPolicyTests` covers the three classify branches + nudge shape + one-shot flag
 **And** new `StreamingResponseAccumulatorTests` covers: text-delta path, empty-stream path, emit-SSE-or-not branch
 
@@ -321,9 +321,8 @@ These decisions were locked in the parent story on 2026-04-15 and are preserved 
 ### F4: `StreamingResponseAccumulator` emitter write throws mid-stream
 
 **When** `ISseEventEmitter.EmitTextDeltaAsync` throws (proxy timeout, client disconnect)
-**Then** the accumulator catches the exception, records partial text to `IConversationRecorder`, and returns the partial `AccumulatedResponse` with whatever `FinishReason` the stream surfaced
-**And** does NOT rethrow — the streaming failure becomes a "short completion," not a step failure
-**Net effect:** preserves current `ToolLoop` behaviour. The try/catch at [ToolLoop.cs:123-141](../../AgentRun.Umbraco/Engine/ToolLoop.cs#L123) moves to the accumulator verbatim.
+**Then** the accumulator catches the exception, records whatever text was accumulated to `IConversationRecorder.RecordAssistantTextAsync` (no data loss at the recorder), and rethrows the original exception so `ToolLoop`'s caller sees the streaming failure as a step-level error
+**Net effect:** preserves the pre-refactor `ToolLoop` behaviour (review correction S2: the earlier "does NOT rethrow" wording conflicted with locked decision 2 "behaviour-preserving refactor"; the code correctly rethrows, and the spec here is corrected to match). The try/catch at [ToolLoop.cs:123-141](../../AgentRun.Umbraco/Engine/ToolLoop.cs#L123) moves to the accumulator verbatim.
 
 ### F5: `StepExecutionFailureHandler.Classify(AgentRunException)` must NOT invoke `LlmErrorClassifier`
 
@@ -493,6 +492,58 @@ Claude Opus 4.6 (1M context) via bmad-dev-story workflow.
 **Sprint-status / planning artifacts:**
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` (10-7a → review, 10-7b → ready-for-dev)
 - `_bmad-output/implementation-artifacts/10-7a-backend-hotspot-refactors.md` (this file: status → review, Dev Agent Record populated)
+
+### Review Findings
+
+_Adversarial + Edge Case + Acceptance Auditor review on 2026-04-15 against commits `862ec21..HEAD` (Tracks A/C/B + bookkeeping), plus Codex second-opinion pass. 7 decision-needed, 14 patch, 8 deferred, 12 dismissed as noise or acknowledged deviations._
+
+**Decision-needed (resolved 2026-04-15):**
+
+- [x] [Review][Decision] DI registrations for `IStreamingResponseAccumulator` + `IStallRecoveryPolicy` unused by `ToolLoop` — **resolved: B (drop registrations)**. Rolls into Patch P15.
+- [x] [Review][Decision] `AC6` FinishReason telemetry relocation — **resolved: A (accept, correct spec)**. Rolls into Spec-Correction S1.
+- [x] [Review][Decision] `F4` rethrow vs spec — **resolved: A (correct spec; preserves locked decision 2 behaviour)**. Rolls into Spec-Correction S2.
+- [x] [Review][Decision] `AC7` boundary verification — **resolved: A (accept integration-level coverage; soften AC7 wording)**. Rolls into Spec-Correction S3.
+- [x] [Review][Decision] `StallRecoveryPolicy` first-turn non-interactive ProviderEmpty — **resolved: A (intended; add characterisation test)**. Rolls into Patch P16.
+- [x] [Review][Decision] `AC5` IConversationRecorder calls moved to accumulator — **resolved: A (accept, correct spec; recording is streaming concern)**. Rolls into Spec-Correction S4.
+- [x] [Review][Decision] `HtmlStructureExtractor` public records — **resolved: B (make internal with InternalsVisibleTo)**. Rolls into Patch P17.
+
+**Patch (unambiguous fix):**
+
+- [x] [Review][Patch] Dead branch — remove unreachable `userMessageReader is null` guard after `StallRecoveryPolicy.EvaluateAsync` returns `NoStall` [ToolLoop.cs](../../AgentRun.Umbraco/Engine/ToolLoop.cs) — policy only returns `NoStall` when interactive, so the null-reader guard post-policy is unreachable. (Blind, HIGH)
+- [x] [Review][Patch] `FetchCacheWriter.TryReadHandleAsync` ignores `CancellationToken` and does sync I/O in an async signature [FetchCacheWriter.cs:106-155](../../AgentRun.Umbraco/Tools/FetchCacheWriter.cs#L106) — honor the token (at minimum `ct.ThrowIfCancellationRequested()` at entry; ideally convert `File.Exists` + tail read to async via `FileStream(useAsync:true)` + `ReadAsync`). (Blind+Edge, HIGH)
+- [x] [Review][Patch] `FetchCacheWriter.WriteHandleAsync` doubles peak memory on non-truncated path [FetchCacheWriter.cs:50-58](../../AgentRun.Umbraco/Tools/FetchCacheWriter.cs#L50) — remove `Buffer.BlockCopy` of the full body; write `body.AsMemory(0, unmarkedLength)` directly via `FileStream.WriteAsync(ReadOnlyMemory<byte>)`. (Blind, MEDIUM)
+- [x] [Review][Patch] `TryReadHandleAsync` hardcodes `status: 200` on cache-hit [FetchCacheWriter.cs:146-152](../../AgentRun.Umbraco/Tools/FetchCacheWriter.cs#L146) — persist real HTTP status in the handle during write and read it back on hit (2xx `!=` 200 is still drift; comment acknowledges content-type drift but not status). (Edge, MEDIUM)
+- [x] [Review][Patch] `WriteHandleAsync` unguarded `Buffer.BlockCopy` on bad `unmarkedLength` escapes the `IOException` filter [FetchCacheWriter.cs:50-58](../../AgentRun.Umbraco/Tools/FetchCacheWriter.cs#L50) — validate `unmarkedLength >= 0 && unmarkedLength <= body.Length` at entry; throw `ArgumentOutOfRangeException` or wrap in `ToolExecutionException`. (Edge, MEDIUM)
+- [x] [Review][Patch] `FetchCacheWriterTests.WriteHandleAsync_PathSandboxReject_ThrowsToolExecutionException` is a false-positive security test [FetchCacheWriterTests.cs:391-408](../../AgentRun.Umbraco.Tests/Tools/FetchCacheWriterTests.cs#L391) — empty-string `instanceFolderPath` triggers `ArgumentException` in `PathSandbox.ValidatePath` (argument-validation path), not the sandbox-escape path. Rename the test + add an actual traversal / absolute-path / symlink-escape test that exercises `PathSandbox.ValidatePath`'s real guard. (Blind, MEDIUM)
+- [x] [Review][Patch] `FetchUrlTool` empty-body branch uses inline anonymous object whose JSON shape can drift from `FetchCacheWriter`'s persisted handle — promote to a shared `IFetchCacheWriter.BuildEmptyHandle(...)` (or expose the existing `FetchUrlHandle` record) so both paths share the contract. [FetchUrlTool.cs:1732-1741](../../AgentRun.Umbraco/Tools/FetchUrlTool.cs#L1732) (Blind, MEDIUM)
+- [x] [Review][Patch] `F1` — no `HtmlStructureExtractor` malformed-HTML characterisation test [HtmlStructureExtractorTests.cs](../../AgentRun.Umbraco.Tests/Tools/HtmlStructureExtractorTests.cs) — spec F1 requires a test verifying the extractor returns minimal structure on malformed input (AngleSharp is tolerant, but the contract should be characterised). (Auditor, MEDIUM)
+- [x] [Review][Patch] `IStallRecoveryPolicy.EvaluateAsync` takes `ILogger` as a parameter [IStallRecoveryPolicy.cs](../../AgentRun.Umbraco/Engine/IStallRecoveryPolicy.cs) — move to constructor-injected `ILogger<StallRecoveryPolicy>`; remove from the interface method. (Blind, LOW)
+- [x] [Review][Patch] `StallRecoveryPolicy` calls `StallDetector.Classify(...)` unconditionally, then ignores the result on the `nudgeAttempted` branch [StallRecoveryPolicy.cs](../../AgentRun.Umbraco/Engine/StallRecoveryPolicy.cs) — move the classify call into the block that actually reads it. (Blind, LOW)
+- [x] [Review][Patch] `StreamingResponseAccumulatorTests` partial-text assertion uses `StartsWith("first ")` when the actual captured string is `"first second"` [StreamingResponseAccumulatorTests.cs:316-319](../../AgentRun.Umbraco.Tests/Engine/StreamingResponseAccumulatorTests.cs#L316) — tighten to exact match, which also documents whether "text that failed mid-emit is persisted" is intentional. (Blind, LOW)
+- [x] [Review][Patch] `StreamingResponseAccumulator.AccumulateAsync` has a redundant `catch (OperationCanceledException) { throw; }` [StreamingResponseAccumulator.cs](../../AgentRun.Umbraco/Engine/StreamingResponseAccumulator.cs) — collapse to the idiomatic `catch (Exception ex) when (ex is not OperationCanceledException)`. (Blind, LOW)
+- [x] [Review][Patch] `IStepExecutionFailureHandler` XML doc contradicts code [IStepExecutionFailureHandler.cs](../../AgentRun.Umbraco/Engine/IStepExecutionFailureHandler.cs) — doc claims "null means user cancellation" but handler returns whatever `LlmErrorClassifier.Classify` returns. Either fix the doc or add an explicit `OperationCanceledException => null,` arm. (Blind, LOW)
+- [x] [Review][Patch] `StepExecutionFailureHandlerTests` does not cover non-engine exception routing [StepExecutionFailureHandlerTests.cs](../../AgentRun.Umbraco.Tests/Engine/StepExecutionFailureHandlerTests.cs) — add at least one test confirming a non-`AgentRunException` (e.g., generic `Exception`) flows through `LlmErrorClassifier`, to guard against a future regression that short-circuits all exceptions. (Edge, LOW)
+- [x] [Review][Patch] P15 — drop unused DI registrations for `IStreamingResponseAccumulator` + `IStallRecoveryPolicy` [AgentRunComposer.cs:59-60](../../AgentRun.Umbraco/Composers/AgentRunComposer.cs#L59) — `ToolLoop` uses `private static readonly` defaults; DI replacement would require class-ification of `ToolLoop.RunAsync`, out-of-scope for Phase-1 cleanup. Add a brief comment in `ToolLoop.cs` noting the collaborators are statelessly resolved; remove the two `AddSingleton` lines from the composer. (From D1:B)
+- [x] [Review][Patch] P16 — add characterisation test for non-interactive first-turn `ProviderEmptyResponseException` [StallRecoveryPolicyTests.cs](../../AgentRun.Umbraco.Tests/Engine/StallRecoveryPolicyTests.cs) — locks in the intended behaviour (throw, not Terminate) for future regression protection. (From D5:A)
+- [x] [Review][Patch] P17 — **DEFERRED** after build-time conflict: a public `IHtmlStructureExtractor` interface cannot return internal record types (C# accessibility). Cleanly tightening this surface requires either (a) making the interface + class + records all internal and switching `FetchUrlTool` constructor/injection to a non-default-public activator, or (b) redesigning the interface's return shape. Both are larger than a review-patch should absorb. Logged to deferred-work for follow-up. (From D6:B)
+
+**Spec corrections (resolved from decisions — update this file's AC/F text):**
+
+- [x] [Review][Spec] S1 — AC6 text: remove "the FinishReason telemetry at [ToolLoop.cs:169-188] stays inside ToolLoop" clause. Replace with "FinishReason telemetry lives inside `StallRecoveryPolicy` since it only fires on empty turns (the policy's domain)." (From D2:A)
+- [x] [Review][Spec] S2 — F4 text: change "does NOT rethrow — the streaming failure becomes a 'short completion,' not a step failure" to "rethrows after recording partial text; preserves old `ToolLoop` behaviour per locked decision 2." Update "Net effect" line accordingly. (From D3:A)
+- [x] [Review][Spec] S3 — AC7 text: soften "now assert via `_stallRecoveryPolicy.Received(1).ClassifyAndRecoverAsync(...)`" to "may assert via `.Received(1)` boundary verification OR remain as integration-level tests using a real policy instance (dev's choice)." (From D4:A)
+- [x] [Review][Spec] S4 — AC5 text: soften "the tool dispatch loop, interactive-wait logic, and `IConversationRecorder` calls remain inside `ToolLoop`" to "the tool dispatch loop and interactive-wait logic remain inside `ToolLoop`; `IConversationRecorder` assistant-text recording moves into `StreamingResponseAccumulator` since text-capture is a streaming concern." (From D7:A)
+
+**Deferred (pre-existing or out-of-scope):**
+
+- [x] [Review][Defer] `FetchCacheWriter.WriteHandleAsync` has no temp-write-then-rename; concurrent writers to the same URL race [FetchCacheWriter.cs:78-82](../../AgentRun.Umbraco/Tools/FetchCacheWriter.cs#L78) — deferred, pre-existing (promoted visibility only; atomic-write pattern is story-sized change).
+- [x] [Review][Defer] `StreamingResponseAccumulator` recorder-flush-throws masks the original stream exception [StreamingResponseAccumulator.cs:52-58](../../AgentRun.Umbraco/Engine/StreamingResponseAccumulator.cs#L52) — deferred, pre-existing behaviour preserved.
+- [x] [Review][Defer] `StallRecoveryPolicy` runs `StallDetector.Classify` + `engine.empty_turn.finish_reason` log before the `!isInteractive` Terminate gate — deferred, cosmetic efficiency; behaviour preserved.
+- [x] [Review][Defer] `ToolLoop` `DefaultAccumulator`/`DefaultStallPolicy` static instances are safe now but become thread-unsafe if either collaborator gains state — deferred, documentation/lint concern (depends on D1 resolution).
+- [x] [Review][Defer] `HtmlStructureExtractorTests` missing caps + boundary cases (200-heading cap, 100-anchor cap, `<base href>` resolution, UTF-8 mid-codepoint truncation) [HtmlStructureExtractorTests.cs](../../AgentRun.Umbraco.Tests/Tools/HtmlStructureExtractorTests.cs) — deferred, not spec-required.
+- [x] [Review][Defer] `FetchCacheWriterTests` has no `TryReadHandleAsync` / truncation-marker round-trip / cancellation coverage [FetchCacheWriterTests.cs](../../AgentRun.Umbraco.Tests/Tools/FetchCacheWriterTests.cs) — deferred, `FetchUrlToolTests` provides integration coverage.
+- [x] [Review][Defer] `StallRecoveryPolicyTests` missing `StallNarration` and `NoStall` path coverage [StallRecoveryPolicyTests.cs](../../AgentRun.Umbraco.Tests/Engine/StallRecoveryPolicyTests.cs) — deferred, `StallDetector` has its own test coverage.
+- [x] [Review][Defer] `StreamingResponseAccumulatorTests` missing stream-itself-throws / null `update.Text` / OCE rethrow-without-record paths [StreamingResponseAccumulatorTests.cs](../../AgentRun.Umbraco.Tests/Engine/StreamingResponseAccumulatorTests.cs) — deferred, not spec-required for this story.
 
 ## Change Log
 

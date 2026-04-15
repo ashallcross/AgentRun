@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging.Abstractions;
 using AgentRun.Umbraco.Tools;
 
 namespace AgentRun.Umbraco.Engine;
@@ -21,6 +22,13 @@ namespace AgentRun.Umbraco.Engine;
 // persists across loop iterations within a single RunAsync call.
 public class StallRecoveryPolicy : IStallRecoveryPolicy
 {
+    private readonly ILogger<StallRecoveryPolicy> _logger;
+
+    public StallRecoveryPolicy(ILogger<StallRecoveryPolicy>? logger = null)
+    {
+        _logger = logger ?? NullLogger<StallRecoveryPolicy>.Instance;
+    }
+
     public async Task<StallRecoveryDecision> EvaluateAsync(
         IList<ChatMessage> messages,
         string accumulatedText,
@@ -31,7 +39,6 @@ public class StallRecoveryPolicy : IStallRecoveryPolicy
         bool isInteractive,
         Func<CancellationToken, Task<bool>>? completionCheck,
         ToolExecutionContext context,
-        ILogger logger,
         CancellationToken cancellationToken)
     {
         // Story 10.12: First-turn empty completion detection.
@@ -63,19 +70,15 @@ public class StallRecoveryPolicy : IStallRecoveryPolicy
         //
         // Event name: engine.empty_turn.finish_reason
         var finishReason = updates.Select(u => u.FinishReason).LastOrDefault(r => r is not null);
-        logger.LogWarning(
+        _logger.LogWarning(
             "engine.empty_turn.finish_reason for step {StepId} in workflow {WorkflowAlias} instance {InstanceId}: {FinishReason} (accumulatedTextLength={Len}, updateCount={Updates})",
             context.StepId, context.WorkflowAlias, context.InstanceId,
             finishReason?.Value ?? "<null>", accumulatedText.Length, updates.Count);
 
-        // Story 9.0: classify the empty-tool-call turn before deciding
-        // whether to wait for user input. Detection is pure; recovery
-        // is swapped based on classification. Autonomous mode ignores
-        // the classification entirely (returns Terminate below).
-        var stallClassification = StallDetector.Classify(messages, accumulatedText, functionCalls);
-
         // No tool calls — non-interactive mode exits immediately. Stall
-        // detection is interactive-only (Story 9.0 AC #6).
+        // detection is interactive-only (Story 9.0 AC #6). Classification
+        // happens AFTER this gate so the StallDetector walk is only paid
+        // on paths that actually consume the result (review patch P10).
         if (!isInteractive)
         {
             return new StallRecoveryDecision(StallRecoveryAction.Terminate);
@@ -97,20 +100,27 @@ public class StallRecoveryPolicy : IStallRecoveryPolicy
         {
             if (completionCheck is not null && await completionCheck(cancellationToken))
             {
-                logger.LogInformation(
+                _logger.LogInformation(
                     "Completion check passed on post-nudge turn for step {StepId} in workflow {WorkflowAlias} instance {InstanceId} — treating as successful recovery",
                     context.StepId, context.WorkflowAlias, context.InstanceId);
                 return new StallRecoveryDecision(StallRecoveryAction.Terminate);
             }
 
             var lastToolCallNamePostNudge = ExtractLastToolCallName(messages);
-            logger.LogWarning(
+            _logger.LogWarning(
                 "Post-nudge turn produced no tool call for step {StepId} in workflow {WorkflowAlias} instance {InstanceId} after tool call {LastToolCall} — synthetic nudge already attempted, failing the run",
                 context.StepId, context.WorkflowAlias, context.InstanceId, lastToolCallNamePostNudge);
 
             throw new StallDetectedException(
                 lastToolCallNamePostNudge, context.StepId, context.InstanceId, context.WorkflowAlias);
         }
+
+        // Story 9.0: classify the empty-tool-call turn. Detection is pure;
+        // recovery is swapped based on classification. Deferred until here
+        // because the post-nudge branch above throws without reading it
+        // and the non-interactive branch terminates without reading it
+        // (review patch P10).
+        var stallClassification = StallDetector.Classify(messages, accumulatedText, functionCalls);
 
         if (stallClassification == StallClassification.StallEmptyContent
             || stallClassification == StallClassification.StallNarration)
@@ -126,7 +136,7 @@ public class StallRecoveryPolicy : IStallRecoveryPolicy
             // still stalls — while letting verified-complete runs finish.
             if (completionCheck is not null && await completionCheck(cancellationToken))
             {
-                logger.LogInformation(
+                _logger.LogInformation(
                     "Completion check passed despite empty/narrative final turn for step {StepId} in workflow {WorkflowAlias} instance {InstanceId} — treating as successful completion, not a stall",
                     context.StepId, context.WorkflowAlias, context.InstanceId);
                 return new StallRecoveryDecision(StallRecoveryAction.Terminate);
@@ -141,7 +151,7 @@ public class StallRecoveryPolicy : IStallRecoveryPolicy
             if (completionCheck is not null)
             {
                 var nudge = "Continue with the next required action — your previous turn was empty and the task is not yet complete.";
-                logger.LogInformation(
+                _logger.LogInformation(
                     "Empty/narrative stall detected with completion check failing for step {StepId} in workflow {WorkflowAlias} instance {InstanceId} — injecting one-shot synthetic user nudge before failing",
                     context.StepId, context.WorkflowAlias, context.InstanceId);
                 return new StallRecoveryDecision(StallRecoveryAction.Nudge, nudge);
@@ -152,7 +162,7 @@ public class StallRecoveryPolicy : IStallRecoveryPolicy
                 ? "empty"
                 : "narration";
 
-            logger.LogWarning(
+            _logger.LogWarning(
                 "ToolLoop stall detected ({StallType}) for step {StepId} in workflow {WorkflowAlias} instance {InstanceId} after tool call {LastToolCall} — no completion check available, failing the run",
                 stallType, context.StepId, context.WorkflowAlias, context.InstanceId, lastToolCallName);
 

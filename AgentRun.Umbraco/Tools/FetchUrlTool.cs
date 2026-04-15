@@ -224,18 +224,10 @@ public class FetchUrlTool : IWorkflowTool
                 }
 
                 // Empty-body raw branch: nothing to cache, so we do NOT go through
-                // IFetchCacheWriter (which always writes). Return a handle with
-                // saved_to=null in the same wire shape as the cache-written handle.
-                var emptyHandle = new
-                {
-                    url = urlString,
-                    status,
-                    content_type = contentType,
-                    size_bytes = 0L,
-                    saved_to = (string?)null,
-                    truncated = false
-                };
-                return JsonSerializer.Serialize(emptyHandle, HandleJsonOptions);
+                // WriteHandleAsync (which always writes). IFetchCacheWriter.BuildEmptyHandle
+                // keeps the JSON wire shape pinned to a single implementation so the
+                // empty-body handle can't drift from the cache-written handle's shape.
+                return _cacheWriter.BuildEmptyHandle(urlString, status, contentType);
             }
 
             var truncated = totalRead > maxBytes;

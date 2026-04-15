@@ -1,5 +1,5 @@
 # generated: 2026-03-30
-# last_updated: 2026-04-15 (Story 10.7a → REVIEW — Amelia shipped Tracks A→C→B in 3 commits; 696/696 tests; manual E2E pending Adam; 10-7b promoted to ready-for-dev per 10-7a Task 6.7)
+# last_updated: 2026-04-15 (Story 10.7a → DONE — review gate closed; 705/705 tests; E2E Test 1 passed backend-side; OPEN ISSUE: SSE text-delta UI-dropout under watch — see open_issues section)
 # project: AgentRun.Umbraco
 # project_key: NOKEY
 # tracking_system: file-system
@@ -154,7 +154,7 @@ development_status:
   10-6-retry-replay-degeneration-recovery: done                 # done 2026-04-15 — Option 3 (wipe-and-restart) shipped; synthetic Failed E2E on instance ed51eca8 validated full recovery contract. Code review: 6 patches applied (endpoint log structured fields + ArchivedTo via Task<string?> return on WipeHistoryAsync; duplicate NSubstitute stub removed; SetCurrentStepIndexAsync XML doc reconciled with defensive throw; ILogger<FetchUrlTool> added for cache-lookup LogDebug; targetStep re-captured after Task 2.6 reconciliation; DoD checkboxes reconciled with skipped Task 8.5/9 rationale). 1 finding dismissed on re-analysis (existing IOException catch filter covers the FileStream escape path). 16 items deferred to deferred-work.md under story-10-6 heading. Tests 659/659 green. Task 8.5 (5-run sampling) + Task 9 (fresh-install smoke) deliberately skipped per fast-follower rationale; re-open if Beta-Blocker Escalation Criteria trip in private beta.
   10-11-sse-keepalive-and-engine-boundary-cleanup: done # done 2026-04-15 — Amelia shipped + code review round (3 patches applied in-place: H1 explicit Cancel-then-Dispose on keepaliveCts, M1 Interlocked-gated one-shot clamp warn-log, L1 collapsed triple OCE catch, +1 regression test) + Adam's manual E2E all 5 gates passed (DI smoke, keepalive via browser DevTools at 5s override, long-LLM happy path through analyser + reporter, full CQA workflow ended run.finished:Completed, auto-detect path through IAIChatClientFactory chain). Backend 679/679, frontend 183/183, Engine/ boundary grep zero. Two tracks bundled (epics.md rationale: both too small for own stories): (A) SSE keepalive comment lines `: keepalive\n\n` on long LLM steps so reverse proxies (nginx/AWS ALB 60s, Cloudflare 30s/100s) don't kill connections — heartbeat via SemaphoreSlim-serialised StartKeepaliveAsync on SseEventEmitter, fire-and-forget from ExecuteSseAsync with explicit Cancel-then-Dispose linked CTS teardown, configurable AgentRunOptions.KeepaliveInterval (default 15s, clamped [5s,300s]); (B) ProfileResolver Engine-boundary cleanup — extract IAIChatClientFactory in Engine/ exposing only string + IChatClient (Microsoft.Extensions.AI), implement UmbracoAIChatClientFactory in Services/ holding the four Umbraco.AI.Core.* deps (Chat, InlineChat, Models, Profiles), refactor ProfileResolver to drop all Umbraco.AI imports. AC verified `grep AgentRun.Umbraco/Engine/ for using Umbraco.*` returns zero. 14 ACs, 10 tasks, 11 F-cases. 13 locked architect decisions cover bundling, comment-line-vs-event, 15s default, semaphore-not-lock, fire-and-forget heartbeat, IReadOnlyList<string>-not-AIProfile, sort-and-pick stays in ProfileResolver, adapter in Services/ (ConversationRecorder precedent).
   10-7-code-shape-cleanup-hotspot-refactoring: moved            # split 2026-04-15 into 10-7a/10-7b/10-7c per Adam's quality-risk concern on 4-day single-PR delivery; all 18 locked decisions preserved, redirect note at 10-7-code-shape-cleanup-hotspot-refactoring.md
-  10-7a-backend-hotspot-refactors: review                       # done 2026-04-15 by Amelia — Tracks A (FetchUrlTool 789→396; HtmlStructureExtractor + FetchCacheWriter), C (StepExecutor 366→342; ToolDeclaration promote + IStepExecutionFailureHandler), B (ToolLoop 603→460; IStreamingResponseAccumulator + IStallRecoveryPolicy) shipped as 3 commits. 696/696 backend tests (baseline 679 + 17 new). Engine boundary grep returns 0. AC1 ≤400 met; AC5 ≤400 missed by 60 (locked decision 5 rationale); AC8 ≤320 missed by 22 (locked decision 6 rationale); both misses honest. Manual E2E (Task 6.6) pending Adam — full CQA workflow + cancel/retry/F5 + stall-recovery path against TestSite.
+  10-7a-backend-hotspot-refactors: done                         # review gate closed 2026-04-15 by Amelia — Tracks A/C/B shipped (3 commits) + review patch pass (4 layers: Blind / Edge / Auditor / Codex 2nd-opinion). 7 decision-needed resolved (D1:B drop dead DI, D2/D3/D4/D7:A accept + correct spec, D5:A add characterisation test, D6:B deferred on C# accessibility). 16/17 patches applied (P17 deferred to follow-up: records-internal needs interface redesign or ActivatorUtilities factory). 4 spec corrections (AC5/AC6/AC7/F4 wording updates). 705/705 backend tests (baseline 696 → +9 review tests). Build clean. Engine boundary grep = 0. Manual E2E (Task 6.6) remains Adam's gate — full CQA workflow + cancel/retry/F5 + stall-recovery path against TestSite.
   10-7b-frontend-instance-detail-and-chat-cursor: ready-for-dev # promoted 2026-04-15 per 10-7a Task 6.7 (after 10.7a entered review). Tracks D (instance-detail → sse-reducer + store + actions) + F (chat cursor 1-line fix, Tom Madden beta); 8 locked decisions, 4 ACs, 4 tasks, 3 F-cases; test budget ~11 new frontend; priority D→F
   10-7c-content-tool-dry-and-comment-hygiene: backlog            # contexted 2026-04-15 by Bob — Tracks E (ContentToolHelpers + binary-search truncation) + G (comment archaeology strip, ≥50% reduction); 7 locked decisions, 4 ACs, 3 tasks, 3 F-cases; test budget ~5 new backend; Track G runs last so grep operates on final shape; transitions to ready-for-dev when 10.7b is done
   10-4-open-source-licence-decision: backlog                    # product/legal decision; ships before marketplace listing
@@ -176,3 +176,40 @@ development_status:
   12-2-database-storage-provider: backlog
   12-3-package-split: backlog
   epic-12-retrospective: optional
+
+# ========================================================================
+# OPEN ISSUES — visible tracking for regressions / flakes under active watch
+# ========================================================================
+# Lifecycle: `watching` (reproducing, need evidence) → `confirmed` (repro'd,
+# root cause known) → promoted into a proper story, then removed from here.
+# Deferred-work.md is for "known pre-existing issues we're NOT actively
+# debugging"; this section is for "things we're actively monitoring".
+
+open_issues:
+  sse-text-delta-ui-dropout-post-10-7a:
+    status: watching
+    opened: 2026-04-15
+    reporter: Adam (manual E2E Test 1)
+    symptom: >
+      Chat-UI intermittently does not render assistant text deltas during
+      an otherwise-successful workflow run. Backend emits normally (verified
+      via conversation-scanner.jsonl — all assistant entries present), step
+      completes cleanly, but the frontend chat panel stays blank from the
+      first turn onward. Started occurring AFTER 10.7a review patch pass
+      (2026-04-15, Apr 15 ~21:00 local). Not observed in prior epic testing
+      per Adam.
+    hypotheses:
+      - "P12 catch-filter rewrite in StreamingResponseAccumulator changes timing/unwind behaviour under cancellation"
+      - "Extra async frame from AccumulateAsync class method vs old inline code exposes a pre-existing frontend SSE race"
+      - "Pre-existing Story 10.9 SSE-resilience flake that coincidentally surfaced after restart"
+    evidence_collected:
+      - "Run b6180e96 (20:58:... UTC): backend emitted 12 assistant entries; UI dropped them"
+      - "Run 06fc809f (20:57:... UTC): backend emitted + UI rendered normally on the preceding run"
+      - "Instrumentation added 2026-04-15: StreamingResponseAccumulator now logs engine.streaming.text_delta_emitted (Debug), engine.streaming.completed (Debug), engine.streaming.aborted (Warning) for correlating backend emit with frontend receipt"
+    next_action: >
+      Adam to reproduce with browser DevTools → Network → EventStream filter
+      active. Capture whether text.delta frames arrive at the browser. If
+      they do, bug is in frontend reducer (fold into 10.7b chat-panel work).
+      If they don't, reopen 10.7a and audit StreamingResponseAccumulator
+      vs the pre-refactor inline ToolLoop streaming code.
+    blocking: "No — does not block 10.7b start, but monitor closely"

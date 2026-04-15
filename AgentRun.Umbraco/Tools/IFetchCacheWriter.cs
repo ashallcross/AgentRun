@@ -26,4 +26,11 @@ public interface IFetchCacheWriter
         string instanceFolderPath,
         string url,
         CancellationToken cancellationToken);
+
+    // Returns the serialized JSON handle for a zero-body response — same wire
+    // shape as WriteHandleAsync's return value but with size_bytes=0 and
+    // saved_to=null. Callers (FetchUrlTool's empty-body branch) use this to
+    // avoid a no-op disk write while keeping the JSON contract pinned to one
+    // implementation.
+    string BuildEmptyHandle(string url, int status, string contentType);
 }

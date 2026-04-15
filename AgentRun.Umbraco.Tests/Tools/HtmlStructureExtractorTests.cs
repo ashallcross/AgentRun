@@ -107,4 +107,31 @@ public class HtmlStructureExtractorTests
             Assert.That(result.Links.AnchorTextsTruncated, Is.False);
         });
     }
+
+    [Test]
+    public void Extract_MalformedHtml_ReturnsMinimalStructureWithoutThrowing()
+    {
+        // Story 10.7a F1 — AngleSharp's HTML5 parser is tolerant of malformed
+        // input by design, but we characterise the contract at this layer so a
+        // future parser swap can't silently drop exception-swallowing behaviour.
+        // Inputs: nested/unterminated tags, stray entities, malformed declarations.
+        var html = "<html><head><title>Broken<body><h1>Hi<div><<<>>><p>text</p";
+        var body = Encoding.UTF8.GetBytes(html);
+
+        // Act — must not throw; must return a non-null structure.
+        var result = _extractor.Extract(body, _sourceUri, body.Length, truncated: false);
+
+        Assert.That(result, Is.Not.Null);
+        // Parser does a best-effort reconstruction; the exact field values are
+        // AngleSharp-version-dependent, so we assert only the shape invariants.
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Headings, Is.Not.Null);
+            Assert.That(result.Links, Is.Not.Null);
+            Assert.That(result.Images, Is.Not.Null);
+            Assert.That(result.Forms, Is.Not.Null);
+            Assert.That(result.SemanticElements, Is.Not.Null);
+            Assert.That(result.WordCount, Is.GreaterThanOrEqualTo(0));
+        });
+    }
 }

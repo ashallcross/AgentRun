@@ -72,9 +72,11 @@ public class StreamingResponseAccumulatorTests
             await _accumulator.AccumulateAsync(stream, emitter, recorder, CancellationToken.None));
 
         Assert.That(ex!.Message, Is.EqualTo("emitter exploded"));
-        // Partial text recorded (the "first " accumulated before "second" failed).
+        // Accumulator appends to the text builder BEFORE emitting, so the
+        // in-flight chunk that failed to emit is persisted as part of the
+        // partial text. Locks in the "no data loss at the recorder" contract.
         await recorder.Received(1).RecordAssistantTextAsync(
-            Arg.Is<string>(s => s.StartsWith("first ")),
+            "first second",
             Arg.Any<CancellationToken>());
     }
 

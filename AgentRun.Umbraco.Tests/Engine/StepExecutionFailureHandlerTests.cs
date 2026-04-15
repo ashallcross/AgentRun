@@ -70,4 +70,32 @@ public class StepExecutionFailureHandlerTests
             Assert.That(message, Is.EqualTo(ex.Message));
         });
     }
+
+    [Test]
+    public void Classify_NonEngineException_RoutesToLlmErrorClassifier()
+    {
+        // Story 10.7a review patch P14 — non-engine exceptions fall through
+        // to LlmErrorClassifier. Guards against a future regression that
+        // short-circuits all exceptions via the engine-domain arms.
+        var ex = new TaskCanceledException("provider timed out");
+
+        var result = _handler.Classify(ex);
+
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result!.Value.ErrorCode, Is.EqualTo("timeout"));
+    }
+
+    [Test]
+    public void Classify_UserCancellation_ReturnsNull()
+    {
+        // LlmErrorClassifier's contract: OCE with cancellation requested returns
+        // null ("do not record an error"). Handler must faithfully propagate.
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        var ex = new OperationCanceledException(cts.Token);
+
+        var result = _handler.Classify(ex);
+
+        Assert.That(result, Is.Null);
+    }
 }
