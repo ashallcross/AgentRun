@@ -17,6 +17,13 @@ public static class ToolLoop
     /// </summary>
     internal const string CompactionPlaceholderPrefix = "[Content offloaded";
 
+    // Story 10.7a Track B: default collaborators used when callers do not
+    // inject their own. Stateless, so a single shared instance is fine.
+    // Tests that need to verify .Received(n) on either collaborator can pass
+    // in NSubstitute mocks via the optional parameters on RunAsync.
+    private static readonly IStreamingResponseAccumulator DefaultAccumulator = new StreamingResponseAccumulator();
+    private static readonly IStallRecoveryPolicy DefaultStallPolicy = new StallRecoveryPolicy();
+
     public static async Task<ChatResponse> RunAsync(
         IChatClient client,
         IList<ChatMessage> messages,
@@ -31,8 +38,13 @@ public static class ToolLoop
         Func<CancellationToken, Task<bool>>? completionCheck = null,
         IToolLimitResolver? toolLimitResolver = null,
         TimeSpan? userMessageTimeoutOverride = null,
-        int? compactionTurnThreshold = null)
+        int? compactionTurnThreshold = null,
+        IStreamingResponseAccumulator? accumulator = null,
+        IStallRecoveryPolicy? stallPolicy = null)
     {
+        accumulator ??= DefaultAccumulator;
+        stallPolicy ??= DefaultStallPolicy;
+
         // The user-message wait window (Story 9.6) is only needed in interactive
         // mode (when userMessageReader is non-null). Resolution is deferred until
         // first use; in interactive mode without an override, missing resolver or
@@ -96,49 +108,13 @@ public static class ToolLoop
                 CompactOldToolResults(messages, assistantTurnCount, compactThreshold, compactedCallIds, toolResultTurnMap, logger, context);
             }
 
-            // Stream the LLM response, emitting text.delta events for each chunk
-            var textBuilder = new StringBuilder();
-            var updates = new List<ChatResponseUpdate>();
-
-            try
-            {
-                await foreach (var update in client.GetStreamingResponseAsync(messages, options, cancellationToken))
-                {
-                    updates.Add(update);
-
-                    if (!string.IsNullOrEmpty(update.Text))
-                    {
-                        textBuilder.Append(update.Text);
-
-                        if (emitter is not null)
-                        {
-                            await emitter.EmitTextDeltaAsync(update.Text, cancellationToken);
-                        }
-                    }
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception)
-            {
-                // Flush any partial text accumulated before the error
-                var partialText = textBuilder.ToString();
-                if (!string.IsNullOrEmpty(partialText))
-                {
-                    await (recorder?.RecordAssistantTextAsync(partialText, CancellationToken.None) ?? Task.CompletedTask);
-                }
-
-                throw;
-            }
-
-            // Record accumulated assistant text (if any)
-            var accumulatedText = textBuilder.ToString();
-            if (!string.IsNullOrEmpty(accumulatedText))
-            {
-                await (recorder?.RecordAssistantTextAsync(accumulatedText, cancellationToken) ?? Task.CompletedTask);
-            }
+            // Story 10.7a Track B: streaming accumulation + partial-text-on-error
+            // recording delegated to IStreamingResponseAccumulator.
+            var accumulated = await accumulator.AccumulateAsync(
+                client.GetStreamingResponseAsync(messages, options, cancellationToken),
+                emitter, recorder, cancellationToken);
+            var accumulatedText = accumulated.Text;
+            var updates = accumulated.Updates;
 
             // Assemble streaming updates into messages for conversation context
             messages.AddMessages(updates);
@@ -153,144 +129,40 @@ public static class ToolLoop
 
             if (functionCalls.Count == 0)
             {
-                // Story 10.12: First-turn empty completion detection.
-                // Provider returned 200 but no content on the very first assistant turn
-                // (no prior tool results in context). This is a provider configuration
-                // error (bad API key, no credit), not a mid-workflow stall. Surface
-                // immediately as a provider error instead of entering stall detection.
-                if (assistantTurnCount == 1
-                    && string.IsNullOrWhiteSpace(accumulatedText)
-                    && !messages.Any(m => m.Contents.OfType<FunctionResultContent>().Any()))
+                // Story 10.7a Track B: empty-turn decision tree delegated to
+                // IStallRecoveryPolicy (ProviderEmpty detection, FinishReason
+                // telemetry, stall classification, one-shot nudge recovery).
+                // ToolLoop owns the nudgeAttempted flag because it persists
+                // across loop iterations; the policy is stateless.
+                var stallDecision = await stallPolicy.EvaluateAsync(
+                    messages, accumulatedText, functionCalls, updates,
+                    assistantTurnCount, nudgeAttempted,
+                    isInteractive: userMessageReader is not null,
+                    completionCheck, context, logger, cancellationToken);
+
+                if (stallDecision.Action == StallRecoveryAction.Terminate)
                 {
-                    throw new ProviderEmptyResponseException(
-                        context.StepId, context.InstanceId, context.WorkflowAlias);
-                }
-
-                // Permanent structured engine telemetry: capture the API
-                // FinishReason (Anthropic stop_reason equivalent) on every
-                // empty assistant turn. Established as permanent in Story
-                // 9.1b Phase 1 carve-out #3 (2026-04-09) after this exact
-                // instrumentation reclassified the CQA scanner stall from
-                // a workflow rhythm regression to a MaxOutputTokens ceiling
-                // bug (FinishReason=length, accumulatedTextLength=0). This
-                // class of failure (silent truncation presenting as "model
-                // stalled") is nearly invisible without instrumentation
-                // and trivially diagnosable with it — the cost of keeping
-                // the log line is one entry per stall (rare by definition),
-                // and it protects every future workflow from the same
-                // silent-truncation footgun.
-                //
-                // Event name: engine.empty_turn.finish_reason
-                var finishReason = updates.Select(u => u.FinishReason).LastOrDefault(r => r is not null);
-                logger.LogWarning(
-                    "engine.empty_turn.finish_reason for step {StepId} in workflow {WorkflowAlias} instance {InstanceId}: {FinishReason} (accumulatedTextLength={Len}, updateCount={Updates})",
-                    context.StepId, context.WorkflowAlias, context.InstanceId,
-                    finishReason?.Value ?? "<null>", accumulatedText.Length, updates.Count);
-
-                // Story 9.0: classify the empty-tool-call turn before deciding
-                // whether to wait for user input. Detection is pure; recovery
-                // (the throw below) is the only line a future strategy would
-                // swap. Autonomous mode ignores the classification entirely.
-                var stallClassification = StallDetector.Classify(messages, accumulatedText, functionCalls);
-
-                // No tool calls — check if we should wait for user input
-                if (userMessageReader is null)
-                {
-                    // Non-interactive mode — exit immediately. Stall detection
-                    // is interactive-only (Story 9.0 AC #6).
                     return new ChatResponse(messages.Where(m => m.Role == ChatRole.Assistant).LastOrDefault()
                         ?? new ChatMessage(ChatRole.Assistant, accumulatedText));
                 }
 
-                // Story 9.1b Phase 1 carve-out: post-nudge confirmed-stall
-                // throw. If we've already injected the synthetic recovery
-                // nudge once and we're back in the no-tool-call branch, the
-                // model has burned its second chance. The classifier will NOT
-                // fire as a stall on this turn (the most recent non-assistant
-                // message is now the synthetic user nudge, not a tool result),
-                // so we cannot rely on the classification path below — we have
-                // to throw directly. The success-path check still wins if the
-                // model called the recovery tool on the post-nudge turn AND
-                // the completion check now passes (e.g. write_file in turn 2,
-                // narration in turn 3) — that path is reached because the
-                // tool-call turn does not enter this branch at all.
-                if (nudgeAttempted)
+                if (stallDecision.Action == StallRecoveryAction.Nudge)
                 {
-                    if (completionCheck is not null && await completionCheck(cancellationToken))
-                    {
-                        logger.LogInformation(
-                            "Completion check passed on post-nudge turn for step {StepId} in workflow {WorkflowAlias} instance {InstanceId} — treating as successful recovery",
-                            context.StepId, context.WorkflowAlias, context.InstanceId);
-                        return new ChatResponse(messages.Where(m => m.Role == ChatRole.Assistant).LastOrDefault()
-                            ?? new ChatMessage(ChatRole.Assistant, accumulatedText));
-                    }
-
-                    var lastToolCallNamePostNudge = ExtractLastToolCallName(messages);
-                    logger.LogWarning(
-                        "Post-nudge turn produced no tool call for step {StepId} in workflow {WorkflowAlias} instance {InstanceId} after tool call {LastToolCall} — synthetic nudge already attempted, failing the run",
-                        context.StepId, context.WorkflowAlias, context.InstanceId, lastToolCallNamePostNudge);
-
-                    throw new StallDetectedException(
-                        lastToolCallNamePostNudge, context.StepId, context.InstanceId, context.WorkflowAlias);
+                    nudgeAttempted = true;
+                    messages.Add(new ChatMessage(ChatRole.User, stallDecision.NudgeMessage!));
+                    await (recorder?.RecordUserMessageAsync(stallDecision.NudgeMessage!, cancellationToken) ?? Task.CompletedTask);
+                    continue;
                 }
 
-                if (stallClassification == StallClassification.StallEmptyContent
-                    || stallClassification == StallClassification.StallNarration)
+                // NoStall — interactive mode falls through to user-input-wait
+                // sequencing below. The policy returns NoStall ONLY when
+                // userMessageReader is non-null (isInteractive: true), so the
+                // wait path can rely on that — but assert it explicitly so
+                // null-flow analysis stays honest.
+                if (userMessageReader is null)
                 {
-                    // Story 9.0 refinement (live test 2026-04-07): if the step's
-                    // completion criteria are already satisfied, the run actually
-                    // succeeded — the model just narrated "I'm done" instead of
-                    // going silent. Failing it would mask a successful run as a
-                    // bug and force a pointless retry. Run the completion check
-                    // first; if it passes, exit cleanly with success. Only throw
-                    // a stall when there is no verified evidence of completion.
-                    // This preserves "deny by default" — unverified narration
-                    // still stalls — while letting verified-complete runs finish.
-                    if (completionCheck is not null && await completionCheck(cancellationToken))
-                    {
-                        logger.LogInformation(
-                            "Completion check passed despite empty/narrative final turn for step {StepId} in workflow {WorkflowAlias} instance {InstanceId} — treating as successful completion, not a stall",
-                            context.StepId, context.WorkflowAlias, context.InstanceId);
-                        return new ChatResponse(messages.Where(m => m.Role == ChatRole.Assistant).LastOrDefault()
-                            ?? new ChatMessage(ChatRole.Assistant, accumulatedText));
-                    }
-
-                    // Story 9.1b Phase 1 carve-out: single-shot stall recovery
-                    // via synthetic user nudge. See the comment at the top of
-                    // RunAsync for the diagnosis and rationale. Gated on
-                    // `completionCheck is not null` so the engine only attempts
-                    // recovery when the workflow has supplied a verifiable
-                    // success signal — otherwise we have no way to know if the
-                    // post-nudge turn produced real progress and the safer
-                    // behaviour is to throw immediately as before. The nudge
-                    // fires before the throw so the model gets exactly one
-                    // chance to recover from a "lost track mid-batch" stall
-                    // before we hard-fail. If the nudge also stalls, the throw
-                    // below executes on the next loop iteration's classify
-                    // path with nudgeAttempted == true.
-                    if (completionCheck is not null && !nudgeAttempted)
-                    {
-                        nudgeAttempted = true;
-                        var nudge = "Continue with the next required action — your previous turn was empty and the task is not yet complete.";
-                        messages.Add(new ChatMessage(ChatRole.User, nudge));
-                        await (recorder?.RecordUserMessageAsync(nudge, cancellationToken) ?? Task.CompletedTask);
-                        logger.LogInformation(
-                            "Empty/narrative stall detected with completion check failing for step {StepId} in workflow {WorkflowAlias} instance {InstanceId} — injecting one-shot synthetic user nudge before failing",
-                            context.StepId, context.WorkflowAlias, context.InstanceId);
-                        continue;
-                    }
-
-                    var lastToolCallName = ExtractLastToolCallName(messages);
-                    var stallType = stallClassification == StallClassification.StallEmptyContent
-                        ? "empty"
-                        : "narration";
-
-                    logger.LogWarning(
-                        "ToolLoop stall detected ({StallType}) for step {StepId} in workflow {WorkflowAlias} instance {InstanceId} after tool call {LastToolCall} — synthetic nudge already attempted, failing the run",
-                        stallType, context.StepId, context.WorkflowAlias, context.InstanceId, lastToolCallName);
-
-                    throw new StallDetectedException(
-                        lastToolCallName, context.StepId, context.InstanceId, context.WorkflowAlias);
+                    return new ChatResponse(messages.Where(m => m.Role == ChatRole.Assistant).LastOrDefault()
+                        ?? new ChatMessage(ChatRole.Assistant, accumulatedText));
                 }
 
                 // Try non-blocking drain first
@@ -472,21 +344,6 @@ public static class ToolLoop
             // Drain any user messages sent during tool execution
             await DrainUserMessagesAsync(userMessageReader, messages, recorder, emitter, cancellationToken);
         }
-    }
-
-    private static string ExtractLastToolCallName(IList<ChatMessage> messages)
-    {
-        // Walk backwards through assistant messages and find the most recent
-        // FunctionCallContent — that is the tool call the LLM saw a result for
-        // before stalling. "none" if there is no tool call in the conversation
-        // (defensive — stall detection should not fire in that case).
-        for (var i = messages.Count - 1; i >= 0; i--)
-        {
-            if (messages[i].Role != ChatRole.Assistant) continue;
-            var fnCall = messages[i].Contents.OfType<FunctionCallContent>().LastOrDefault();
-            if (fnCall is not null) return fnCall.Name;
-        }
-        return "none";
     }
 
     private static async Task<int> DrainUserMessagesAsync(
