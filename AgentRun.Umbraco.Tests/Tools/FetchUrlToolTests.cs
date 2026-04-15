@@ -18,6 +18,7 @@ public class FetchUrlToolTests
     private SsrfProtection _ssrfProtection = null!;
     private IHttpClientFactory _httpClientFactory = null!;
     private FakeToolLimitResolver _resolver = null!;
+    private FetchCacheWriter _cacheWriter = null!;
     private FetchUrlTool _tool = null!;
     private ToolExecutionContext _context = null!;
     private string _instanceRoot = null!;
@@ -35,7 +36,15 @@ public class FetchUrlToolTests
         _ssrfProtection = new SsrfProtection(policy, dnsResolver);
         _httpClientFactory = Substitute.For<IHttpClientFactory>();
         _resolver = new FakeToolLimitResolver();
-        _tool = new FetchUrlTool(_ssrfProtection, _httpClientFactory, _resolver);
+        // Story 10.7a Track A: FetchUrlTool now takes IHtmlStructureExtractor +
+        // IFetchCacheWriter as dependencies. A real HtmlStructureExtractor is
+        // injected (tests assert structured-output shape; own test file covers
+        // the extractor directly). A real FetchCacheWriter is injected because
+        // many tests assert the on-disk handle (saved_to path, cache-hit
+        // short-circuit behaviour). Per-test temp directory is scoped via
+        // _instanceRoot below so each test runs against isolated disk state.
+        _cacheWriter = new FetchCacheWriter();
+        _tool = new FetchUrlTool(_ssrfProtection, _httpClientFactory, _resolver, new HtmlStructureExtractor(), _cacheWriter);
 
         _instanceRoot = Path.Combine(Path.GetTempPath(), "agentrun-fetchurl-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_instanceRoot);
@@ -440,7 +449,7 @@ public class FetchUrlToolTests
             .Returns(new[] { IPAddress.Parse("10.0.0.1") });
 
         var blockingSsrf = new SsrfProtection(blockingPolicy, dnsResolver);
-        var tool = new FetchUrlTool(blockingSsrf, _httpClientFactory, _resolver);
+        var tool = new FetchUrlTool(blockingSsrf, _httpClientFactory, _resolver, new HtmlStructureExtractor(), _cacheWriter);
 
         var args = new Dictionary<string, object?> { ["url"] = "https://internal.corp" };
 
@@ -528,7 +537,7 @@ public class FetchUrlToolTests
     public async Task RealResolver_WorkflowDeclaredMaxResponseBytes_FlowsThroughToTruncation()
     {
         var realResolver = new ToolLimitResolver(Options.Create(new AgentRunOptions()));
-        var tool = new FetchUrlTool(_ssrfProtection, _httpClientFactory, realResolver);
+        var tool = new FetchUrlTool(_ssrfProtection, _httpClientFactory, realResolver, new HtmlStructureExtractor(), _cacheWriter);
 
         var step = new StepDefinition { Id = "scan", Name = "Scan", Agent = "a.md" };
         var workflow = new WorkflowDefinition
@@ -563,7 +572,7 @@ public class FetchUrlToolTests
     public async Task RealResolver_StepOverride_BeatsWorkflowDefault()
     {
         var realResolver = new ToolLimitResolver(Options.Create(new AgentRunOptions()));
-        var tool = new FetchUrlTool(_ssrfProtection, _httpClientFactory, realResolver);
+        var tool = new FetchUrlTool(_ssrfProtection, _httpClientFactory, realResolver, new HtmlStructureExtractor(), _cacheWriter);
 
         var step = new StepDefinition
         {
@@ -1111,7 +1120,7 @@ public class FetchUrlToolTests
             .Returns(new[] { IPAddress.Parse("169.254.169.254") });
 
         var ssrf = new SsrfProtection(policy, dnsResolver);
-        var tool = new FetchUrlTool(ssrf, _httpClientFactory, _resolver);
+        var tool = new FetchUrlTool(ssrf, _httpClientFactory, _resolver, new HtmlStructureExtractor(), _cacheWriter);
 
         SetupHttpClient((req, _) =>
         {

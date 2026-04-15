@@ -74,6 +74,11 @@ public class AgentRunComposer : IComposer
             {
                 AllowAutoRedirect = false
             });
+        // Story 10.7a Track A — FetchUrlTool becomes a coordinator over two collaborators:
+        //   IHtmlStructureExtractor owns AngleSharp parsing + structured-fact walks.
+        //   IFetchCacheWriter owns .fetch-cache/ path sandbox + file I/O.
+        builder.Services.AddSingleton<IHtmlStructureExtractor, HtmlStructureExtractor>();
+        builder.Services.AddSingleton<IFetchCacheWriter, FetchCacheWriter>();
         builder.Services.AddSingleton<IWorkflowTool, FetchUrlTool>();
 
         // Umbraco content tools (Story 9.12) — in-process access to published content
