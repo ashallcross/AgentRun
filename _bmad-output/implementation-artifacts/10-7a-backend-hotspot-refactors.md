@@ -1,6 +1,6 @@
 # Story 10.7a: Backend Hotspot Refactors
 
-Status: in-progress
+Status: review
 
 **Depends on:** Story 10.1 (concurrency locking — done), Story 10.11 (SSE keepalive + Engine boundary — done; establishes the Engine→Services adapter pattern reused here).
 **Followed by:** Story 10.7b (frontend instance-detail + chat cursor), Story 10.7c (content-tool DRY + comment hygiene). Split from the original [Story 10.7 parent spec](./10-7-code-shape-cleanup-hotspot-refactoring.md) on 2026-04-15 per Adam's quality-risk concern on single-PR delivery.
@@ -435,19 +435,64 @@ Three commits per the Task 6.5 plan — each commit leaves the full backend test
 
 ### Agent Model Used
 
-_To be filled by dev agent._
+Claude Opus 4.6 (1M context) via bmad-dev-story workflow.
 
 ### Debug Log References
 
-_To be filled by dev agent._
+- Track A Task 1.6 (HtmlStructureExtractor): initial test expected `WordCount=4` was wrong — body.TextContent collects heading + paragraph text. Corrected to 8 with explanatory comment.
+- Track C Task 3.3 (handler interface): initial signature returned `(string Code, string Message)` but `StepExecutionContext.LlmError` is `(string ErrorCode, string UserMessage)?` — fixed to match (nullable + named-tuple shape preserved).
+- Track C Task 3.7 (handler tests): `StallDetectedException` + `ProviderEmptyResponseException` constructors take `(stepId, instanceId, workflowAlias)` (not a single-string message) — tests rewritten to use real constructor args.
+- Track B Task 4.1 (ToolLoop nullability): post-policy code path lost null-flow tracking on `userMessageReader`. Added explicit `if (userMessageReader is null) return ...` short-circuit AFTER the policy decision (NoStall path) so the wait-for-input branch keeps clean nullability without a null-forgiving operator.
 
 ### Completion Notes List
 
-_To be filled by dev agent._
+- ✅ Track A complete. FetchUrlTool 789 → 396 lines (AC1 ≤400 met). HtmlStructureExtractor + FetchCacheWriter both in `Tools/`. AngleSharp usings now only in HtmlStructureExtractor.cs (AC2 met). `.fetch-cache/` file I/O only in FetchCacheWriter.cs (AC3 met — one prose comment in FetchUrlTool.cs reworded to remove the literal path string).
+- ✅ Track C complete. StepExecutor 366 → 342 lines (AC8 target ≤320 missed by 22; further reduction blocked by locked decision 6 which preserves `ConvertHistoryToMessages` + `ParseArguments` in-place). ToolDeclaration promoted to own file as `internal sealed class`. `IStepExecutionFailureHandler` extracted; tests codify the AgentRunException → bypass-classifier invariant (F5).
+- ✅ Track B complete. ToolLoop 603 → 460 lines (AC5 target ≤400 missed by 60; further reduction blocked by locked decision 5 which preserves the dispatch loop + interactive-wait + `ConversationRecorder` call sites). `IStreamingResponseAccumulator` + `IStallRecoveryPolicy` both in `Engine/`, both with dedicated test files.
+- ✅ AC9 (Engine boundary): `grep -rn "using Umbraco\." AgentRun.Umbraco/Engine/ --include="*.cs"` returns **0**. Story 10.11 invariant preserved.
+- ✅ Test budget: 17 new tests (6 Track A, 3 Track C, 8 Track B). Baseline 679 → 696/696. Spec target was ~14; over-budget by 3 because the StallRecoveryPolicy test surface needed coverage for ProviderEmpty + non-interactive paths that the spec did not enumerate.
+- ✅ Build: clean. Only 2 pre-existing GetContentTool warnings (CS8604 + CS0618 obsolete) — baseline, unrelated to this story.
+- ✅ Three-commit train shipped per Task 6.5: A → C → B (priority order from locked decision 10).
+- ⚠️ AC4 minor deviation: `IFetchCacheWriter` injected as a real instance in `FetchUrlToolTests` SetUp (not a mock as the AC text suggests). Rationale: the 68 existing FetchUrlTool tests assert on real on-disk handles (saved_to path, cache-hit verification) — mocking would break their assertions, violating locked decision 2 (preserve BDD intent). The writer has its own dedicated `FetchCacheWriterTests` providing mock-free unit coverage. Each test scopes its own per-test `_instanceRoot` temp directory so disk state is isolated.
+- ⚠️ AC1/AC5/AC8 line-count miss summary: target/actual = 400/396 ✓, 400/460 ✗(60), 320/342 ✗(22). All misses are honest — they reflect the locked decisions' "fewest necessary moves" extraction set. Pushing further would require extracting code the locked decisions explicitly forbid extracting.
+- ✅ AC4 / AC7 / AC8 BDD preservation: zero existing test assertions changed. Setup-only changes (constructor injection of new collaborators). All 696 tests still pass.
+- 🔴 **Manual E2E (Task 6.6) is Adam's job**: full CQA workflow on TestSite, cancel/retry/F5 invariants, stall-recovery path. Not run by dev agent.
 
 ### File List
 
-_To be filled by dev agent._
+**Backend new files:**
+- `AgentRun.Umbraco/Tools/IHtmlStructureExtractor.cs`
+- `AgentRun.Umbraco/Tools/HtmlStructureExtractor.cs`
+- `AgentRun.Umbraco/Tools/IFetchCacheWriter.cs`
+- `AgentRun.Umbraco/Tools/FetchCacheWriter.cs`
+- `AgentRun.Umbraco/Engine/ToolDeclaration.cs` (promoted from inner class of StepExecutor)
+- `AgentRun.Umbraco/Engine/IStepExecutionFailureHandler.cs`
+- `AgentRun.Umbraco/Engine/StepExecutionFailureHandler.cs`
+- `AgentRun.Umbraco/Engine/IStreamingResponseAccumulator.cs`
+- `AgentRun.Umbraco/Engine/StreamingResponseAccumulator.cs`
+- `AgentRun.Umbraco/Engine/IStallRecoveryPolicy.cs`
+- `AgentRun.Umbraco/Engine/StallRecoveryPolicy.cs`
+
+**Backend modified files:**
+- `AgentRun.Umbraco/Tools/FetchUrlTool.cs` (789 → 396 lines)
+- `AgentRun.Umbraco/Engine/StepExecutor.cs` (366 → 342 lines)
+- `AgentRun.Umbraco/Engine/ToolLoop.cs` (603 → 460 lines)
+- `AgentRun.Umbraco/Composers/AgentRunComposer.cs` (5 new singleton registrations)
+
+**Backend test new files:**
+- `AgentRun.Umbraco.Tests/Tools/HtmlStructureExtractorTests.cs` (3 tests)
+- `AgentRun.Umbraco.Tests/Tools/FetchCacheWriterTests.cs` (3 tests)
+- `AgentRun.Umbraco.Tests/Engine/StepExecutionFailureHandlerTests.cs` (3 tests)
+- `AgentRun.Umbraco.Tests/Engine/StreamingResponseAccumulatorTests.cs` (3 tests)
+- `AgentRun.Umbraco.Tests/Engine/StallRecoveryPolicyTests.cs` (5 tests)
+
+**Backend test modified files:**
+- `AgentRun.Umbraco.Tests/Tools/FetchUrlToolTests.cs` (SetUp + 4 ad-hoc instantiations updated for new constructor; zero assertion changes)
+- `AgentRun.Umbraco.Tests/Engine/StepExecutorTests.cs` (CreateExecutor helper + 1 ad-hoc instantiation updated for new constructor; zero assertion changes)
+
+**Sprint-status / planning artifacts:**
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (10-7a → review, 10-7b → ready-for-dev)
+- `_bmad-output/implementation-artifacts/10-7a-backend-hotspot-refactors.md` (this file: status → review, Dev Agent Record populated)
 
 ## Change Log
 
@@ -455,3 +500,4 @@ _To be filled by dev agent._
 |---|---|---|
 | 2026-04-15 | Parent Story 10.7 spec created (7 tracks, 18 locked decisions, 15 ACs, 11 tasks, 11 F-cases). Bundling rationale: shared review/E2E ceremony cost dominates per-track code overhead. Test budget ~25–35 new tests; baseline 679 backend + 183 frontend → expected ~705–715 + ~195–200. | Bob (SM) |
 | 2026-04-15 | Parent 10.7 split into 10.7a / 10.7b / 10.7c per Adam's quality-risk concern on 4-day single-PR delivery. Each child gets its own code review + manual E2E gate. Locked decision 18 in parent already authorised this staged split. This story (10.7a) covers Tracks A (FetchUrlTool) + C (StepExecutor partial) + B (ToolLoop) — backend hotspot refactors only. | Bob (SM) |
+| 2026-04-15 | Tracks A → C → B implemented and shipped as three separate commits per locked decision 10 priority order. 696/696 backend tests pass (baseline 679 + 17 new). Engine boundary grep returns 0. Line counts: FetchUrlTool 789→396 (AC1 ≤400 met), StepExecutor 366→342 (AC8 ≤320 missed by 22, locked decision 6 rationale), ToolLoop 603→460 (AC5 ≤400 missed by 60, locked decision 5 rationale). Story → review. Manual E2E (Task 6.6) handed to Adam. | Amelia (Dev) |
