@@ -1,36 +1,38 @@
 # Story 10.7b: Frontend Instance-Detail Split + Chat Cursor Fix
 
-Status: backlog (transitions to `ready-for-dev` when [Story 10.7a](./10-7a-backend-hotspot-refactors.md) is done)
+Status: in-progress
 
 **Depends on:** Story 10.7a (backend hotspot refactors — must land first so the backend baseline is stable before frontend work begins). Story 10.10 precedent (`instance-detail-helpers.ts` already extracted — reference pattern for this story's utility modules).
 **Followed by:** Story 10.7c (content-tool DRY + comment hygiene). Split from the original [Story 10.7 parent spec](./10-7-code-shape-cleanup-hotspot-refactoring.md) on 2026-04-15 per Adam's quality-risk concern on single-PR delivery.
 **Branch:** `feature/epic-10-continued`
 **Priority:** 9th in Epic 10 (10.2 → 10.12 → 10.8 → 10.9 → 10.10 → 10.1 → 10.6 → 10.11 → 10.7a → **10.7b** → 10.7c → 10.4 → 10.5).
 
-> **Two tracks shipped as one frontend-focused story.** Covers Track D (instance-detail 3-module split) and Track F (chat-panel cursor 1-line fix) from Winston's architect triage of the [Codex bloat review (2026-04-10)](../planning-artifacts/codebase-bloat-review-agentrun-umbraco-2026-04-10.md). Track F is bundled here because it touches the same frontend mental model and shares the same E2E harness (chat UI streaming behaviour).
+> **Four tracks shipped as one frontend-focused story.** Covers Track D (instance-detail 3-module split) and Track F (chat-panel cursor 1-line fix) from Winston's architect triage of the [Codex bloat review (2026-04-10)](../planning-artifacts/codebase-bloat-review-agentrun-umbraco-2026-04-10.md), plus Track G (chat-panel retry-banner reducer fix, AC5) and Track H (SSE text-delta render integrity, AC6) folded in 2026-04-15 from bugs surfaced during Story 10.7a E2E. Tracks F/G/H all live in `agentrun-chat-panel.element.ts` + its reducer / SSE wiring, so they share one frontend test run and one commit-train cadence.
 >
 > **The goal is clearer responsibility boundaries with the fewest necessary moves — NOT maximum decomposition.** Every extraction must reduce reasoning load; thin one-method wrappers are explicitly rejected. When in doubt, leave the file alone.
 
 ## Story
 
 As a maintainer of AgentRun.Umbraco,
-I want the largest frontend accumulation point (`agentrun-instance-detail.element.ts`) refactored into clearer responsibility boundaries AND the chat cursor flash bug fixed,
-So that future UI changes are lower-risk, the state / reducer / action concerns are testable without a DOM, and beta feedback about the cursor is resolved before public launch.
+I want the largest frontend accumulation point (`agentrun-instance-detail.element.ts`) refactored into clearer responsibility boundaries AND three chat-panel UX bugs fixed (cursor flash, stale retry banner, text-delta render intermittency),
+So that future UI changes are lower-risk, the state / reducer / action concerns are testable without a DOM, and three chunks of beta/E2E feedback land together before public launch instead of scattering across stories.
 
 ## Context
 
-**UX Mode: Interactive (primary) + Autonomous (secondary).** Track D is a pure-shape refactor — UI behaviour unchanged. Track F improves interactive-mode UX only (Tom Madden beta feedback 2026-04-15): the block cursor currently flashes during tool calls / waiting states; after this story it only shows during active text streaming.
+**UX Mode: Interactive (primary) + Autonomous (secondary).** Track D is a pure-shape refactor — UI behaviour unchanged. Tracks F / G / H are deliberate observable-behaviour changes: **F** (Tom Madden beta 2026-04-15) — block cursor only renders during active text streaming, not during tool calls / waiting states. **G** (10.7a E2E 2026-04-15) — chat-panel reducer clears the stale "Run failed/interrupted" banner + re-enables the input when Retry fires a new LLM turn, on both Failed→Retry and Interrupted→Retry paths. **H** (10.7a E2E 2026-04-15) — every `text.delta` SSE frame renders in the chat panel (no silent drops); if triage shows frames don't arrive at the browser at all, escalate back to 10.7a engine instead of patching the frontend.
 
 ### Why this story was split from the parent
 
 See [Story 10.7a §Why this story was split from the parent](./10-7a-backend-hotspot-refactors.md). This story (10.7b) is track-group 2 of 3 from the original parent spec. Running the backend refactor first (10.7a) lets the full test suite re-settle before frontend work begins — any weirdness in the ToolLoop / StepExecutor reshape surfaces first, not mingled with a 1073-line frontend reshape.
 
-### The two tracks in this story
+### The four tracks in this story
 
 | Track | Target | Disposition | Why | Est. effort |
 |---|---|---|---|---|
 | **D** | [`Client/agentrun-instance-detail.element.ts`](../../AgentRun.Umbraco/Client/src/components/agentrun-instance-detail.element.ts) (1073 lines) | Split | Strongest frontend hotspot; SSE event reducer + state store + action handlers out of the view | 1.5 days |
 | **F** | [`Client/agentrun-chat-panel.element.ts`](../../AgentRun.Umbraco/Client/src/components/agentrun-chat-panel.element.ts) line 184 | 1-line fix + 1 test | Beta feedback (Tom Madden); cursor flashes during tool calls — wire existing message-level `isStreaming` flag | 0.1 day |
+| **G** (AC5) | [`Client/agentrun-chat-panel.element.ts`](../../AgentRun.Umbraco/Client/src/components/agentrun-chat-panel.element.ts) reducer / banner state | Reducer action + 3–4 tests | 10.7a E2E Tests 4 + 5 — Retry on Failed OR Interrupted leaves stale "Run failed/interrupted — click Retry to resume" banner + locked input throughout the retry execution | 0.3 day |
+| **H** (AC6) | [`Client/agentrun-chat-panel.element.ts`](../../AgentRun.Umbraco/Client/src/components/agentrun-chat-panel.element.ts) SSE text-delta render path | Triage-then-fix (≤ 2 tests if in-scope; escalate otherwise) | 10.7a E2E Test 1 — backend JSONL contained all 12 assistant entries, UI rendered none. Intermittent. Engine-side `engine.streaming.text_delta_emitted` Debug log from 10.7a localises backend-emit vs frontend-render on repro | 0.2 day (in-scope) / escalate to 10.7a if backend |
 
 ### Tracks explicitly deferred to sibling stories (do not touch)
 
@@ -54,7 +56,7 @@ These decisions were locked in the parent story on 2026-04-15 and are preserved 
 **Universal (all three 10.7 child stories):**
 
 1. **"Fewest necessary moves" is the design principle.** Any extraction that does not demonstrably reduce reasoning load must be rejected in favour of leaving the file alone. Thin one-method wrappers are explicitly forbidden. When in doubt, don't split. The dev agent should read the refactor brief's "Review Rules For The Next Agent" ([refactor brief §Review Rules](../planning-artifacts/codebase-bloat-refactor-brief-agentrun-umbraco-2026-04-10.md)) before starting.
-2. **Behaviour-preserving refactor — the sole behaviour change is Track F's cursor fix.** Track D must leave existing tests passing without modification to test *assertions* (setup may change to match new state shape; BDD intent must be preserved). Track F is the only observable-behaviour change: the cursor visibility expression is corrected to match the message-level flag.
+2. **Behaviour preservation scoped to Track D.** Track D is a pure-shape refactor — existing tests must pass without modification to test *assertions* (setup may change to match new state shape; BDD intent must be preserved). Tracks F / G / H are deliberate observable-behaviour changes, each scoped as narrowly as possible: F flips the cursor visibility expression; G adds one chat-panel reducer action that clears banner state on retry start; H is in-scope only if triage localises the bug to the reducer (see decision 13). Any Track D test that needs rewriting is a flag that the refactor is wrong-shaped — reshape the refactor, don't rewrite the test.
 3. **Engine boundary must stay clean (Story 10.11 invariant).** `grep -rn "using Umbraco\." AgentRun.Umbraco/Engine/ --include="*.cs"` must remain at 0 matches. This story doesn't touch `Engine/` directly, but the invariant must be preserved across the repo at DoD.
 
 **Track D (instance-detail):**
@@ -67,17 +69,25 @@ These decisions were locked in the parent story on 2026-04-15 and are preserved 
 
 **Track F (chat cursor):**
 
-7. **Track F is a one-line code change + one frontend test.** The deferred-work entry ([deferred-work.md:205-226](./deferred-work.md)) specifies the fix exactly. No other frontend changes in Track F — do NOT touch `agentrun-chat-message.element.ts` (Winston skip), do NOT touch the streaming field on ChatMessage (already correct).
+7. **Track F is a one-line code change + one frontend test — nothing else ships under the F label.** The deferred-work entry ([deferred-work.md:205-226](./deferred-work.md)) specifies the fix exactly. No other frontend changes in Track F — do NOT touch `agentrun-chat-message.element.ts` (Winston skip), do NOT touch the streaming field on ChatMessage (already correct). Reducer-level work belongs to Track G; render-path work belongs to Track H. Track F is scoped tight on purpose so a regression in G or H cannot contaminate the cursor fix commit.
+
+**Track G (retry-banner reducer fix, AC5):**
+
+12. **Track G is a single reducer action + banner-flag clear + test coverage — no chat-panel structural change.** Shape: add one case to the chat-panel reducer (name it `retry.started` or reuse the first post-retry `text.delta` / `tool.start` as the trigger — dev agent picks whichever the existing reducer topology makes cheapest) that clears the stale banner flag AND the `_disableInput` (or equivalent) flag. The two evidence paths (Failed→Retry and Interrupted→Retry) share one fix — do NOT write two code paths. Test coverage is the two paths asserted separately (AC5). This track does NOT touch the instance-detail reducer from Track D; it lives in the chat-panel's own state.
+
+**Track H (SSE text-delta render integrity, AC6):**
+
+13. **Track H is triage-first, fix-only-if-frontend.** The dev agent MUST repro with browser DevTools → Network → EventStream filter active before writing any fix. Two branches: (a) if `text.delta` frames arrive at the browser and the UI does not render them → bug is in the SSE reducer or state-merge path, IN SCOPE for this story, ship the fix with ≤ 2 tests; (b) if `text.delta` frames do NOT arrive at the browser → bug is engine-side, OUT OF SCOPE, escalate back to 10.7a review with a new bug-finding artefact under `_bmad-output/planning-artifacts/` and mark AC6 as escalated in the Dev Agent Record rather than failing the story. If the dev cannot reproduce AC6 at all during manual E2E against the TestSite across ≥ 3 full runs of the CQA workflow, document the non-repro in the Dev Agent Record, leave the 10.7a Debug instrumentation in place, and unblock story completion — do NOT block 10.7b on an unreproducible intermittent. Note this carefully: under-delivering on AC6 via documented non-repro or escalation is an acceptable path to DONE; over-delivering via speculative frontend patches to a bug that wasn't localised is NOT.
 
 **Cross-cutting (frontend-relevant):**
 
 8. **No new npm dependencies.** Track D uses existing Lit / TypeScript. Track F is a one-char change.
 
-9. **Test budget target: ~11 new tests.** Breakdown: Track D (~10: 6 reducer tests for the SSE event cases, 2 for store shape, 2 for actions), Track F (~1 frontend). Full frontend suite must stay green. Preserve ALL existing tests — any test deletion must be justified in the Dev Notes as either duplicate coverage or no-longer-applicable setup.
+9. **Test budget target: ~16 new tests.** Breakdown: Track D (~10: 6 reducer tests for the SSE event cases, 2 for store shape, 2 for actions); Track F (~1 frontend cursor test); Track G (~4: reducer unit for the banner-clear action, Failed-path banner clears, Interrupted-path banner clears, input re-enable on retry); Track H (~0 if escalated / non-repro, ~1–2 if in-scope reducer fix). Full frontend suite must stay green. Preserve ALL existing tests — any test deletion must be justified in the Dev Notes as either duplicate coverage or no-longer-applicable setup.
 
 10. **Test counts are guidelines, not ceilings.** From Epic 8+ retro. If the reducer needs 10 tests to cover all SSE event branches, write the 10 tests. Under-budget is fine too — don't pad.
 
-11. **Priority ordering inside the story: D → F.** Track D first (heavier work), Track F last (one-line change slotted into the same frontend test run). Track F could go first but bundling the test green-gate at the end is simpler.
+11. **Priority ordering inside the story: D → F → G → H.** Track D first (heaviest work, largest surface). Track F second (one-line cursor change, lowest-risk chat-panel edit). Track G third (chat-panel reducer action — lands on top of F's cleaned-up chat-panel state without stepping on it). Track H last (triage-first; may resolve to "escalated" or "non-repro" rather than a code change, and running it last means D/F/G's test run gives a fresh baseline for the intermittent repro). Each track finishes with `npm test` green before the next one starts.
 
 ## Acceptance Criteria (BDD)
 
@@ -112,7 +122,7 @@ These decisions were locked in the parent story on 2026-04-15 and are preserved 
 
 **Given** the story is complete
 **When** `npm test` in `AgentRun.Umbraco/Client/` runs
-**Then** frontend tests pass (baseline 183 → expect ~194 with ~11 new tests per locked decision 9; delta TBD by dev agent)
+**Then** frontend tests pass (baseline 183 → expect ~199 with ~16 new tests per locked decision 9; delta TBD by dev agent — lower bound ~196 if Track H resolves to non-repro / escalation)
 **And** `npm run build` in `AgentRun.Umbraco/Client/` is clean
 **And** line-count check: `wc -l AgentRun.Umbraco/Client/src/components/agentrun-instance-detail.element.ts` → ≤ 700 (AC1)
 **And** `dotnet test AgentRun.Umbraco.slnx` still green at whatever count 10.7a left it (no backend regressions)
@@ -200,27 +210,57 @@ These decisions were locked in the parent story on 2026-04-15 and are preserved 
 - [ ] 3.3 Add a test in [`agentrun-chat-panel.element.test.ts`](../../AgentRun.Umbraco/Client/src/components/agentrun-chat-panel.element.test.ts) — if the file doesn't exist, create it — asserting (a) cursor present when both flags true, (b) cursor absent when `this.isStreaming=true && msg.isStreaming=false`. Use `@open-wc/testing` `fixture` + query-selector on the rendered DOM.
 - [ ] 3.4 Run `npm test` — new test green.
 
-### Task 4: DoD verification + commit train
+### Task 4: Track G — Chat-panel retry-banner reducer fix (AC5)
 
-- [ ] 4.1 Full frontend test: `cd AgentRun.Umbraco/Client && npm test` → all green (AC4, expect ~194).
-- [ ] 4.2 Full backend test: `dotnet test AgentRun.Umbraco.slnx` → still green at whatever 10.7a left it (no backend changes in this story).
-- [ ] 4.3 Build clean: `npm run build` in `Client/` → clean. `dotnet build AgentRun.Umbraco.slnx` → 0 new warnings.
-- [ ] 4.4 Engine boundary check: `grep -rn "using Umbraco\." AgentRun.Umbraco/Engine/ --include="*.cs"` → 0 matches (Story 10.11 invariant — not expected to change in this story, but part of DoD).
-- [ ] 4.5 Line-count check: `wc -l AgentRun.Umbraco/Client/src/components/agentrun-instance-detail.element.ts` → ≤ 700 (AC1).
-- [ ] 4.6 Commit train:
+- [ ] 4.1 Open [`agentrun-chat-panel.element.ts`](../../AgentRun.Umbraco/Client/src/components/agentrun-chat-panel.element.ts) + its reducer / state module. Identify where the stale banner flag (likely `_showFailedBanner` / `_showInterruptedBanner` or a shared `_terminalBannerText` field) and `_disableInput` are set, and where `_handleSseEvent` (or the panel's own SSE reducer) dispatches into that state.
+- [ ] 4.2 Add a single reducer action — name it `retry.started` or reuse the first post-retry `text.delta` / `tool.start` event as the trigger, whichever the existing reducer topology makes cheapest per locked decision 12 — that clears the banner flag + `_disableInput` when a new LLM turn begins after Retry. Shape:
+  ```ts
+  // inside the chat-panel's reducer / SSE handler
+  case "text.delta":  // or "retry.started" if a dedicated event is cleaner
+    return { ...state, terminalBanner: null, inputDisabled: false, /* ...existing merge */ };
+  ```
+  Exact field names are whatever the file already uses — do NOT rename existing fields.
+- [ ] 4.3 Add tests in [`agentrun-chat-panel.element.test.ts`](../../AgentRun.Umbraco/Client/src/components/agentrun-chat-panel.element.test.ts) (create if missing):
+  - (a) Reducer unit — starting from `{ terminalBanner: "Run failed…", inputDisabled: true }`, dispatch the retry-trigger event and assert the banner clears + input re-enables.
+  - (b) **Failed→Retry path** — fixture with Failed state + banner rendered, simulate retry start event, assert banner absent + input enabled.
+  - (c) **Interrupted→Retry path** — fixture with Interrupted state + banner rendered, simulate retry start event, assert banner absent + input enabled.
+  - (d) Assert **input-disabled placeholder text** no longer reads "Run failed — click Retry to resume" / "Run interrupted — click Retry to resume" after retry starts.
+- [ ] 4.4 Run `npm test` — all green. Verify both AC5 evidence paths would now behave correctly (evidence instances `fad4b0f4a5c64747bbc153d26401fdd1` for Failed→Retry and `9ef84e8e26a44dabb68ee9c90138a2f1` for Interrupted→Retry).
+
+### Task 5: Track H — SSE text-delta render integrity triage-then-fix (AC6)
+
+- [ ] 5.1 **Triage first, code second.** Start the TestSite, run the CQA workflow, keep browser DevTools → Network → EventStream filter active across ≥ 3 full runs. Repro the AC6 symptom (full JSONL on disk, empty UI) before writing a single line of fix code. Note: the symptom is intermittent; if it does not repro after 3 runs plus ad-hoc exercise, proceed to subtask 5.4.
+- [ ] 5.2 If repro succeeds — **branch on "where did the frames stop":**
+  - (a) **Frames arrive at browser, UI silent** → bug is in the SSE reducer / state-merge path. IN SCOPE for this story. Pinpoint the missed merge (likely `text.delta` dropping into a state branch that fails to append to the active assistant message's text buffer, or a race between `_finaliseStreamingMessage` and a subsequent `text.delta`). Apply the narrowest fix + ≤ 2 tests. Document evidence in the Dev Agent Record.
+  - (b) **Frames do NOT arrive at browser** → bug is engine-side. OUT OF SCOPE for 10.7b. Use the `engine.streaming.text_delta_emitted` Debug log from 10.7a to confirm emits on the server, then file a new bug-finding artefact at `_bmad-output/planning-artifacts/bug-finding-2026-04-1X-text-delta-backend-drop.md` and mark AC6 as "escalated — see bug-finding" in the Dev Agent Record.
+- [ ] 5.3 Add ≤ 2 tests if the fix landed in the reducer — typical assertion shape is `reduceSseEvent(initial, { event: "text.delta", text: "abc" })` yields state with streamingText appended; a second test for the race pattern if that's what the triage found.
+- [ ] 5.4 If the symptom never repros — document the non-repro in the Dev Agent Record per locked decision 13: "AC6 triage: ≥ 3 CQA runs + exploratory use, symptom not reproduced. Engine-side `engine.streaming.text_delta_emitted` Debug instrumentation from 10.7a left in place for future repros." This is an acceptable path to DONE.
+- [ ] 5.5 Run `npm test` — all green whether or not a code fix landed.
+
+### Task 6: DoD verification + commit train
+
+- [ ] 6.1 Full frontend test: `cd AgentRun.Umbraco/Client && npm test` → all green (AC4, expect ~199; lower bound ~196 if Track H resolved to non-repro / escalation).
+- [ ] 6.2 Full backend test: `dotnet test AgentRun.Umbraco.slnx` → still green at whatever 10.7a left it (no backend changes in this story).
+- [ ] 6.3 Build clean: `npm run build` in `Client/` → clean. `dotnet build AgentRun.Umbraco.slnx` → 0 new warnings.
+- [ ] 6.4 Engine boundary check: `grep -rn "using Umbraco\." AgentRun.Umbraco/Engine/ --include="*.cs"` → 0 matches (Story 10.11 invariant — not expected to change in this story, but part of DoD).
+- [ ] 6.5 Line-count check: `wc -l AgentRun.Umbraco/Client/src/components/agentrun-instance-detail.element.ts` → ≤ 700 (AC1).
+- [ ] 6.6 Commit train:
   - Commit 1: Track D part 1 (store + reducer + their tests + element refactor to use them)
   - Commit 2: Track D part 2 (actions + their tests + element refactor to call them)
   - Commit 3: Track F (chat cursor one-line fix + test)
+  - Commit 4: Track G (chat-panel retry-banner reducer action + 3–4 tests)
+  - Commit 5: Track H (IN-SCOPE fix + ≤ 2 tests) — OR — Track H escalation / non-repro documentation commit (Dev Agent Record update only, no code change)
 
   Each commit leaves the full frontend test suite green. Each commit body ends with the standard Co-Authored-By trailer per CLAUDE.md.
-- [ ] 4.7 Manual E2E — Adam walks the frontend-relevant scenarios:
+- [ ] 6.7 Manual E2E — Adam walks the frontend-relevant scenarios:
   1. Start TestSite: `dotnet run` from `AgentRun.Umbraco.TestSite/`.
   2. Run the **Content Quality Audit** workflow end-to-end. Verify: chat UI streams correctly (Track D — reducer works end-to-end), agent responses + tool calls + results all render in the right order, SSE event handling survives the refactor.
   3. **Cancel a running step** — verify cancel UI flows work (Story 10.8 invariant across Track D action extraction).
-  4. **Retry a failed step** — verify retry UI flows work (Story 10.6 invariant).
-  5. **Interrupt via F5** during a long LLM step — verify Interrupted flow surfaces correctly in the UI (Story 10.9 invariant).
+  4. **Retry a failed step (Failed→Retry, Track G / AC5)** — trigger a Failed run (e.g., cancel mid-LLM or let a transient provider error land), click Retry, verify: banner clears the moment the retry LLM turn starts (not when the step completes), input is immediately enabled, "Agent is responding…" reflects live retry state. Adam's AC5 evidence instance `fad4b0f4a5c64747bbc153d26401fdd1` reproduces this; any fresh Failed instance should now behave.
+  5. **Interrupt via F5 during a long LLM step, then click Retry (Interrupted→Retry, Track G / AC5)** — verify Interrupted flow surfaces correctly in the UI (Story 10.9 invariant) AND the banner clears + input re-enables as soon as the retry LLM turn begins, not when the step completes. AC5 evidence instance `9ef84e8e26a44dabb68ee9c90138a2f1`.
   6. **Chat cursor behaviour (Track F)** — observe the cursor during a multi-turn interactive step: the block cursor (▋) should ONLY appear during active text streaming, NOT during tool calls, NOT during waiting states, NOT between messages. This is the Tom Madden repro scenario; it's the acceptance condition for Track F.
-- [ ] 4.8 Set story status to `done` in this file + `sprint-status.yaml` once 4.1–4.7 all pass. Transition 10.7c from `backlog` to `ready-for-dev` in the same sprint-status update.
+  7. **Text-delta render integrity (Track H / AC6)** — across ≥ 3 full CQA runs with DevTools EventStream filter active, verify every `text.delta` frame renders in the chat panel. If the intermittent symptom surfaces, it should now be handled (in-scope branch 5.2a) or documented (escalated branch 5.2b or non-repro branch 5.4). AC6 evidence run `b6180e96` 2026-04-15.
+- [ ] 6.8 Set story status to `done` in this file + `sprint-status.yaml` once 6.1–6.7 all pass. Transition 10.7c from `backlog` to `ready-for-dev` in the same sprint-status update.
 
 ## Failure & Edge Cases
 
@@ -244,6 +284,28 @@ These decisions were locked in the parent story on 2026-04-15 and are preserved 
 **Then** the UI may skip rendering the intermediate "tool-running" cursor-off state entirely — the observer sees no flash
 **Net effect:** this is actually desirable (smoother UX). No special handling needed. Mentioned here because the test at Task 3.3 should use explicit state snapshots, not real timing.
 
+### F4: Track G — Retry clicked while a previous retry is still mid-flight
+
+**Given** the user clicks Retry, the chat-panel reducer clears the banner + enables input, then the user clicks Retry again before the first retry's SSE stream emits any events
+**When** the second Retry fires
+**Then** the reducer treats the second `retry.started` (or equivalent trigger) as a no-op against already-cleared banner state — state is idempotent, not toggled
+**And** the input does NOT re-disable simply because a retry event fired
+**Net effect:** the banner-clear action must be a *set-to-null*, not a toggle. Dev agent should write the reducer case as `{ ...state, terminalBanner: null, inputDisabled: false }` with no conditional. Double-click on Retry is a real user behaviour; don't let it strand the UI.
+
+### F5: Track H — Text-delta race with `_finaliseStreamingMessage`
+
+**Given** (IN-SCOPE branch only) a `text.delta` event arrives at the reducer after `_finaliseStreamingMessage` has closed out the active assistant message but before the next `tool.start` or `run.finished` fires
+**When** the reducer applies the delta
+**Then** the delta appends to the finalised message (re-opening it is fine) OR starts a new assistant message with the delta as its seed — but it does NOT silently drop
+**Net effect:** "never silently drop a text.delta" is the invariant of AC6. The fix pattern — if Track H lands in the reducer — must be defensive against ordering quirks, not dependent on the event order being well-formed. Backend-emit ordering is the engine's responsibility (10.7a); the frontend reducer must be robust against the observed ordering either way.
+
+### F6: Track H — Intermittent bug does not reproduce during dev-agent manual E2E
+
+**Given** the dev agent runs ≥ 3 full CQA workflow runs with DevTools EventStream filter active and the AC6 symptom does not surface
+**When** the dev agent cannot synthesise a minimal failing case from the Debug instrumentation logs
+**Then** per locked decision 13, the dev agent documents the non-repro in the Dev Agent Record and leaves the 10.7a `engine.streaming.text_delta_emitted` instrumentation in place for future repros — AC6 is marked as "non-repro; instrumentation retained" rather than failing the story
+**Net effect:** intermittent bugs don't block a cleanup story. The instrumentation is the deliverable if the fix can't be. Under-deliver via documented non-repro is an acceptable path to DONE; over-deliver via speculative frontend patches without localisation is NOT.
+
 ## Dev Notes
 
 ### Why "fewest necessary moves" is a hard constraint for the frontend split
@@ -260,7 +322,7 @@ Story 10.10's code review extracted helpers (`shouldShowContinueButton`, `comput
 
 ### Why the commit train matters
 
-Three commits per the Task 4.6 plan — each commit leaves the full frontend test suite green. The pattern serves three goals:
+Up to five commits per the Task 6.6 plan (three D+F commits, plus G, plus H if it lands as code) — each commit leaves the full frontend test suite green. The pattern serves three goals:
 1. **Bisectability** — if a regression shows up later, `git bisect` lands on a small, track-scoped commit.
 2. **Review-ability** — each commit is a reviewable unit.
 3. **Partial rollback** — if any single track turns out to be wrong-shaped, revert the commit in isolation.
@@ -289,10 +351,12 @@ Three commits per the Task 4.6 plan — each commit leaves the full frontend tes
   - `AgentRun.Umbraco/Client/src/utils/instance-detail-store.ts` + `.test.ts`
   - `AgentRun.Umbraco/Client/src/utils/instance-detail-sse-reducer.ts` + `.test.ts`
   - `AgentRun.Umbraco/Client/src/utils/instance-detail-actions.ts` + `.test.ts`
-  - `AgentRun.Umbraco/Client/src/components/agentrun-chat-panel.element.test.ts` (may not exist today; create if needed)
+  - `AgentRun.Umbraco/Client/src/components/agentrun-chat-panel.element.test.ts` (may not exist today; create if needed — Tracks F + G + possibly H land tests here)
 - **Frontend modified files:**
-  - `AgentRun.Umbraco/Client/src/components/agentrun-instance-detail.element.ts` (1073 → ≤ 700 lines)
-  - `AgentRun.Umbraco/Client/src/components/agentrun-chat-panel.element.ts` (1-line change)
+  - `AgentRun.Umbraco/Client/src/components/agentrun-instance-detail.element.ts` (1073 → ≤ 700 lines; Track D)
+  - `AgentRun.Umbraco/Client/src/components/agentrun-chat-panel.element.ts` (Track F: 1-line cursor change on line 184; Track G: reducer gains a retry-start action case; Track H: possibly a reducer text-delta merge fix if triage localises there — may be 0 lines if H escalates or non-repros)
+- **New bug-finding artefact (conditional on Track H escalation):**
+  - `_bmad-output/planning-artifacts/bug-finding-2026-04-1X-text-delta-backend-drop.md` — only if Track H triage branches to 5.2b (engine-side drop). Captures repro evidence + pointer back to 10.7a.
 - **Engine boundary preserved at repo-level check:** `grep -rn "using Umbraco\." AgentRun.Umbraco/Engine/` must return 0 (no backend changes in this story; check is part of DoD).
 - **No new npm dependencies.**
 - **No DI / composer changes** (no backend in this story).
@@ -308,10 +372,13 @@ Three commits per the Task 4.6 plan — each commit leaves the full frontend tes
   - [deferred-work.md entry for chat cursor, 2026-04-15](./deferred-work.md) — Tom Madden beta feedback + exact fix
   - Story 10.10's `instance-detail-helpers.ts` precedent for frontend utility extraction
   - [project-context.md](../project-context.md) — "state management: use Umbraco Context API with `UmbObjectState` / `UmbArrayState` observables — not Redux, not standalone stores" (locked decision 6 rationale)
-- **Real-world content scenarios to test (Task 4.7):**
+- **Real-world content scenarios to test (Task 6.7):**
   - CQA workflow full run — exercises reducer across the 9 SSE event branches end-to-end
   - Cancel / retry / F5-interrupt — exercises Stories 10.6, 10.8, 10.9 invariants through the refactored action handlers
   - Chat cursor behaviour during a multi-turn interactive step with mixed text streaming + tool calls + waiting states — Track F test target (Tom Madden repro)
+  - **Failed→Retry on a CQA run (AC5 evidence `fad4b0f4a5c64747bbc153d26401fdd1`)** — banner clears + input re-enables at retry start, not step completion (Track G)
+  - **Interrupted→Retry after F5 mid-stream (AC5 evidence `9ef84e8e26a44dabb68ee9c90138a2f1`)** — same banner-clear + input-re-enable behaviour on the Interrupted path (Track G)
+  - **≥ 3 full CQA runs with DevTools EventStream filter active (AC6 evidence run `b6180e96`)** — every `text.delta` frame renders; if intermittent symptom surfaces, triage per locked decision 13 (Track H)
 
 ### References
 
@@ -350,3 +417,5 @@ _To be filled by dev agent._
 | Date | Change | Author |
 |---|---|---|
 | 2026-04-15 | Story spec created by splitting parent Story 10.7 into 10.7a / 10.7b / 10.7c per Adam's quality-risk concern on 4-day single-PR delivery. This story (10.7b) covers Track D (instance-detail 3-module split) + Track F (chat cursor 1-line fix) — frontend-focused work only. Depends on 10.7a landing first. | Bob (SM) |
+| 2026-04-15 | AC5 + AC6 added by folding in two chat-panel UI bugs surfaced during Story 10.7a E2E (commit `ad917cf`): AC5 = stale retry banner on Failed AND Interrupted paths; AC6 = intermittent SSE text-delta render drop. Evidence instances + run IDs captured. | Adam / Amelia |
+| 2026-04-15 | Spec coherence pass after AC5/AC6 fold-in: tracks framing D+F → D+F+G+H; locked decisions 2 + 7 re-scoped to clarify behaviour-preservation is Track D only; new locked decisions 12 (Track G shape + idempotence) + 13 (Track H triage-first / escalation / non-repro paths); test budget 11 → 16; Tasks 4 + 5 added for G + H; Task 4 (DoD) renumbered to Task 6 with expanded commit train + manual E2E; F4/F5/F6 edge cases added; research checklist + project structure notes updated. | Bob (SM) |
