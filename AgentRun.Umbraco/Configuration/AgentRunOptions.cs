@@ -27,4 +27,13 @@ public class AgentRunOptions
     /// Site-level hard ceilings for tool tuning values. Bound from <c>AgentRun:ToolLimits</c>.
     /// </summary>
     public AgentRunToolLimitsOptions? ToolLimits { get; set; }
+
+    /// <summary>
+    /// Interval between SSE keepalive comment lines. Default: 15s. Clamped to [5s, 300s]
+    /// at the consumption site. Reverse proxies (nginx/AWS ALB default 60s, Cloudflare
+    /// orange-cloud ~30s) close idle HTTP connections; this heartbeat keeps SSE streams
+    /// alive during long LLM thinking windows. Lower for aggressive proxies, higher to
+    /// reduce network chatter.
+    /// </summary>
+    public TimeSpan KeepaliveInterval { get; set; } = TimeSpan.FromSeconds(15);
 }

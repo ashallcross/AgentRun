@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using AgentRun.Umbraco.Engine;
 using AgentRun.Umbraco.Instances;
 using AgentRun.Umbraco.Security;
+using AgentRun.Umbraco.Services;
 using AgentRun.Umbraco.Tools;
 using AgentRun.Umbraco.Workflows;
 using Umbraco.Cms.Core.Composing;
@@ -34,6 +35,10 @@ public class AgentRunComposer : IComposer
 
         // Engine services
         builder.Services.AddSingleton<IPromptAssembler, PromptAssembler>();
+        // Story 10.11: Engine-boundary adapter — holds Umbraco.AI.* deps so
+        // ProfileResolver (Engine/) can stay Umbraco-free. Registered BEFORE
+        // IProfileResolver so DI resolution order is intuitive.
+        builder.Services.AddSingleton<IAIChatClientFactory, UmbracoAIChatClientFactory>();
         builder.Services.AddSingleton<IProfileResolver, ProfileResolver>();
         builder.Services.AddSingleton<ICompletionChecker, CompletionChecker>();
         builder.Services.AddSingleton<IArtifactValidator, ArtifactValidator>();

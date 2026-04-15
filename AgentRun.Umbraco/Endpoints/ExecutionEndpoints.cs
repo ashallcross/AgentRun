@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using Umbraco.Cms.Web.Common.Authorization;
+using AgentRun.Umbraco.Configuration;
 using AgentRun.Umbraco.Engine;
 using AgentRun.Umbraco.Engine.Events;
 using AgentRun.Umbraco.Instances;
@@ -14,12 +16,23 @@ namespace AgentRun.Umbraco.Endpoints;
 [Authorize(Policy = AuthorizationPolicies.BackOfficeAccess)]
 public class ExecutionEndpoints : ControllerBase
 {
+    // Story 10.11: SSE keepalive interval clamp bounds. Exposed so tests can
+    // assert the contract directly against ClampInterval.
+    internal static readonly TimeSpan KeepaliveMin = TimeSpan.FromSeconds(5);
+    internal static readonly TimeSpan KeepaliveMax = TimeSpan.FromMinutes(5);
+
+    // Process-wide gate so a misconfigured KeepaliveInterval only logs the
+    // clamp warning once per process lifetime instead of per SSE request
+    // (locked decision 12: "log warning once at startup").
+    private static int _keepaliveClampWarned;
+
     private readonly IInstanceManager _instanceManager;
     private readonly IProfileResolver _profileResolver;
     private readonly IWorkflowOrchestrator _workflowOrchestrator;
     private readonly IWorkflowRegistry _workflowRegistry;
     private readonly IConversationStore _conversationStore;
     private readonly IActiveInstanceRegistry _activeInstanceRegistry;
+    private readonly AgentRunOptions _options;
     private readonly ILogger<ExecutionEndpoints> _logger;
     private readonly ILoggerFactory _loggerFactory;
 
@@ -30,6 +43,7 @@ public class ExecutionEndpoints : ControllerBase
         IWorkflowRegistry workflowRegistry,
         IConversationStore conversationStore,
         IActiveInstanceRegistry activeInstanceRegistry,
+        IOptions<AgentRunOptions> options,
         ILogger<ExecutionEndpoints> logger,
         ILoggerFactory loggerFactory)
     {
@@ -39,8 +53,22 @@ public class ExecutionEndpoints : ControllerBase
         _workflowRegistry = workflowRegistry;
         _conversationStore = conversationStore;
         _activeInstanceRegistry = activeInstanceRegistry;
+        _options = options.Value;
         _logger = logger;
         _loggerFactory = loggerFactory;
+    }
+
+    /// <summary>
+    /// Clamps the configured SSE keepalive interval into the supported range
+    /// [<see cref="KeepaliveMin"/>, <see cref="KeepaliveMax"/>]. Values outside
+    /// this range are clamped with a warn log; startup is never failed for
+    /// bad config (locked decision 12).
+    /// </summary>
+    internal static TimeSpan ClampInterval(TimeSpan raw)
+    {
+        if (raw < KeepaliveMin) return KeepaliveMin;
+        if (raw > KeepaliveMax) return KeepaliveMax;
+        return raw;
     }
 
     [HttpPost("instances/{id}/start")]
@@ -315,140 +343,173 @@ public class ExecutionEndpoints : ControllerBase
         var emitter = new SseEventEmitter(
             Response.Body, _loggerFactory.CreateLogger<SseEventEmitter>());
 
+        // Story 10.11 (Track A): SSE keepalive. Reverse proxies with idle-read
+        // timeouts (nginx/AWS ALB default 60s, Cloudflare ~30s) close SSE
+        // connections during long LLM thinking windows, causing the 10.9
+        // Interrupted path to fire spuriously. A fire-and-forget heartbeat
+        // writes `: keepalive\n\n` every KeepaliveInterval (default 15s, clamped
+        // to [5s, 300s]).
+        var rawInterval = _options.KeepaliveInterval;
+        var keepaliveInterval = ClampInterval(rawInterval);
+        if (keepaliveInterval != rawInterval
+            && Interlocked.CompareExchange(ref _keepaliveClampWarned, 1, 0) == 0)
+        {
+            _logger.LogWarning(
+                "AgentRun:KeepaliveInterval {RawInterval} is outside [{Min}, {Max}]; clamped to {Clamped}",
+                rawInterval, KeepaliveMin, KeepaliveMax, keepaliveInterval);
+        }
+
+        // CancellationTokenSource.Dispose() does NOT cancel the token (MS docs:
+        // "Dispose... releases all resources"). A plain `using var` would leave
+        // the heartbeat running past orchestrator return, relying on the next
+        // stream write to fail. Explicit Cancel-then-Dispose in finally gives
+        // deterministic teardown on every exit path (happy, OCE, exception) —
+        // locked decision 5.
+        var keepaliveCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         try
         {
-            await _workflowOrchestrator.ExecuteNextStepAsync(
-                instance.WorkflowAlias, instance.InstanceId, emitter, cancellationToken);
-        }
-        catch (OperationCanceledException)
-        {
-            // Story 10.8: if the cancel endpoint already persisted Cancelled,
-            // preserve that status. Writing Failed here would overwrite the
-            // user's explicit cancel with a disconnect-style failure. A fresh
-            // FindInstanceAsync is required because the in-memory `instance`
-            // variable was loaded before the cancel endpoint mutated the YAML.
-            // Story 10.9 will refine the disconnect path (status=Running) —
-            // 10.8 only touches the cancel path here.
-            var current = await _instanceManager.FindInstanceAsync(
-                instance.InstanceId, CancellationToken.None);
+            _ = emitter.StartKeepaliveAsync(keepaliveInterval, keepaliveCts.Token);
 
-            if (current is not null && current.Status == InstanceStatus.Cancelled)
+            try
             {
-                // Deliberate server-initiated cancellation (cancel endpoint
-                // already persisted Cancelled). The SSE stream ends cleanly —
-                // do NOT rethrow. Rethrowing produces a 100-line "unhandled
-                // exception" log every time Cancel is clicked because the OCE
-                // surfaces as an aborted controller action, even though the
-                // run was stopped correctly. Emit a terminal run.finished event
-                // so non-initiating observers can distinguish cancel from a
-                // dropped connection.
-                _logger.LogInformation(
-                    "Cancellation observed for instance {InstanceId}; preserving Cancelled status",
-                    instance.InstanceId);
-
-                try
-                {
-                    await emitter.EmitRunFinishedAsync(
-                        instance.InstanceId, "Cancelled", CancellationToken.None);
-                }
-                catch (Exception emitEx)
-                {
-                    _logger.LogDebug(emitEx,
-                        "Failed to emit run.finished(Cancelled) for instance {InstanceId}; client stream likely already closed",
-                        instance.InstanceId);
-                }
-
-                return new EmptyResult();
+                await _workflowOrchestrator.ExecuteNextStepAsync(
+                    instance.WorkflowAlias, instance.InstanceId, emitter, cancellationToken);
             }
-
-            // Story 10.9: distinguish client disconnect (tab close, network
-            // drop, F5, proxy idle timeout) from a provider-internal OCE.
-            // The controller `cancellationToken` parameter is bound from
-            // `HttpContext.RequestAborted` by the ASP.NET model binder — it
-            // fires iff the HTTP request is aborted. Provider-internal OCEs
-            // (e.g., a nested HttpClient timeout) do NOT cancel this token.
-            // When the client has gone away, persisting Failed is semantically
-            // wrong — the run was progressing normally. Persist Interrupted
-            // instead and return cleanly (same "don't rethrow a handled OCE"
-            // pattern as the Cancelled branch above; see 10.8 amendment 1.2).
-            // Gate on current.Status == Running: if the orchestrator has already
-            // transitioned the run to a terminal state (Completed/Failed/Cancelled)
-            // before the OCE propagated here, we must NOT attempt an Interrupted
-            // write. The terminal-transition guard in InstanceManager would refuse
-            // silently, but the "marking Interrupted" log would lie about what
-            // happened. For Pending/Interrupted, the same write would refresh
-            // UpdatedAt for no user-visible gain.
-            if (current is not null
-                && current.Status == InstanceStatus.Running
-                && cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException)
             {
-                _logger.LogInformation(
-                    "SSE client disconnected for instance {InstanceId}; marking Interrupted",
-                    instance.InstanceId);
+                // Story 10.8: if the cancel endpoint already persisted Cancelled,
+                // preserve that status. Writing Failed here would overwrite the
+                // user's explicit cancel with a disconnect-style failure. A fresh
+                // FindInstanceAsync is required because the in-memory `instance`
+                // variable was loaded before the cancel endpoint mutated the YAML.
+                // Story 10.9 will refine the disconnect path (status=Running) —
+                // 10.8 only touches the cancel path here.
+                var current = await _instanceManager.FindInstanceAsync(
+                    instance.InstanceId, CancellationToken.None);
+
+                if (current is not null && current.Status == InstanceStatus.Cancelled)
+                {
+                    // Deliberate server-initiated cancellation (cancel endpoint
+                    // already persisted Cancelled). The SSE stream ends cleanly —
+                    // do NOT rethrow. Rethrowing produces a 100-line "unhandled
+                    // exception" log every time Cancel is clicked because the OCE
+                    // surfaces as an aborted controller action, even though the
+                    // run was stopped correctly. Emit a terminal run.finished event
+                    // so non-initiating observers can distinguish cancel from a
+                    // dropped connection.
+                    _logger.LogInformation(
+                        "Cancellation observed for instance {InstanceId}; preserving Cancelled status",
+                        instance.InstanceId);
+
+                    try
+                    {
+                        await emitter.EmitRunFinishedAsync(
+                            instance.InstanceId, "Cancelled", CancellationToken.None);
+                    }
+                    catch (Exception emitEx)
+                    {
+                        _logger.LogDebug(emitEx,
+                            "Failed to emit run.finished(Cancelled) for instance {InstanceId}; client stream likely already closed",
+                            instance.InstanceId);
+                    }
+
+                    return new EmptyResult();
+                }
+
+                // Story 10.9: distinguish client disconnect (tab close, network
+                // drop, F5, proxy idle timeout) from a provider-internal OCE.
+                // The controller `cancellationToken` parameter is bound from
+                // `HttpContext.RequestAborted` by the ASP.NET model binder — it
+                // fires iff the HTTP request is aborted. Provider-internal OCEs
+                // (e.g., a nested HttpClient timeout) do NOT cancel this token.
+                // When the client has gone away, persisting Failed is semantically
+                // wrong — the run was progressing normally. Persist Interrupted
+                // instead and return cleanly (same "don't rethrow a handled OCE"
+                // pattern as the Cancelled branch above; see 10.8 amendment 1.2).
+                // Gate on current.Status == Running: if the orchestrator has already
+                // transitioned the run to a terminal state (Completed/Failed/Cancelled)
+                // before the OCE propagated here, we must NOT attempt an Interrupted
+                // write. The terminal-transition guard in InstanceManager would refuse
+                // silently, but the "marking Interrupted" log would lie about what
+                // happened. For Pending/Interrupted, the same write would refresh
+                // UpdatedAt for no user-visible gain.
+                if (current is not null
+                    && current.Status == InstanceStatus.Running
+                    && cancellationToken.IsCancellationRequested)
+                {
+                    _logger.LogInformation(
+                        "SSE client disconnected for instance {InstanceId}; marking Interrupted",
+                        instance.InstanceId);
+
+                    try
+                    {
+                        await _instanceManager.SetInstanceStatusAsync(
+                            instance.WorkflowAlias, instance.InstanceId,
+                            InstanceStatus.Interrupted, CancellationToken.None);
+                    }
+                    catch (Exception statusEx)
+                    {
+                        _logger.LogError(statusEx,
+                            "Failed to set instance {InstanceId} status to Interrupted after disconnect",
+                            instance.InstanceId);
+                    }
+
+                    // Do NOT emit run.finished(Interrupted) — the client is gone;
+                    // the emit would fail on a half-closed stream (locked decision 8).
+                    return new EmptyResult();
+                }
 
                 try
                 {
                     await _instanceManager.SetInstanceStatusAsync(
-                        instance.WorkflowAlias, instance.InstanceId,
-                        InstanceStatus.Interrupted, CancellationToken.None);
+                        instance.WorkflowAlias, instance.InstanceId, InstanceStatus.Failed, CancellationToken.None);
                 }
                 catch (Exception statusEx)
                 {
-                    _logger.LogError(statusEx,
-                        "Failed to set instance {InstanceId} status to Interrupted after disconnect",
+                    _logger.LogCritical(statusEx,
+                        "Failed to set instance {InstanceId} status to Failed after cancellation",
                         instance.InstanceId);
                 }
 
-                // Do NOT emit run.finished(Interrupted) — the client is gone;
-                // the emit would fail on a half-closed stream (locked decision 8).
-                return new EmptyResult();
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Execution failed for instance {InstanceId} of workflow {WorkflowAlias}",
+                    instance.InstanceId, instance.WorkflowAlias);
+
+                try
+                {
+                    await _instanceManager.SetInstanceStatusAsync(
+                        instance.WorkflowAlias, instance.InstanceId, InstanceStatus.Failed, CancellationToken.None);
+                }
+                catch (Exception statusEx)
+                {
+                    _logger.LogCritical(statusEx,
+                        "Failed to set instance {InstanceId} status to Failed",
+                        instance.InstanceId);
+                }
+
+                try
+                {
+                    await emitter.EmitRunErrorAsync("execution_error", ex.Message, CancellationToken.None);
+                }
+                catch (Exception sseEx)
+                {
+                    _logger.LogWarning(sseEx,
+                        "Failed to emit run.error SSE event for instance {InstanceId}",
+                        instance.InstanceId);
+                }
             }
 
-            try
-            {
-                await _instanceManager.SetInstanceStatusAsync(
-                    instance.WorkflowAlias, instance.InstanceId, InstanceStatus.Failed, CancellationToken.None);
-            }
-            catch (Exception statusEx)
-            {
-                _logger.LogCritical(statusEx,
-                    "Failed to set instance {InstanceId} status to Failed after cancellation",
-                    instance.InstanceId);
-            }
-
-            throw;
+            return new EmptyResult();
         }
-        catch (Exception ex)
+        finally
         {
-            _logger.LogError(ex,
-                "Execution failed for instance {InstanceId} of workflow {WorkflowAlias}",
-                instance.InstanceId, instance.WorkflowAlias);
-
-            try
-            {
-                await _instanceManager.SetInstanceStatusAsync(
-                    instance.WorkflowAlias, instance.InstanceId, InstanceStatus.Failed, CancellationToken.None);
-            }
-            catch (Exception statusEx)
-            {
-                _logger.LogCritical(statusEx,
-                    "Failed to set instance {InstanceId} status to Failed",
-                    instance.InstanceId);
-            }
-
-            try
-            {
-                await emitter.EmitRunErrorAsync("execution_error", ex.Message, CancellationToken.None);
-            }
-            catch (Exception sseEx)
-            {
-                _logger.LogWarning(sseEx,
-                    "Failed to emit run.error SSE event for instance {InstanceId}",
-                    instance.InstanceId);
-            }
+            keepaliveCts.Cancel();
+            keepaliveCts.Dispose();
         }
-
-        return new EmptyResult();
     }
 
     [HttpPost("instances/{id}/message")]

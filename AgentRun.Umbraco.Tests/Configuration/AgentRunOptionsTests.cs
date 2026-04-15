@@ -16,6 +16,22 @@ public class AgentRunOptionsTests
     }
 
     [Test]
+    public void Defaults_KeepaliveInterval_Is15Seconds()
+    {
+        var options = new AgentRunOptions();
+
+        Assert.That(options.KeepaliveInterval, Is.EqualTo(TimeSpan.FromSeconds(15)));
+    }
+
+    [Test]
+    public void KeepaliveInterval_CanBeSet()
+    {
+        var options = new AgentRunOptions { KeepaliveInterval = TimeSpan.FromSeconds(30) };
+
+        Assert.That(options.KeepaliveInterval, Is.EqualTo(TimeSpan.FromSeconds(30)));
+    }
+
+    [Test]
     public void Properties_CanBeSet()
     {
         var options = new AgentRunOptions

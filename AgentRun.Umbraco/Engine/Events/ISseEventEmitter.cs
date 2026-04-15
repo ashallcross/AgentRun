@@ -27,4 +27,16 @@ public interface ISseEventEmitter
     Task EmitUserMessageAsync(string content, CancellationToken cancellationToken);
 
     Task EmitInputWaitAsync(string stepId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Starts a long-running heartbeat that emits a <c>: keepalive\n\n</c> SSE comment
+    /// line every <paramref name="interval"/> until <paramref name="cancellationToken"/>
+    /// fires. Serialises against concurrent <c>Emit*</c> calls via an internal
+    /// <see cref="SemaphoreSlim"/>. Heartbeat write failures
+    /// (<see cref="IOException"/>, <see cref="ObjectDisposedException"/>,
+    /// <see cref="OperationCanceledException"/>) are caught, logged at Debug, and exit
+    /// the loop cleanly. Intended to be fire-and-forget at the call site — use a linked
+    /// CTS for deterministic teardown. Story 10.11 (Track A).
+    /// </summary>
+    Task StartKeepaliveAsync(TimeSpan interval, CancellationToken cancellationToken);
 }

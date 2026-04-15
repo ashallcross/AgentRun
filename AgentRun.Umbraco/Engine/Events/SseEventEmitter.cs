@@ -4,8 +4,14 @@ namespace AgentRun.Umbraco.Engine.Events;
 
 public sealed class SseEventEmitter : ISseEventEmitter
 {
+    // Pre-encoded once per type load; byte array is read-only by discipline.
+    private static readonly byte[] _keepaliveBytes = Encoding.UTF8.GetBytes(": keepalive\n\n");
+
     private readonly Stream _stream;
     private readonly ILogger<SseEventEmitter> _logger;
+    // Per-emitter (per-SSE-request) write serialisation. Semaphore, not lock,
+    // because the emit path is async and C# lock can't span await.
+    private readonly SemaphoreSlim _writeLock = new(1, 1);
 
     public SseEventEmitter(Stream stream, ILogger<SseEventEmitter> logger)
     {
@@ -52,6 +58,42 @@ public sealed class SseEventEmitter : ISseEventEmitter
     public Task EmitInputWaitAsync(string stepId, CancellationToken cancellationToken)
         => EmitAsync(SseEventTypes.InputWait, new InputWaitPayload(stepId), cancellationToken);
 
+    public async Task StartKeepaliveAsync(TimeSpan interval, CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(interval, cancellationToken);
+
+                try
+                {
+                    await _writeLock.WaitAsync(cancellationToken);
+                    try
+                    {
+                        await _stream.WriteAsync(_keepaliveBytes, cancellationToken);
+                        await _stream.FlushAsync(cancellationToken);
+                        _logger.LogTrace("SSE keepalive emitted");
+                    }
+                    finally
+                    {
+                        _writeLock.Release();
+                    }
+                }
+                catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+                {
+                    _logger.LogDebug(ex, "SSE keepalive write failed; exiting heartbeat loop");
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected on shutdown / linked CTS cancel — both Task.Delay and
+            // WaitAsync throw OCE when the token fires; exit cleanly.
+        }
+    }
+
     private async Task EmitAsync(string eventType, object payload, CancellationToken cancellationToken)
     {
         var json = JsonSerializer.Serialize(payload, JsonSerializerOptions.Web);
@@ -59,7 +101,15 @@ public sealed class SseEventEmitter : ISseEventEmitter
 
         _logger.LogDebug("SSE emit {EventType}: {Json}", eventType, json);
 
-        await _stream.WriteAsync(bytes, cancellationToken);
-        await _stream.FlushAsync(cancellationToken);
+        await _writeLock.WaitAsync(cancellationToken);
+        try
+        {
+            await _stream.WriteAsync(bytes, cancellationToken);
+            await _stream.FlushAsync(cancellationToken);
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
     }
 }

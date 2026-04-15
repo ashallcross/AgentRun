@@ -2,28 +2,21 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Options;
 using AgentRun.Umbraco.Configuration;
 using AgentRun.Umbraco.Workflows;
-using Umbraco.AI.Core.Chat;
-using Umbraco.AI.Core.InlineChat;
-using Umbraco.AI.Core.Models;
-using Umbraco.AI.Core.Profiles;
 
 namespace AgentRun.Umbraco.Engine;
 
 public class ProfileResolver : IProfileResolver
 {
-    private readonly IAIChatService _chatService;
-    private readonly IAIProfileService _profileService;
+    private readonly IAIChatClientFactory _chatClientFactory;
     private readonly AgentRunOptions _options;
     private readonly ILogger<ProfileResolver> _logger;
 
     public ProfileResolver(
-        IAIChatService chatService,
-        IAIProfileService profileService,
+        IAIChatClientFactory chatClientFactory,
         IOptions<AgentRunOptions> options,
         ILogger<ProfileResolver> logger)
     {
-        _chatService = chatService;
-        _profileService = profileService;
+        _chatClientFactory = chatClientFactory;
         _options = options.Value;
         _logger = logger;
     }
@@ -43,9 +36,8 @@ public class ProfileResolver : IProfileResolver
 
         try
         {
-            return await _chatService.CreateChatClientAsync(
-                chat => chat.WithAlias($"step-{step.Id}").WithProfile(alias),
-                cancellationToken);
+            return await _chatClientFactory.CreateChatClientAsync(
+                alias, $"step-{step.Id}", cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -64,29 +56,35 @@ public class ProfileResolver : IProfileResolver
         try
         {
             // Resolve profile using the same fallback chain as execution:
-            // workflow default_profile → site-default → auto-detect → bare (no profile)
+            // workflow default_profile → site-default → auto-detect.
             string? profile = null;
             if (!string.IsNullOrWhiteSpace(workflow?.DefaultProfile))
                 profile = workflow.DefaultProfile;
             else if (!string.IsNullOrWhiteSpace(_options.DefaultProfile))
                 profile = _options.DefaultProfile;
 
-            // Auto-detect if no explicit profile configured
             if (profile is null)
             {
                 profile = await AutoDetectProfileAliasAsync(cancellationToken);
             }
 
-            var client = await _chatService.CreateChatClientAsync(
-                chat =>
-                {
-                    chat.WithAlias("provider-check");
-                    if (profile is not null) chat.WithProfile(profile);
-                },
-                cancellationToken);
+            // Short-circuit: no profile anywhere means no provider is configured.
+            // Previously we attempted a CreateChatClientAsync(profile=null) call
+            // which sometimes threw a misleading exception; the factory interface
+            // no longer accepts null aliases (F10).
+            if (profile is null)
+            {
+                _logger.LogWarning(
+                    "Provider prerequisite check failed: no Umbraco.AI profile configured");
+                return false;
+            }
+
+            var client = await _chatClientFactory.CreateChatClientAsync(
+                profile, "provider-check", cancellationToken);
             (client as IDisposable)?.Dispose();
-            _logger.LogDebug("Provider prerequisite check passed: Umbraco.AI provider is configured (profile: {Profile})",
-                profile ?? "(default)");
+            _logger.LogDebug(
+                "Provider prerequisite check passed: Umbraco.AI provider is configured (profile: {Profile})",
+                profile);
             return true;
         }
         catch (OperationCanceledException)
@@ -120,32 +118,36 @@ public class ProfileResolver : IProfileResolver
             return (_options.DefaultProfile, "site-default");
         }
 
-        // Auto-detect from Umbraco.AI profiles
+        // Auto-detect via the engine-boundary factory. Sort-and-pick stays here
+        // (locked decision 7): selection policy is engine concern, adapter is
+        // translation only.
         try
         {
-            var profiles = await _profileService.GetProfilesAsync(AICapability.Chat, cancellationToken);
-            var profileList = profiles?.ToList();
+            var aliases = await _chatClientFactory.GetChatProfileAliasesAsync(cancellationToken);
+            var sorted = aliases
+                .OrderBy(a => a, StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
-            if (profileList is null || profileList.Count == 0)
+            if (sorted.Count == 0)
             {
                 throw new ProfileNotFoundException(
                     "No AI provider configured. Go to Settings > AI to set up a provider.");
             }
 
-            var selected = profileList.OrderBy(p => p.Alias, StringComparer.OrdinalIgnoreCase).First();
+            var selected = sorted[0];
 
             _logger.LogInformation(
                 "Auto-detected Umbraco.AI profile '{ProfileAlias}' for workflow execution",
-                selected.Alias);
+                selected);
 
-            if (profileList.Count > 1)
+            if (sorted.Count > 1)
             {
                 _logger.LogInformation(
                     "Multiple Umbraco.AI profiles found — using '{ProfileAlias}'. Set default_profile in your workflow YAML for deterministic selection.",
-                    selected.Alias);
+                    selected);
             }
 
-            return (selected.Alias, "auto-detected");
+            return (selected, "auto-detected");
         }
         catch (ProfileNotFoundException)
         {
@@ -170,9 +172,10 @@ public class ProfileResolver : IProfileResolver
     {
         try
         {
-            var profiles = await _profileService.GetProfilesAsync(AICapability.Chat, cancellationToken);
-            var first = profiles?.OrderBy(p => p.Alias, StringComparer.OrdinalIgnoreCase).FirstOrDefault();
-            return first?.Alias;
+            var aliases = await _chatClientFactory.GetChatProfileAliasesAsync(cancellationToken);
+            return aliases
+                .OrderBy(a => a, StringComparer.OrdinalIgnoreCase)
+                .FirstOrDefault();
         }
         catch (OperationCanceledException)
         {

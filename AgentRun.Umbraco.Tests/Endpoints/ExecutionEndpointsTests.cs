@@ -2,7 +2,9 @@ using System.Threading.Channels;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
+using AgentRun.Umbraco.Configuration;
 using AgentRun.Umbraco.Endpoints;
 using AgentRun.Umbraco.Engine;
 using AgentRun.Umbraco.Engine.Events;
@@ -40,6 +42,7 @@ public class ExecutionEndpointsTests
             _workflowRegistry,
             _conversationStore,
             _activeInstanceRegistry,
+            Options.Create(new AgentRunOptions()),
             NullLogger<ExecutionEndpoints>.Instance,
             NullLoggerFactory.Instance);
 
@@ -859,5 +862,68 @@ public class ExecutionEndpointsTests
         // No status mutation attempted — the guard short-circuits before SetInstanceStatusAsync.
         await _instanceManager.DidNotReceive().SetInstanceStatusAsync(
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<InstanceStatus>(), Arg.Any<CancellationToken>());
+    }
+
+    // --- Story 10.11 Track A: KeepaliveInterval clamp ---
+
+    [Test]
+    public void ClampInterval_BelowMin_ClampsTo5Seconds()
+    {
+        // AC7
+        var result = ExecutionEndpoints.ClampInterval(TimeSpan.FromSeconds(1));
+
+        Assert.That(result, Is.EqualTo(TimeSpan.FromSeconds(5)));
+    }
+
+    [Test]
+    public void ClampInterval_Zero_ClampsTo5Seconds()
+    {
+        // F3: TimeSpan.Zero clamps to floor
+        var result = ExecutionEndpoints.ClampInterval(TimeSpan.Zero);
+
+        Assert.That(result, Is.EqualTo(TimeSpan.FromSeconds(5)));
+    }
+
+    [Test]
+    public void ClampInterval_AboveMax_ClampsTo5Minutes()
+    {
+        // AC7
+        var result = ExecutionEndpoints.ClampInterval(TimeSpan.FromMinutes(10));
+
+        Assert.That(result, Is.EqualTo(TimeSpan.FromMinutes(5)));
+    }
+
+    [Test]
+    public void ClampInterval_MaxValue_ClampsTo5Minutes()
+    {
+        // F4
+        var result = ExecutionEndpoints.ClampInterval(TimeSpan.MaxValue);
+
+        Assert.That(result, Is.EqualTo(TimeSpan.FromMinutes(5)));
+    }
+
+    [Test]
+    public void ClampInterval_InRange_ReturnsVerbatim()
+    {
+        // AC7: 15s default — in range, returned unchanged
+        var result = ExecutionEndpoints.ClampInterval(TimeSpan.FromSeconds(15));
+
+        Assert.That(result, Is.EqualTo(TimeSpan.FromSeconds(15)));
+    }
+
+    [Test]
+    public void ClampInterval_AtMinBoundary_ReturnsMin()
+    {
+        var result = ExecutionEndpoints.ClampInterval(TimeSpan.FromSeconds(5));
+
+        Assert.That(result, Is.EqualTo(TimeSpan.FromSeconds(5)));
+    }
+
+    [Test]
+    public void ClampInterval_AtMaxBoundary_ReturnsMax()
+    {
+        var result = ExecutionEndpoints.ClampInterval(TimeSpan.FromMinutes(5));
+
+        Assert.That(result, Is.EqualTo(TimeSpan.FromMinutes(5)));
     }
 }
