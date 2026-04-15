@@ -359,7 +359,7 @@ public class WorkflowOrchestratorTests
 
         var registry = Substitute.For<IActiveInstanceRegistry>();
         using var cts = new CancellationTokenSource();
-        registry.RegisterInstance("inst-001").Returns(System.Threading.Channels.Channel.CreateUnbounded<string>().Reader);
+        registry.AttachOrClaim("inst-001").Returns(System.Threading.Channels.Channel.CreateUnbounded<string>().Reader);
         registry.GetCancellationToken("inst-001").Returns(cts.Token);
 
         var orchestrator = CreateOrchestratorWithRegistry(registry);

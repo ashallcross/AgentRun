@@ -265,4 +265,124 @@ public class ActiveInstanceRegistryTests
         // Re-create for TearDown (harmless — TearDown calls Dispose again).
         _registry = new ActiveInstanceRegistry();
     }
+
+    // -------------- Story 10.1: TryClaim + AttachOrClaim -------------- //
+
+    // AC8: TryClaim returns true when no entry exists and false when one does.
+    [Test]
+    public void TryClaim_FreeSlot_ReturnsTrueAndCreatesEntry()
+    {
+        var result = _registry.TryClaim("inst-001");
+
+        Assert.That(result, Is.True);
+        Assert.That(_registry.GetMessageReader("inst-001"), Is.Not.Null);
+        Assert.That(_registry.GetCancellationToken("inst-001"), Is.Not.Null);
+    }
+
+    [Test]
+    public void TryClaim_AlreadyClaimed_ReturnsFalse()
+    {
+        Assert.That(_registry.TryClaim("inst-001"), Is.True);
+
+        var second = _registry.TryClaim("inst-001");
+
+        Assert.That(second, Is.False);
+    }
+
+    // AC8: Concurrent TryClaim calls — exactly one wins. Repeat the race to flush
+    // out single-shot luck.
+    [Test]
+    public void TryClaim_ConcurrentCalls_ExactlyOneWins()
+    {
+        for (var iter = 0; iter < 100; iter++)
+        {
+            using var registry = new ActiveInstanceRegistry();
+            const int concurrency = 8;
+            var winCount = 0;
+            var barrier = new Barrier(concurrency);
+
+            var threads = Enumerable.Range(0, concurrency).Select(_ => new Thread(() =>
+            {
+                barrier.SignalAndWait();
+                if (registry.TryClaim("race-id"))
+                {
+                    Interlocked.Increment(ref winCount);
+                }
+            })).ToArray();
+
+            foreach (var t in threads) t.Start();
+            foreach (var t in threads) t.Join();
+
+            Assert.That(winCount, Is.EqualTo(1), $"Iteration {iter}: expected exactly one winner");
+        }
+    }
+
+    // AC8: UnregisterInstance releases the claim — a subsequent TryClaim succeeds.
+    [Test]
+    public void UnregisterInstance_AfterTryClaim_ReleasesClaim()
+    {
+        Assert.That(_registry.TryClaim("inst-001"), Is.True);
+
+        _registry.UnregisterInstance("inst-001");
+
+        Assert.That(_registry.TryClaim("inst-001"), Is.True);
+    }
+
+    // AttachOrClaim attaches to a prior TryClaim — returns the SAME channel reader
+    // (not a fresh one).
+    [Test]
+    public void AttachOrClaim_AfterTryClaim_ReturnsSameReader()
+    {
+        Assert.That(_registry.TryClaim("inst-001"), Is.True);
+        var readerFromClaim = _registry.GetMessageReader("inst-001")!;
+
+        var readerFromAttach = _registry.AttachOrClaim("inst-001");
+
+        Assert.That(readerFromAttach, Is.SameAs(readerFromClaim),
+            "AttachOrClaim must reuse the entry created by TryClaim, not create a fresh one.");
+    }
+
+    // AttachOrClaim standalone — when no prior claim exists, creates a fresh entry
+    // (supports direct-invocation test paths).
+    [Test]
+    public void AttachOrClaim_NoPriorClaim_CreatesFreshEntry()
+    {
+        var reader = _registry.AttachOrClaim("inst-001");
+
+        Assert.That(reader, Is.Not.Null);
+        Assert.That(_registry.GetMessageWriter("inst-001"), Is.Not.Null);
+        Assert.That(_registry.GetCancellationToken("inst-001"), Is.Not.Null);
+    }
+
+    // AttachOrClaim on an already-attached entry returns the same reader (idempotent).
+    [Test]
+    public void AttachOrClaim_CalledTwice_ReturnsSameReader()
+    {
+        var first = _registry.AttachOrClaim("inst-001");
+        var second = _registry.AttachOrClaim("inst-001");
+
+        Assert.That(second, Is.SameAs(first));
+    }
+
+    // TryClaim after UnregisterInstance reopens the slot — basic round-trip.
+    [Test]
+    public void TryClaim_UnregisterTryClaim_RoundTrips()
+    {
+        Assert.That(_registry.TryClaim("inst-001"), Is.True);
+        _registry.UnregisterInstance("inst-001");
+        Assert.That(_registry.TryClaim("inst-001"), Is.True);
+    }
+
+    // TryClaim rejects null/empty instance id as a deny-by-default boundary guard.
+    [Test]
+    public void TryClaim_EmptyInstanceId_Throws()
+    {
+        Assert.Throws<ArgumentException>(() => _registry.TryClaim(""));
+    }
+
+    [Test]
+    public void AttachOrClaim_EmptyInstanceId_Throws()
+    {
+        Assert.Throws<ArgumentException>(() => _registry.AttachOrClaim(""));
+    }
 }

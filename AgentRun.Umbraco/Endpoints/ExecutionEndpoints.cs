@@ -96,14 +96,57 @@ public class ExecutionEndpoints : ControllerBase
             });
         }
 
-        // Set instance to Running (skip if already Running — interactive mode between steps)
-        if (instance.Status != InstanceStatus.Running)
+        // Story 10.1: atomic orchestrator-slot claim. The non-atomic status +
+        // writer-presence check above at lines 75-86 is a fast-path UX hint; this
+        // is the source-of-truth race gate. If a second /start arrives after our
+        // status check passed but before this TryClaim runs, exactly one caller
+        // wins — the loser returns 409.
+        if (!_activeInstanceRegistry.TryClaim(id))
         {
-            await _instanceManager.SetInstanceStatusAsync(
-                instance.WorkflowAlias, instance.InstanceId, InstanceStatus.Running, cancellationToken);
+            return Conflict(new ErrorResponse
+            {
+                Error = "already_running",
+                Message = $"Instance '{id}' is already running. Concurrent execution is not permitted."
+            });
         }
 
-        return await ExecuteSseAsync(instance, cancellationToken);
+        try
+        {
+            // Set instance to Running (skip if already Running — interactive mode between steps)
+            if (instance.Status != InstanceStatus.Running)
+            {
+                try
+                {
+                    await _instanceManager.SetInstanceStatusAsync(
+                        instance.WorkflowAlias, instance.InstanceId, InstanceStatus.Running, cancellationToken);
+                }
+                catch (InstanceAlreadyRunningException)
+                {
+                    // The in-manager guard fired despite our TryClaim winning,
+                    // which is only possible if a concurrent retry mutated the
+                    // persisted status to Running between our pre-claim status
+                    // read and now. Release the claim and 409.
+                    _activeInstanceRegistry.UnregisterInstance(id);
+                    return Conflict(new ErrorResponse
+                    {
+                        Error = "already_running",
+                        Message = $"Instance '{id}' is already running. Concurrent execution is not permitted."
+                    });
+                }
+            }
+
+            return await ExecuteSseAsync(instance, cancellationToken);
+        }
+        catch
+        {
+            // Anything thrown before the orchestrator's lifecycle takes over must
+            // release the claim. Once ExecuteSseAsync enters the orchestrator's
+            // try/finally, the orchestrator's UnregisterInstance handles release
+            // on all exit paths (happy, OCE, error). A second UnregisterInstance
+            // call from here is a safe no-op (TryRemove returns false).
+            _activeInstanceRegistry.UnregisterInstance(id);
+            throw;
+        }
     }
 
     [HttpPost("instances/{id}/retry")]
@@ -131,11 +174,13 @@ public class ExecutionEndpoints : ControllerBase
             });
         }
 
-        // Reject if an orchestrator is still draining for this instance — mirrors
-        // StartInstance's already_running guard to prevent a parallel orchestrator
-        // from racing with a prior one that has not released its SSE writer slot
-        // (e.g., rapid double-click Retry before the first stream tore down).
-        if (_activeInstanceRegistry.GetMessageWriter(id) is not null)
+        // Story 10.1: atomic orchestrator-slot claim (replaces the prior
+        // GetMessageWriter-presence check, which was non-atomic against a
+        // concurrent in-flight orchestrator lifecycle). Before this story,
+        // a rapid double-click Retry could race the first stream's teardown;
+        // TryClaim gives a single source-of-truth gate and returns 409 on the
+        // loser cleanly.
+        if (!_activeInstanceRegistry.TryClaim(id))
         {
             return Conflict(new ErrorResponse
             {
@@ -144,58 +189,75 @@ public class ExecutionEndpoints : ControllerBase
             });
         }
 
-        // Story 10.9: Failed paths resume from the StepStatus.Error step;
-        // Interrupted paths resume from the StepStatus.Active step (the orphan
-        // left when the SSE stream was torn down mid-execution).
-        var stepStatusToFind = instance.Status == InstanceStatus.Failed
-            ? StepStatus.Error
-            : StepStatus.Active;
-
-        var stepIndex = instance.Steps.FindIndex(s => s.Status == stepStatusToFind);
-        if (stepIndex == -1)
-        {
-            return Conflict(new ErrorResponse
-            {
-                Error = "invalid_state",
-                Message = instance.Status == InstanceStatus.Failed
-                    ? "No errored step found to resume"
-                    : "No active step found to resume"
-            });
-        }
-
-        var targetStep = instance.Steps[stepIndex];
-
-        // Story 10.9: truncate JSONL only for Failed. For Interrupted, the stream
-        // was torn down mid-response — no failed assistant message was committed
-        // to JSONL (ConversationRecorder writes on completion boundaries, not deltas).
-        if (instance.Status == InstanceStatus.Failed)
-        {
-            await _conversationStore.TruncateLastAssistantEntryAsync(
-                instance.WorkflowAlias, instance.InstanceId, targetStep.Id, cancellationToken);
-        }
-
-        // Reset step to Pending so the executor handles the Active transition
-        await _instanceManager.UpdateStepStatusAsync(
-            instance.WorkflowAlias, instance.InstanceId, stepIndex, StepStatus.Pending, cancellationToken);
-
-        // Set instance back to Running. Map the manager's "already running"
-        // InvalidOperationException into a 409 — otherwise a concurrent Retry
-        // that wins the state-read race surfaces as an unhandled 500.
         try
         {
-            instance = await _instanceManager.SetInstanceStatusAsync(
-                instance.WorkflowAlias, instance.InstanceId, InstanceStatus.Running, cancellationToken);
-        }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("already running"))
-        {
-            return Conflict(new ErrorResponse
-            {
-                Error = "already_running",
-                Message = $"Instance '{id}' is already running. Concurrent execution is not permitted."
-            });
-        }
+            // Story 10.9: Failed paths resume from the StepStatus.Error step;
+            // Interrupted paths resume from the StepStatus.Active step (the orphan
+            // left when the SSE stream was torn down mid-execution).
+            var stepStatusToFind = instance.Status == InstanceStatus.Failed
+                ? StepStatus.Error
+                : StepStatus.Active;
 
-        return await ExecuteSseAsync(instance, cancellationToken);
+            var stepIndex = instance.Steps.FindIndex(s => s.Status == stepStatusToFind);
+            if (stepIndex == -1)
+            {
+                _activeInstanceRegistry.UnregisterInstance(id);
+                return Conflict(new ErrorResponse
+                {
+                    Error = "invalid_state",
+                    Message = instance.Status == InstanceStatus.Failed
+                        ? "No errored step found to resume"
+                        : "No active step found to resume"
+                });
+            }
+
+            var targetStep = instance.Steps[stepIndex];
+
+            // Story 10.9: truncate JSONL only for Failed. For Interrupted, the stream
+            // was torn down mid-response — no failed assistant message was committed
+            // to JSONL (ConversationRecorder writes on completion boundaries, not deltas).
+            if (instance.Status == InstanceStatus.Failed)
+            {
+                await _conversationStore.TruncateLastAssistantEntryAsync(
+                    instance.WorkflowAlias, instance.InstanceId, targetStep.Id, cancellationToken);
+            }
+
+            // Reset step to Pending so the executor handles the Active transition
+            await _instanceManager.UpdateStepStatusAsync(
+                instance.WorkflowAlias, instance.InstanceId, stepIndex, StepStatus.Pending, cancellationToken);
+
+            // Set instance back to Running. Map the manager's "already running"
+            // InvalidOperationException into a 409 — defence-in-depth once TryClaim
+            // is the primary gate (Story 10.1), but retained because a stale persisted
+            // status from a prior write could in principle still trip the in-manager
+            // guard.
+            try
+            {
+                instance = await _instanceManager.SetInstanceStatusAsync(
+                    instance.WorkflowAlias, instance.InstanceId, InstanceStatus.Running, cancellationToken);
+            }
+            catch (InstanceAlreadyRunningException)
+            {
+                _activeInstanceRegistry.UnregisterInstance(id);
+                return Conflict(new ErrorResponse
+                {
+                    Error = "already_running",
+                    Message = $"Instance '{id}' is already running. Concurrent execution is not permitted."
+                });
+            }
+
+            return await ExecuteSseAsync(instance, cancellationToken);
+        }
+        catch
+        {
+            // Anything thrown before the orchestrator's lifecycle takes over must
+            // release the claim. Once ExecuteSseAsync enters the orchestrator's
+            // try/finally, the orchestrator's UnregisterInstance handles release
+            // on all exit paths. A second UnregisterInstance call from here is a
+            // safe no-op (TryRemove returns false).
+            _activeInstanceRegistry.UnregisterInstance(id);
+            throw;
+        }
     }
 
     private async Task<IActionResult> ExecuteSseAsync(InstanceState instance, CancellationToken cancellationToken)

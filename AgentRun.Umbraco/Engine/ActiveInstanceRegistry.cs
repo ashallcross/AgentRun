@@ -7,8 +7,41 @@ public interface IActiveInstanceRegistry
 {
     ChannelReader<string>? GetMessageReader(string instanceId);
     ChannelWriter<string>? GetMessageWriter(string instanceId);
+
+    /// <summary>
+    /// Legacy replace-on-collision registration. Preserved for the rare defensive
+    /// case where a caller needs to force-replace an existing entry (Story 10.8
+    /// disposal semantics). New code should prefer <see cref="TryClaim"/> (atomic
+    /// endpoint-side) and <see cref="AttachOrClaim"/> (orchestrator-side).
+    /// </summary>
+    [Obsolete("Use TryClaim (endpoint) + AttachOrClaim (orchestrator) instead. Replace-on-collision semantics retained for compatibility — do not introduce new callers.")]
     ChannelReader<string> RegisterInstance(string instanceId);
+
     void UnregisterInstance(string instanceId);
+
+    /// <summary>
+    /// Atomically claims an orchestrator slot for the given instance (Story 10.1).
+    /// Returns <c>true</c> if the slot was free and is now claimed; <c>false</c>
+    /// if another orchestrator already holds the slot. The claim is released by
+    /// <see cref="UnregisterInstance"/>, which is called by the orchestrator's
+    /// <c>finally</c> block. On a successful claim, the registry creates a fresh
+    /// Channel and CancellationTokenSource so the channel reader and cancellation
+    /// token are immediately available to subsequent <see cref="GetMessageReader"/>
+    /// / <see cref="GetCancellationToken"/> calls — the orchestrator does not
+    /// need to re-create them and should use <see cref="AttachOrClaim"/> as its
+    /// entry point.
+    /// </summary>
+    bool TryClaim(string instanceId);
+
+    /// <summary>
+    /// Orchestrator entry point (Story 10.1). Returns the channel reader for the
+    /// given instance: attaches to an existing entry created by a prior
+    /// <see cref="TryClaim"/> call, or creates a fresh entry if none exists
+    /// (supports direct-invocation test paths that do not go through the endpoint).
+    /// Never replaces an existing entry — if an entry exists, its channel and
+    /// cancellation source are reused as-is.
+    /// </summary>
+    ChannelReader<string> AttachOrClaim(string instanceId);
 
     /// <summary>
     /// Returns the per-instance cancellation token for a registered instance,
@@ -40,6 +73,57 @@ public sealed class ActiveInstanceRegistry : IActiveInstanceRegistry, IDisposabl
     public ChannelWriter<string>? GetMessageWriter(string instanceId)
     {
         return _entries.TryGetValue(instanceId, out var entry) ? entry.Channel.Writer : null;
+    }
+
+    public bool TryClaim(string instanceId)
+    {
+        if (string.IsNullOrEmpty(instanceId))
+        {
+            throw new ArgumentException("Instance id must be non-empty.", nameof(instanceId));
+        }
+
+        var newEntry = new InstanceEntry(
+            Channel.CreateUnbounded<string>(),
+            new CancellationTokenSource());
+
+        if (_entries.TryAdd(instanceId, newEntry))
+        {
+            return true;
+        }
+
+        // Lost the race — discard the throwaway entry to avoid leaking the CTS.
+        DisposeEntry(newEntry);
+        return false;
+    }
+
+    public ChannelReader<string> AttachOrClaim(string instanceId)
+    {
+        if (string.IsNullOrEmpty(instanceId))
+        {
+            throw new ArgumentException("Instance id must be non-empty.", nameof(instanceId));
+        }
+
+        if (_entries.TryGetValue(instanceId, out var existing))
+        {
+            return existing.Channel.Reader;
+        }
+
+        // No prior claim — create-and-add. Under contention with another concurrent
+        // AttachOrClaim / TryClaim on the same id, GetOrAdd's factory may run and
+        // still lose; the loser's throwaway entry is returned but never inserted.
+        // Build a single entry and reuse it via GetOrAdd's atomic add; if we lose,
+        // dispose the loser.
+        var newEntry = new InstanceEntry(
+            Channel.CreateUnbounded<string>(),
+            new CancellationTokenSource());
+
+        var winner = _entries.GetOrAdd(instanceId, newEntry);
+        if (!ReferenceEquals(winner, newEntry))
+        {
+            DisposeEntry(newEntry);
+        }
+
+        return winner.Channel.Reader;
     }
 
     public ChannelReader<string> RegisterInstance(string instanceId)

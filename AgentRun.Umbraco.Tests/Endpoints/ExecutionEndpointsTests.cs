@@ -42,6 +42,21 @@ public class ExecutionEndpointsTests
             _activeInstanceRegistry,
             NullLogger<ExecutionEndpoints>.Instance,
             NullLoggerFactory.Instance);
+
+        // Story 10.1: default TryClaim to succeed so existing pre-10.1 tests
+        // reach their intended code paths. Tests that exercise the contention
+        // path override this with a false return.
+        //
+        // Limitation (Story 10.1 review): this default means happy-path tests
+        // implicitly acquire a claim. Because the orchestrator is mocked, its
+        // real finally-block `UnregisterInstance` never fires — so happy-path
+        // release is NOT verifiable at this unit-test layer. The AC12
+        // integration test in InstanceEndpointsTests
+        // (`CancelInstance_SerialisesAgainstConcurrentOrchestratorMutation`)
+        // exercises a real InstanceManager. Explicit release assertions on
+        // error paths (below) guard the endpoint-side `catch`-block release
+        // logic.
+        _activeInstanceRegistry.TryClaim(Arg.Any<string>()).Returns(true);
     }
 
     private void AttachHttpContext()
@@ -184,6 +199,12 @@ public class ExecutionEndpointsTests
         // Verify instance was set to Running
         await _instanceManager.Received(1).SetInstanceStatusAsync(
             "test-wf", "inst-001", InstanceStatus.Running, Arg.Any<CancellationToken>());
+
+        // Story 10.1 leak guard: ExecuteSseAsync threw (NullReferenceException —
+        // no HttpContext). The endpoint's outer catch must have released the
+        // claim before rethrowing, otherwise a retry-error path would leak the
+        // slot permanently.
+        _activeInstanceRegistry.Received(1).UnregisterInstance("inst-001");
     }
 
     [Test]
@@ -517,8 +538,7 @@ public class ExecutionEndpointsTests
         _instanceManager.UpdateStepStatusAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<StepStatus>(), Arg.Any<CancellationToken>())
             .Returns(instance);
         _instanceManager.SetInstanceStatusAsync(Arg.Any<string>(), Arg.Any<string>(), InstanceStatus.Running, Arg.Any<CancellationToken>())
-            .Returns<InstanceState>(_ => throw new InvalidOperationException(
-                "Instance inst-001 is already running. Concurrent execution is not permitted."));
+            .Returns<InstanceState>(_ => throw new InstanceAlreadyRunningException("inst-001"));
 
         var result = await _endpoints.RetryInstance("inst-001", CancellationToken.None);
 
@@ -526,13 +546,21 @@ public class ExecutionEndpointsTests
         var conflict = (ConflictObjectResult)result;
         var error = conflict.Value as ErrorResponse;
         Assert.That(error?.Error, Is.EqualTo("already_running"));
+
+        // Story 10.1 regression guard: the claim was acquired at TryClaim (default true)
+        // and must be released when the in-manager "already running" exception fires —
+        // otherwise the slot leaks (nothing else will release it because no orchestrator
+        // ran).
+        _activeInstanceRegistry.Received(1).UnregisterInstance("inst-001");
     }
 
-    // Story 10.9 code-review P3: parallel-orchestrator guard. If a prior orchestrator
-    // is still draining (registry writer slot still occupied), Retry must 409 without
-    // mutating state — mirrors StartInstance's already_running guard.
+    // Story 10.1 (was Story 10.9 code-review P3): parallel-orchestrator guard.
+    // If a prior orchestrator holds the atomic claim, Retry must 409 without
+    // mutating state — mirrors StartInstance's already_running guard. The
+    // prior GetMessageWriter-based check was replaced by TryClaim as the
+    // source-of-truth race gate.
     [Test]
-    public async Task Retry_OnInterrupted_WithActiveRegistryWriter_Returns409()
+    public async Task Retry_OnInterrupted_WithActiveClaim_Returns409()
     {
         var instance = new InstanceState
         {
@@ -546,9 +574,8 @@ public class ExecutionEndpointsTests
         };
         _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>()).Returns(instance);
 
-        // Simulate a prior orchestrator that has not yet released its writer slot.
-        var channel = Channel.CreateUnbounded<string>();
-        _activeInstanceRegistry.GetMessageWriter("inst-001").Returns(channel.Writer);
+        // Simulate a prior orchestrator that holds the claim.
+        _activeInstanceRegistry.TryClaim("inst-001").Returns(false);
 
         var result = await _endpoints.RetryInstance("inst-001", CancellationToken.None);
 
@@ -562,6 +589,99 @@ public class ExecutionEndpointsTests
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<StepStatus>(), Arg.Any<CancellationToken>());
         await _instanceManager.DidNotReceive().SetInstanceStatusAsync(
             Arg.Any<string>(), Arg.Any<string>(), InstanceStatus.Running, Arg.Any<CancellationToken>());
+
+        // Claim must NOT be released: TryClaim returned false, so this endpoint
+        // never acquired it and must not call UnregisterInstance (which would
+        // release the prior orchestrator's active claim).
+        _activeInstanceRegistry.DidNotReceive().UnregisterInstance("inst-001");
+    }
+
+    // -------------- Story 10.1: TryClaim race-gate coverage -------------- //
+
+    // AC9: StartInstance returns 409 when TryClaim returns false (concurrent
+    // orchestrator already holds the claim).
+    [Test]
+    public async Task Start_TryClaimReturnsFalse_Returns409()
+    {
+        AttachHttpContext();
+
+        var pending = MakeInstance(InstanceStatus.Pending);
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>()).Returns(pending);
+        _profileResolver.HasConfiguredProviderAsync(Arg.Any<WorkflowDefinition?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        // Override the SetUp default to simulate a losing TryClaim.
+        _activeInstanceRegistry.TryClaim("inst-001").Returns(false);
+
+        var result = await _endpoints.StartInstance("inst-001", CancellationToken.None);
+
+        Assert.That(result, Is.InstanceOf<ConflictObjectResult>());
+        var conflict = (ConflictObjectResult)result;
+        var error = conflict.Value as ErrorResponse;
+        Assert.That(error?.Error, Is.EqualTo("already_running"));
+
+        // No state mutation happened — the claim loser short-circuits before
+        // SetInstanceStatusAsync.
+        await _instanceManager.DidNotReceive().SetInstanceStatusAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<InstanceStatus>(), Arg.Any<CancellationToken>());
+
+        // The claim itself must NOT be released — this endpoint never held it.
+        _activeInstanceRegistry.DidNotReceive().UnregisterInstance("inst-001");
+    }
+
+    // AC11: StartInstance maps the in-manager "already running" exception to 409
+    // AND releases the claim (so the slot doesn't leak for the future retry).
+    [Test]
+    public async Task Start_SetStatusThrowsAlreadyRunning_Returns409AndReleasesClaim()
+    {
+        AttachHttpContext();
+
+        var pending = MakeInstance(InstanceStatus.Pending);
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>()).Returns(pending);
+        _profileResolver.HasConfiguredProviderAsync(Arg.Any<WorkflowDefinition?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        _instanceManager.SetInstanceStatusAsync(Arg.Any<string>(), Arg.Any<string>(), InstanceStatus.Running, Arg.Any<CancellationToken>())
+            .Returns<InstanceState>(_ => throw new InstanceAlreadyRunningException("inst-001"));
+
+        var result = await _endpoints.StartInstance("inst-001", CancellationToken.None);
+
+        Assert.That(result, Is.InstanceOf<ConflictObjectResult>());
+        var conflict = (ConflictObjectResult)result;
+        var error = conflict.Value as ErrorResponse;
+        Assert.That(error?.Error, Is.EqualTo("already_running"));
+
+        // Claim must be released — otherwise the slot leaks for the orchestrator's
+        // UnregisterInstance finally (which will never run because the orchestrator
+        // never started).
+        _activeInstanceRegistry.Received(1).UnregisterInstance("inst-001");
+    }
+
+    // AC10: RetryInstance returns 409 when TryClaim returns false.
+    [Test]
+    public async Task Retry_TryClaimReturnsFalse_Returns409()
+    {
+        var instance = new InstanceState
+        {
+            InstanceId = "inst-001",
+            WorkflowAlias = "test-wf",
+            Status = InstanceStatus.Failed,
+            Steps = [new StepState { Id = "step-0", Status = StepStatus.Error }]
+        };
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>()).Returns(instance);
+
+        _activeInstanceRegistry.TryClaim("inst-001").Returns(false);
+
+        var result = await _endpoints.RetryInstance("inst-001", CancellationToken.None);
+
+        Assert.That(result, Is.InstanceOf<ConflictObjectResult>());
+        var conflict = (ConflictObjectResult)result;
+        var error = conflict.Value as ErrorResponse;
+        Assert.That(error?.Error, Is.EqualTo("already_running"));
+
+        await _instanceManager.DidNotReceive().UpdateStepStatusAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<StepStatus>(), Arg.Any<CancellationToken>());
+        _activeInstanceRegistry.DidNotReceive().UnregisterInstance("inst-001");
     }
 
     // Story 10.9 AC9: Start on an Interrupted instance returns 409 — user must Retry, not Start.

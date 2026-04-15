@@ -737,4 +737,90 @@ public class InstanceEndpointsTests
 
         Assert.That(callOrder, Is.EqualTo(new[] { "set-instance-status", "update-step-status", "signal" }));
     }
+
+    // Story 10.1 AC12 + Task 6.11: cancel endpoint's SetInstanceStatusAsync(Cancelled)
+    // serialises on the per-instance lock against a concurrent orchestrator mutation.
+    // Uses a REAL InstanceManager so the SemaphoreSlim is exercised (mocks can't model
+    // serialisation). An "orchestrator holder" task hammers UpdateStepStatusAsync to
+    // keep the lock hot; cancel must still complete promptly and the final persisted
+    // state must be Cancelled — no torn or lost write.
+    [Test]
+    public async Task CancelInstance_SerialisesAgainstConcurrentOrchestratorMutation()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "agentrun-ac12-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            var managerLogger = Substitute.For<Microsoft.Extensions.Logging.ILogger<InstanceManager>>();
+            var manager = new InstanceManager(tempDir, managerLogger);
+            var registry = Substitute.For<IActiveInstanceRegistry>();
+            var workflowRegistry = Substitute.For<IWorkflowRegistry>();
+            var endpoints = new InstanceEndpoints(manager, workflowRegistry, registry);
+
+            var identity = new ClaimsIdentity(
+                [new Claim(ClaimTypes.Name, "admin@example.com")], "test");
+            endpoints.ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(identity) }
+            };
+
+            var definition = new WorkflowDefinition
+            {
+                Name = "AC12",
+                Description = "ac12",
+                Mode = "interactive",
+                Steps = [new StepDefinition { Id = "s1", Name = "Step 1", Agent = "a.md" }]
+            };
+            var created = await manager.CreateInstanceAsync("ac12", definition, "admin", CancellationToken.None);
+            await manager.SetInstanceStatusAsync("ac12", created.InstanceId, InstanceStatus.Running, CancellationToken.None);
+
+            // Simulate an orchestrator flipping step status under the per-instance
+            // lock. Each iteration acquires + releases the lock, so the cancel
+            // endpoint's own SetInstanceStatusAsync(Cancelled) may have to wait
+            // for one in-flight iteration — sub-second on any realistic machine.
+            using var stopOrchestrator = new CancellationTokenSource();
+            var orchestratorHolder = Task.Run(async () =>
+            {
+                var nextStatus = StepStatus.Active;
+                while (!stopOrchestrator.IsCancellationRequested)
+                {
+                    try
+                    {
+                        await manager.UpdateStepStatusAsync("ac12", created.InstanceId, 0, nextStatus, CancellationToken.None);
+                        nextStatus = nextStatus == StepStatus.Active ? StepStatus.Pending : StepStatus.Active;
+                    }
+                    catch (OperationCanceledException) { break; }
+                }
+            });
+
+            // Let the holder get a few iterations in before the cancel fires.
+            await Task.Delay(50);
+
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var result = await endpoints.CancelInstance(created.InstanceId, CancellationToken.None);
+            sw.Stop();
+
+            stopOrchestrator.Cancel();
+            try { await orchestratorHolder; } catch { /* expected */ }
+
+            Assert.That(result, Is.InstanceOf<OkObjectResult>(),
+                "Cancel endpoint should return 200 OK for a running instance it successfully cancelled.");
+
+            // Cancel must complete promptly despite the concurrent holder — a single
+            // in-flight iteration (~ms) is the worst-case wait.
+            Assert.That(sw.ElapsedMilliseconds, Is.LessThan(5000),
+                $"Cancel took {sw.ElapsedMilliseconds}ms — lock serialisation appears to be blocking beyond the orchestrator's critical section.");
+
+            var finalState = await manager.GetInstanceAsync("ac12", created.InstanceId, CancellationToken.None);
+            Assert.That(finalState!.Status, Is.EqualTo(InstanceStatus.Cancelled),
+                "Final persisted state must be Cancelled — cancel observed the orchestrator's writes and its own write landed under the lock.");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+            {
+                Directory.Delete(tempDir, recursive: true);
+            }
+        }
+    }
 }

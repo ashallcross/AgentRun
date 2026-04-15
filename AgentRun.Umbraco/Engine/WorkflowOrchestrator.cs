@@ -39,25 +39,31 @@ public class WorkflowOrchestrator : IWorkflowOrchestrator
         ISseEventEmitter emitter,
         CancellationToken cancellationToken)
     {
-        var registered = _workflowRegistry.GetWorkflow(workflowAlias)
-            ?? throw new AgentRunException($"Workflow '{workflowAlias}' not found in registry");
+        // Story 10.1: attach first so the finally below releases the claim on
+        // every exit path, including throws from GetWorkflow / linked-CTS
+        // construction. The endpoint's TryClaim already created the registry
+        // entry; AttachOrClaim reuses it (or creates a fresh one for direct
+        // orchestrator invocation, e.g., unit tests).
+        var userMessageReader = _activeInstanceRegistry.AttachOrClaim(instanceId);
 
-        var workflow = registered.Definition;
-        var isFirstStep = true;
-        var userMessageReader = _activeInstanceRegistry.RegisterInstance(instanceId);
-
-        // Story 10.8: combine the HTTP request token (existing) with the
-        // per-instance cancellation token (new). Either source firing cancels
-        // the run. Must dispose the linked source in finally to avoid leaking
-        // the subscription chain.
-        var instanceToken = _activeInstanceRegistry.GetCancellationToken(instanceId)
-            ?? CancellationToken.None;
-        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken, instanceToken);
-        var runToken = linkedCts.Token;
-
+        CancellationTokenSource? linkedCts = null;
         try
         {
+            var registered = _workflowRegistry.GetWorkflow(workflowAlias)
+                ?? throw new AgentRunException($"Workflow '{workflowAlias}' not found in registry");
+
+            var workflow = registered.Definition;
+            var isFirstStep = true;
+
+            // Story 10.8: combine the HTTP request token (existing) with the
+            // per-instance cancellation token (new). Either source firing cancels
+            // the run. Disposed in finally to avoid leaking the subscription chain.
+            var instanceToken = _activeInstanceRegistry.GetCancellationToken(instanceId)
+                ?? CancellationToken.None;
+            linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken, instanceToken);
+            var runToken = linkedCts.Token;
+
         while (true)
         {
             runToken.ThrowIfCancellationRequested();
@@ -187,6 +193,7 @@ public class WorkflowOrchestrator : IWorkflowOrchestrator
         }
         finally
         {
+            linkedCts?.Dispose();
             _activeInstanceRegistry.UnregisterInstance(instanceId);
         }
     }

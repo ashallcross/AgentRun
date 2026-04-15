@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Options;
 using AgentRun.Umbraco.Configuration;
@@ -14,6 +15,23 @@ public sealed partial class InstanceManager : IInstanceManager
 
     private readonly ISerializer _yamlSerializer;
     private readonly IDeserializer _yamlDeserializer;
+
+    // Story 10.1: per-instance SemaphoreSlim serialises read-modify-write on the
+    // locked mutation methods (SetInstanceStatusAsync, UpdateStepStatusAsync,
+    // AdvanceStepAsync, DeleteInstanceAsync). Pure reads are unlocked (file-level
+    // File.Move atomicity is sufficient — AC4). Lock dict is never pruned in v1
+    // (AC13): size is bounded by total instance count in process lifetime, each
+    // lock is ≈ 96 bytes, 10k instances < 1 MB. Pruning under contention is a v2
+    // concern. Locks survive terminal transitions and are reused on any
+    // subsequent mutation path (e.g., DeleteInstanceAsync of a completed run).
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _instanceLocks = new();
+
+    // Test seam for AC13 lock-dictionary growth visibility. Expose count internally
+    // so InstanceManagerTests can assert growth without making the dict public.
+    internal int InstanceLockCount => _instanceLocks.Count;
+
+    private SemaphoreSlim GetOrCreateInstanceLock(string instanceId)
+        => _instanceLocks.GetOrAdd(instanceId, _ => new SemaphoreSlim(1, 1));
 
     public InstanceManager(
         IOptions<AgentRunOptions> options,
@@ -159,37 +177,47 @@ public sealed partial class InstanceManager : IInstanceManager
         var instanceDir = GetInstanceDirectory(workflowAlias, instanceId);
         var yamlPath = Path.Combine(instanceDir, "instance.yaml");
 
-        var state = await ReadStateAsync(yamlPath, cancellationToken)
-            ?? throw new InvalidOperationException($"Instance {instanceId} not found for workflow {workflowAlias}.");
-
-        if (stepIndex < 0 || stepIndex >= state.Steps.Count)
+        // Story 10.1: serialise read-modify-write on this instance.
+        var sem = GetOrCreateInstanceLock(instanceId);
+        await sem.WaitAsync(cancellationToken);
+        try
         {
-            throw new ArgumentOutOfRangeException(nameof(stepIndex),
-                $"Step index {stepIndex} is out of range. Instance has {state.Steps.Count} steps.");
+            var state = await ReadStateAsync(yamlPath, cancellationToken)
+                ?? throw new InvalidOperationException($"Instance {instanceId} not found for workflow {workflowAlias}.");
+
+            if (stepIndex < 0 || stepIndex >= state.Steps.Count)
+            {
+                throw new ArgumentOutOfRangeException(nameof(stepIndex),
+                    $"Step index {stepIndex} is out of range. Instance has {state.Steps.Count} steps.");
+            }
+
+            var step = state.Steps[stepIndex];
+            step.Status = status;
+
+            if (status == StepStatus.Active && step.StartedAt is null)
+            {
+                step.StartedAt = DateTime.UtcNow;
+            }
+
+            if (status == StepStatus.Complete)
+            {
+                step.CompletedAt = DateTime.UtcNow;
+            }
+
+            state.UpdatedAt = DateTime.UtcNow;
+
+            await WriteStateAtomicAsync(instanceDir, state, cancellationToken);
+
+            _logger.LogInformation(
+                "Updated step {StepId} (index {StepIndex}) to {Status} for instance {InstanceId} of workflow {WorkflowAlias}",
+                step.Id, stepIndex, status, instanceId, workflowAlias);
+
+            return state;
         }
-
-        var step = state.Steps[stepIndex];
-        step.Status = status;
-
-        if (status == StepStatus.Active && step.StartedAt is null)
+        finally
         {
-            step.StartedAt = DateTime.UtcNow;
+            sem.Release();
         }
-
-        if (status == StepStatus.Complete)
-        {
-            step.CompletedAt = DateTime.UtcNow;
-        }
-
-        state.UpdatedAt = DateTime.UtcNow;
-
-        await WriteStateAtomicAsync(instanceDir, state, cancellationToken);
-
-        _logger.LogInformation(
-            "Updated step {StepId} (index {StepIndex}) to {Status} for instance {InstanceId} of workflow {WorkflowAlias}",
-            step.Id, stepIndex, status, instanceId, workflowAlias);
-
-        return state;
     }
 
     public async Task<InstanceState> SetInstanceStatusAsync(
@@ -201,44 +229,53 @@ public sealed partial class InstanceManager : IInstanceManager
         var instanceDir = GetInstanceDirectory(workflowAlias, instanceId);
         var yamlPath = Path.Combine(instanceDir, "instance.yaml");
 
-        var state = await ReadStateAsync(yamlPath, cancellationToken)
-            ?? throw new InvalidOperationException($"Instance {instanceId} not found for workflow {workflowAlias}.");
-
-        if (status == InstanceStatus.Running && state.Status == InstanceStatus.Running)
+        // Story 10.1: serialise read-modify-write on this instance.
+        var sem = GetOrCreateInstanceLock(instanceId);
+        await sem.WaitAsync(cancellationToken);
+        try
         {
-            throw new InvalidOperationException(
-                $"Instance {instanceId} is already running. Concurrent execution is not permitted.");
-        }
+            var state = await ReadStateAsync(yamlPath, cancellationToken)
+                ?? throw new InvalidOperationException($"Instance {instanceId} not found for workflow {workflowAlias}.");
 
-        // Terminal-status guard (Story 10.8 code review, tightened in Story 10.9
-        // manual E2E): if the persisted state is terminal, refuse *sideways*
-        // terminal transitions (e.g., Cancel overwriting a freshly-written
-        // Completed). But Retry is a deliberate recovery — it resets a terminal
-        // Failed to Running, and Retry is the only path that ever writes Running
-        // to a terminal state (the RetryInstance gate only admits Failed or
-        // Interrupted, and StartInstance rejects all three terminals). Allow
-        // transitions INTO Running so Retry(Failed) works; everything else into
-        // a terminal state still refuses.
-        if (state.Status is InstanceStatus.Completed or InstanceStatus.Failed or InstanceStatus.Cancelled
-            && state.Status != status
-            && status != InstanceStatus.Running)
-        {
+            if (status == InstanceStatus.Running && state.Status == InstanceStatus.Running)
+            {
+                throw new InstanceAlreadyRunningException(instanceId);
+            }
+
+            // Terminal-status guard (Story 10.8 code review, tightened in Story 10.9
+            // manual E2E): if the persisted state is terminal, refuse *sideways*
+            // terminal transitions (e.g., Cancel overwriting a freshly-written
+            // Completed). But Retry is a deliberate recovery — it resets a terminal
+            // Failed to Running, and Retry is the only path that ever writes Running
+            // to a terminal state (the RetryInstance gate only admits Failed or
+            // Interrupted, and StartInstance rejects all three terminals). Allow
+            // transitions INTO Running so Retry(Failed) works; everything else into
+            // a terminal state still refuses.
+            if (state.Status is InstanceStatus.Completed or InstanceStatus.Failed or InstanceStatus.Cancelled
+                && state.Status != status
+                && status != InstanceStatus.Running)
+            {
+                _logger.LogInformation(
+                    "Ignored status transition for instance {InstanceId}: already in terminal state {CurrentStatus}, refused transition to {NewStatus}",
+                    instanceId, state.Status, status);
+                return state;
+            }
+
+            state.Status = status;
+            state.UpdatedAt = DateTime.UtcNow;
+
+            await WriteStateAtomicAsync(instanceDir, state, cancellationToken);
+
             _logger.LogInformation(
-                "Ignored status transition for instance {InstanceId}: already in terminal state {CurrentStatus}, refused transition to {NewStatus}",
-                instanceId, state.Status, status);
+                "Set instance {InstanceId} status to {Status} for workflow {WorkflowAlias}",
+                instanceId, status, workflowAlias);
+
             return state;
         }
-
-        state.Status = status;
-        state.UpdatedAt = DateTime.UtcNow;
-
-        await WriteStateAtomicAsync(instanceDir, state, cancellationToken);
-
-        _logger.LogInformation(
-            "Set instance {InstanceId} status to {Status} for workflow {WorkflowAlias}",
-            instanceId, status, workflowAlias);
-
-        return state;
+        finally
+        {
+            sem.Release();
+        }
     }
 
     public async Task<bool> DeleteInstanceAsync(
@@ -249,30 +286,43 @@ public sealed partial class InstanceManager : IInstanceManager
         var instanceDir = GetInstanceDirectory(workflowAlias, instanceId);
         var yamlPath = Path.Combine(instanceDir, "instance.yaml");
 
+        // Story 10.1: serialise delete against any in-flight read-modify-write
+        // on the same instance. Pure File.Exists before the lock is a cheap
+        // fast path but not a TOCTOU — the re-check after the lock is held is
+        // authoritative.
         if (!File.Exists(yamlPath))
         {
             return false;
         }
 
-        var state = await ReadStateAsync(yamlPath, cancellationToken);
-        if (state is null)
+        var sem = GetOrCreateInstanceLock(instanceId);
+        await sem.WaitAsync(cancellationToken);
+        try
         {
-            return false;
-        }
+            var state = await ReadStateAsync(yamlPath, cancellationToken);
+            if (state is null)
+            {
+                return false;
+            }
 
-        if (state.Status is not (InstanceStatus.Completed or InstanceStatus.Failed or InstanceStatus.Cancelled or InstanceStatus.Interrupted))
+            if (state.Status is not (InstanceStatus.Completed or InstanceStatus.Failed or InstanceStatus.Cancelled or InstanceStatus.Interrupted))
+            {
+                throw new InvalidOperationException(
+                    $"Cannot delete instance {instanceId} with status {state.Status}. Only completed, failed, cancelled, or interrupted instances can be deleted.");
+            }
+
+            Directory.Delete(instanceDir, recursive: true);
+
+            _logger.LogInformation(
+                "Deleted instance {InstanceId} for workflow {WorkflowAlias}",
+                instanceId, workflowAlias);
+
+            return true;
+        }
+        finally
         {
-            throw new InvalidOperationException(
-                $"Cannot delete instance {instanceId} with status {state.Status}. Only completed, failed, cancelled, or interrupted instances can be deleted.");
+            sem.Release();
         }
-
-        Directory.Delete(instanceDir, recursive: true);
-
-        _logger.LogInformation(
-            "Deleted instance {InstanceId} for workflow {WorkflowAlias}",
-            instanceId, workflowAlias);
-
-        return true;
     }
 
     public async Task<InstanceState?> FindInstanceAsync(
@@ -324,25 +374,35 @@ public sealed partial class InstanceManager : IInstanceManager
         var instanceDir = GetInstanceDirectory(workflowAlias, instanceId);
         var yamlPath = Path.Combine(instanceDir, "instance.yaml");
 
-        var state = await ReadStateAsync(yamlPath, cancellationToken)
-            ?? throw new InvalidOperationException($"Instance {instanceId} not found for workflow {workflowAlias}.");
-
-        if (state.CurrentStepIndex >= state.Steps.Count - 1)
+        // Story 10.1: serialise read-modify-write on this instance.
+        var sem = GetOrCreateInstanceLock(instanceId);
+        await sem.WaitAsync(cancellationToken);
+        try
         {
-            throw new InvalidOperationException(
-                $"Cannot advance step index for instance {instanceId}: already on the last step (index {state.CurrentStepIndex} of {state.Steps.Count}).");
+            var state = await ReadStateAsync(yamlPath, cancellationToken)
+                ?? throw new InvalidOperationException($"Instance {instanceId} not found for workflow {workflowAlias}.");
+
+            if (state.CurrentStepIndex >= state.Steps.Count - 1)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot advance step index for instance {instanceId}: already on the last step (index {state.CurrentStepIndex} of {state.Steps.Count}).");
+            }
+
+            state.CurrentStepIndex++;
+            state.UpdatedAt = DateTime.UtcNow;
+
+            await WriteStateAtomicAsync(instanceDir, state, cancellationToken);
+
+            _logger.LogInformation(
+                "Advanced CurrentStepIndex to {StepIndex} for instance {InstanceId} of workflow {WorkflowAlias}",
+                state.CurrentStepIndex, instanceId, workflowAlias);
+
+            return state;
         }
-
-        state.CurrentStepIndex++;
-        state.UpdatedAt = DateTime.UtcNow;
-
-        await WriteStateAtomicAsync(instanceDir, state, cancellationToken);
-
-        _logger.LogInformation(
-            "Advanced CurrentStepIndex to {StepIndex} for instance {InstanceId} of workflow {WorkflowAlias}",
-            state.CurrentStepIndex, instanceId, workflowAlias);
-
-        return state;
+        finally
+        {
+            sem.Release();
+        }
     }
 
     public string GetInstanceFolderPath(string workflowAlias, string instanceId)

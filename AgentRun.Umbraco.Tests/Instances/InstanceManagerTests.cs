@@ -160,7 +160,7 @@ public class InstanceManagerTests
 
         Assert.That(
             async () => await _manager.SetInstanceStatusAsync("test-workflow", created.InstanceId, InstanceStatus.Running, CancellationToken.None),
-            Throws.TypeOf<InvalidOperationException>()
+            Throws.TypeOf<InstanceAlreadyRunningException>()
                 .With.Message.Contains("already running"));
     }
 
@@ -512,5 +512,198 @@ public class InstanceManagerTests
         Assert.That(files, Has.Length.EqualTo(1));
         Assert.That(files[0], Does.EndWith("instance.yaml"));
         Assert.That(files.Any(f => f.EndsWith(".tmp")), Is.False);
+    }
+
+    // -------------- Story 10.1: per-instance locking -------------- //
+
+    // AC1 + AC2: Lost-update prevention across mutation methods. Without the
+    // per-instance lock, two concurrent read-modify-write operations can each
+    // load the pre-write state, produce independent mutations, and race their
+    // writes — the loser's changes silently vanish. Running both on distinct
+    // fields of the same state (Status vs Steps[0]) with iteration flushes out
+    // any non-determinism: with the lock both writes always land; without it,
+    // at least one iteration will observe a lost update.
+    [Test]
+    public async Task Lock_ConcurrentSetStatusAndUpdateStep_NeitherWriteLost()
+    {
+        var definition = CreateTestDefinition();
+
+        const int iterations = 50;
+        for (var i = 0; i < iterations; i++)
+        {
+            var created = await _manager.CreateInstanceAsync("test-workflow", definition, "admin@example.com", CancellationToken.None);
+
+            var barrier = new Barrier(2);
+            var t1 = Task.Run(async () =>
+            {
+                barrier.SignalAndWait();
+                await _manager.SetInstanceStatusAsync("test-workflow", created.InstanceId, InstanceStatus.Running, CancellationToken.None);
+            });
+            var t2 = Task.Run(async () =>
+            {
+                barrier.SignalAndWait();
+                await _manager.UpdateStepStatusAsync("test-workflow", created.InstanceId, 0, StepStatus.Active, CancellationToken.None);
+            });
+
+            await Task.WhenAll(t1, t2);
+
+            var final = await _manager.GetInstanceAsync("test-workflow", created.InstanceId, CancellationToken.None);
+
+            Assert.That(final, Is.Not.Null);
+            Assert.That(final!.Status, Is.EqualTo(InstanceStatus.Running),
+                $"Iteration {i}: Status write was lost — concurrent UpdateStepStatus overwrote it.");
+            Assert.That(final.Steps[0].Status, Is.EqualTo(StepStatus.Active),
+                $"Iteration {i}: Steps[0].Status write was lost — concurrent SetInstanceStatus overwrote it.");
+        }
+    }
+
+    // AC2: Two concurrent UpdateStepStatusAsync calls on DIFFERENT steps of the
+    // same instance serialise and both mutations land. Iterated so a lost-update
+    // regression surfaces non-deterministically rather than passing by luck on a
+    // single trial.
+    [Test]
+    public async Task Lock_ConcurrentUpdateStepStatus_DifferentSteps_BothWritesLand()
+    {
+        var definition = CreateTestDefinition();
+
+        const int iterations = 50;
+        for (var i = 0; i < iterations; i++)
+        {
+            var created = await _manager.CreateInstanceAsync("test-workflow", definition, "admin@example.com", CancellationToken.None);
+
+            var barrier = new Barrier(2);
+            var t1 = Task.Run(async () =>
+            {
+                barrier.SignalAndWait();
+                await _manager.UpdateStepStatusAsync("test-workflow", created.InstanceId, 0, StepStatus.Complete, CancellationToken.None);
+            });
+            var t2 = Task.Run(async () =>
+            {
+                barrier.SignalAndWait();
+                await _manager.UpdateStepStatusAsync("test-workflow", created.InstanceId, 1, StepStatus.Active, CancellationToken.None);
+            });
+
+            await Task.WhenAll(t1, t2);
+
+            var final = await _manager.GetInstanceAsync("test-workflow", created.InstanceId, CancellationToken.None);
+
+            Assert.That(final, Is.Not.Null);
+            Assert.That(final!.Steps[0].Status, Is.EqualTo(StepStatus.Complete),
+                $"Iteration {i}: Steps[0] write was lost.");
+            Assert.That(final.Steps[1].Status, Is.EqualTo(StepStatus.Active),
+                $"Iteration {i}: Steps[1] write was lost.");
+        }
+    }
+
+    // AC7: Per-instance scope — a write on instance A does not block a write on
+    // instance B. Deterministic variant: grab A's SemaphoreSlim via reflection,
+    // hold it from outside InstanceManager, then prove B's write completes
+    // without waiting on A. The holder releases A at the end, confirming no
+    // semaphore was leaked.
+    [Test]
+    public async Task Lock_DifferentInstances_DoNotBlockEachOther()
+    {
+        var definition = CreateTestDefinition();
+        var a = await _manager.CreateInstanceAsync("test-workflow", definition, "admin@example.com", CancellationToken.None);
+        var b = await _manager.CreateInstanceAsync("test-workflow", definition, "admin@example.com", CancellationToken.None);
+
+        // Touch A's lock once so it's allocated in the dictionary, then grab
+        // the SemaphoreSlim via reflection and hold it outside InstanceManager.
+        await _manager.SetInstanceStatusAsync("test-workflow", a.InstanceId, InstanceStatus.Running, CancellationToken.None);
+
+        var locksField = typeof(InstanceManager).GetField(
+            "_instanceLocks",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Could not locate _instanceLocks field via reflection.");
+        var locks = (System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim>)locksField.GetValue(_manager)!;
+        var aSemaphore = locks[a.InstanceId];
+
+        // Hold A's semaphore. Any SetInstanceStatusAsync on A would block here.
+        await aSemaphore.WaitAsync();
+
+        try
+        {
+            // B must complete without waiting on A's held semaphore. A 2-second
+            // NUnit-level timeout would catch a deadlock; the assertion below
+            // catches a subtle cross-instance contention regression.
+            var bTask = _manager.SetInstanceStatusAsync("test-workflow", b.InstanceId, InstanceStatus.Running, CancellationToken.None);
+            var completed = await Task.WhenAny(bTask, Task.Delay(TimeSpan.FromSeconds(2)));
+
+            Assert.That(completed, Is.SameAs(bTask),
+                "Instance B's write did not complete within 2s while A's lock was held — locks are not per-instance.");
+            await bTask; // observe any exception
+        }
+        finally
+        {
+            aSemaphore.Release();
+        }
+    }
+
+    // AC6: Lock is released on exception — a failing mutation does not leave the
+    // lock held. We trigger an ArgumentOutOfRangeException by passing an invalid
+    // stepIndex; the finally block must release so a subsequent call proceeds.
+    [Test]
+    public async Task Lock_ReleasedOnException_SubsequentCallProceeds()
+    {
+        var definition = CreateTestDefinition();
+        var created = await _manager.CreateInstanceAsync("test-workflow", definition, "admin@example.com", CancellationToken.None);
+
+        Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () =>
+            await _manager.UpdateStepStatusAsync("test-workflow", created.InstanceId, stepIndex: 99, StepStatus.Complete, CancellationToken.None));
+
+        // Subsequent call on the same instance must not deadlock — test completes
+        // with a reasonable timeout (NUnit default per-test) if the lock was
+        // released in finally.
+        var result = await _manager.UpdateStepStatusAsync("test-workflow", created.InstanceId, stepIndex: 0, StepStatus.Complete, CancellationToken.None);
+        Assert.That(result.Steps[0].Status, Is.EqualTo(StepStatus.Complete));
+    }
+
+    // AC5: WaitAsync cancellation does not spuriously release the lock. When a
+    // caller's token fires before the lock is acquired, WaitAsync throws OCE and
+    // the finally must NOT run Release (the lock was never held). We verify the
+    // semaphore is still in a usable 1-permit state by running a subsequent
+    // successful write.
+    [Test]
+    public async Task Lock_WaitAsyncCancellation_DoesNotSpuriouslyRelease()
+    {
+        var definition = CreateTestDefinition();
+        var created = await _manager.CreateInstanceAsync("test-workflow", definition, "admin@example.com", CancellationToken.None);
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        // CatchAsync (not ThrowsAsync) to accept TaskCanceledException, the derived
+        // type SemaphoreSlim.WaitAsync throws when its token is signalled.
+        Assert.CatchAsync<OperationCanceledException>(async () =>
+            await _manager.SetInstanceStatusAsync("test-workflow", created.InstanceId, InstanceStatus.Running, cts.Token));
+
+        // Subsequent write must succeed — no leaked permit and no deadlock.
+        var result = await _manager.SetInstanceStatusAsync("test-workflow", created.InstanceId, InstanceStatus.Running, CancellationToken.None);
+        Assert.That(result.Status, Is.EqualTo(InstanceStatus.Running));
+    }
+
+    // AC13: Lock dictionary grows monotonically — 100 mutated instances produce
+    // at least 100 lock entries. This is a grep-able growth-visibility smoke test,
+    // not a count enforcement (pruning is explicitly deferred to v2). Asserts
+    // a pre-condition of zero and a post-condition of >= instanceCount so a
+    // future SetUp that warms locks (e.g., a shared fixture) does not cause
+    // silent false failures.
+    [Test]
+    public async Task Lock_DictionaryGrowsWithInstanceCount_NeverPruned()
+    {
+        var definition = CreateTestDefinition();
+
+        Assert.That(_manager.InstanceLockCount, Is.EqualTo(0),
+            "SetUp baseline precondition: fresh InstanceManager starts with an empty lock dictionary.");
+
+        const int instanceCount = 100;
+        for (var i = 0; i < instanceCount; i++)
+        {
+            var created = await _manager.CreateInstanceAsync("test-workflow", definition, "admin@example.com", CancellationToken.None);
+            await _manager.SetInstanceStatusAsync("test-workflow", created.InstanceId, InstanceStatus.Running, CancellationToken.None);
+        }
+
+        Assert.That(_manager.InstanceLockCount, Is.GreaterThanOrEqualTo(instanceCount),
+            "Lock dictionary should have at least one entry per mutated instance (no pruning in v1 — AC13).");
     }
 }

@@ -25,14 +25,14 @@
 
 ## Deferred from: code review of 3-1-instance-state-management (2026-03-30)
 
-- Read-modify-write race condition — `SetInstanceStatusAsync` and `UpdateStepStatusAsync` have no in-process locking. Two concurrent callers can both read stale state and overwrite each other. Add per-instance `SemaphoreSlim` when step executor (Epic 4) introduces concurrent callers.
+- ~~Read-modify-write race condition — `SetInstanceStatusAsync` and `UpdateStepStatusAsync` have no in-process locking. Two concurrent callers can both read stale state and overwrite each other. Add per-instance `SemaphoreSlim` when step executor (Epic 4) introduces concurrent callers.~~ **RESOLVED in Story 10.1** — per-instance `SemaphoreSlim` in `InstanceManager` + atomic `TryClaim` in `ActiveInstanceRegistry`.
 - `CurrentStepIndex` never advanced — field exists on `InstanceState` but `UpdateStepStatusAsync` does not increment it when a step completes. Advancing is step execution logic (Story 4.3/4.5).
 - No state machine enforcement on step/instance status transitions — any transition is accepted (e.g., Complete → Pending). Step executor (Epic 4) owns transition rules.
 
 ## Deferred from: code review of 3-2-instance-api-endpoints (2026-03-30)
 
-- Cancel endpoint TOCTOU race between FindInstanceAsync and SetInstanceStatusAsync — status could change between the two calls allowing cancellation of a just-completed instance. Requires InstanceManager-level locking (same as 3-1 read-modify-write race).
-- Delete endpoint TOCTOU race between FindInstanceAsync and DeleteInstanceAsync — same TOCTOU pattern. A concurrent status change could cause DeleteInstanceAsync to throw an unhandled InvalidOperationException (500). Requires InstanceManager-level locking.
+- ~~Cancel endpoint TOCTOU race between FindInstanceAsync and SetInstanceStatusAsync — status could change between the two calls allowing cancellation of a just-completed instance. Requires InstanceManager-level locking (same as 3-1 read-modify-write race).~~ **RESOLVED in Story 10.1** — per-instance `SemaphoreSlim` in `InstanceManager` + atomic `TryClaim` in `ActiveInstanceRegistry`.
+- ~~Delete endpoint TOCTOU race between FindInstanceAsync and DeleteInstanceAsync — same TOCTOU pattern. A concurrent status change could cause DeleteInstanceAsync to throw an unhandled InvalidOperationException (500). Requires InstanceManager-level locking.~~ **RESOLVED in Story 10.1** — per-instance `SemaphoreSlim` in `InstanceManager` + atomic `TryClaim` in `ActiveInstanceRegistry`.
 
 ## Deferred from: code review of 3-3-instance-list-dashboard (2026-03-31)
 
@@ -49,7 +49,7 @@
 
 ## Deferred from: code review of story-3.4 (2026-03-31)
 
-- TOCTOU race in cancel endpoint — `CancelInstance` reads instance status, checks it's Running/Pending, then writes Cancelled. Between read and write, the workflow runner could advance to Completed/Failed. The cancel would overwrite a terminal status. No optimistic concurrency guard visible. Pre-existing from Story 3.2. [InstanceEndpoints.cs:82-106]
+- ~~TOCTOU race in cancel endpoint — `CancelInstance` reads instance status, checks it's Running/Pending, then writes Cancelled. Between read and write, the workflow runner could advance to Completed/Failed. The cancel would overwrite a terminal status. No optimistic concurrency guard visible. Pre-existing from Story 3.2. [InstanceEndpoints.cs:82-106]~~ **RESOLVED in Story 10.1** — per-instance `SemaphoreSlim` in `InstanceManager` serialises the cancel's `SetInstanceStatusAsync` against any concurrent orchestrator mutation; the terminal-status guard at `InstanceManager.cs:222-230` remains as the inner backstop.
 
 ## Deferred from: code review of 4-1-prompt-assembly (2026-03-31)
 
@@ -71,7 +71,7 @@
 
 ## Deferred from: code review of story-4.5 (2026-03-31)
 
-- TOCTOU race on concurrent POST /start requests — two requests can both pass the Running guard and execute concurrently. Per-instance SemaphoreSlim locking explicitly deferred in story spec.
+- ~~TOCTOU race on concurrent POST /start requests — two requests can both pass the Running guard and execute concurrently. Per-instance SemaphoreSlim locking explicitly deferred in story spec.~~ **RESOLVED in Story 10.1** — atomic `TryClaim` in `ActiveInstanceRegistry` is now the source-of-truth race gate; both `StartInstance` and `RetryInstance` 409 the loser cleanly. Per-instance `SemaphoreSlim` in `InstanceManager` closes the inner read-modify-write race for defence-in-depth.
 - No timeout/abort on frontend SSE stream reader — if server hangs, client waits indefinitely with no AbortController. Deferred to v2 (NFR5 reconnection scope).
 - No way to resume failed autonomous workflow — if an intermediate step fails, instance is stuck at Failed with advanced CurrentStepIndex. Retry/resume is Story 7.2.
 
@@ -135,7 +135,7 @@
 ## Deferred from: code review of 7-2-step-retry-with-context-management (2026-04-02)
 
 - Test RetryInstance_FailedInstance relies on NullReferenceException catch — test verifies state mutations by catching NullReferenceException from missing HttpResponse. Brittle but doesn't affect production code. Pre-existing test pattern across endpoint tests.
-- File truncation not concurrency-safe — TruncateLastAssistantEntryAsync does read-modify-write without locking. Same pre-existing pattern across all ConversationStore file operations (AppendAsync also has no lock). Per-instance SemaphoreSlim from 3-1 deferred item covers this.
+- ~~File truncation not concurrency-safe — TruncateLastAssistantEntryAsync does read-modify-write without locking. Same pre-existing pattern across all ConversationStore file operations (AppendAsync also has no lock). Per-instance SemaphoreSlim from 3-1 deferred item covers this.~~ **RESOLVED in Story 10.1** — `TryClaim` makes concurrent callers on the same instance structurally unreachable; see Story 10.1 §"What this story does NOT directly lock" for the three-way analysis (orchestrator double-run → blocked by claim; retry/truncate-vs-orchestrator → retry acquires claim first; cancel endpoint → never touches `ConversationStore`).
 - Truncation of tool-call assistant entry could leave orphaned tool results — if last assistant entry is a tool-call, removing it leaves orphaned tool-result entries. Theoretical; error always occurs during LLM call, not after tool execution.
 - No rollback if status update throws after truncation — truncation modifies conversation file before status updates; if status update throws, conversation is truncated but instance remains Failed. Pre-existing pattern; no transactions across file+state operations.
 - FindIndex returns first Error step not last — if multiple steps somehow have Error status, wrong step gets retried. Only one step can be in Error per orchestrator flow.
@@ -297,3 +297,10 @@ Identified during manual testing of Story 9.12 content tools. On a 26-node test 
 - **AC5 mock gate lacks `viewingStepId=true` case** — `interactiveInputGate` in `agentrun-instance-detail.element.test.ts:254-280` accepts the flag but no test exercises "viewing step history wins over the showContinue branch." Cheap to add; not blocking.
 - **AC9 YAML round-trip does not assert raw on-disk string representation** — `UpdateStepStatusAsync_SetsCancelledStatus` asserts enum round-trip via `GetInstanceAsync` but not that the YAML file contains literal `Cancelled`. Convention is stable; drift extremely unlikely.
 - **Locked decision 2 (no auto-resume on reopen) has no explicit negative test** — no assertion that opening a between-steps instance does NOT invoke `_onStartClick`. Trusting absence is reasonable; add if suspicious.
+
+## Deferred from: code review of story-10-1-instance-concurrency-locking (2026-04-15)
+
+- **SendMessage channel stale-writer race** — `ExecutionEndpoints.cs:421-432`. Between `GetMessageWriter` read and `TryWrite` call, a concurrent orchestrator teardown + retry can swap the channel writer; a user message delivered here could land in a new orchestrator's channel rather than the intended prior one. Pre-existing before Story 10.1; 10.1's per-claim fresh Channel+CTS does not widen the structural window. Revisit if beta testing surfaces message-misrouting.
+- **StartInstance fast-path 409 on stale reading** — `ExecutionEndpoints.cs:75-86`. When `instance.Status == Running` and `GetMessageWriter(id)` returns non-null, the endpoint 409s *before* `TryClaim`. Between the two reads, the prior orchestrator may have released — so the fast-path 409 fires on an idle slot. User sees transient `already_running` that self-resolves on next click. Pre-existing UX-hint behaviour; `TryClaim` is authoritative.
+- **`UnregisterInstance` lacks null/empty input validation** — `ActiveInstanceRegistry.cs`. `TryClaim` and `AttachOrClaim` throw `ArgumentException` on null/empty instanceId; `UnregisterInstance` silently TryRemoves nothing. Asymmetric boundary hides future misuse (e.g., an endpoint passing an empty id). Pre-existing pattern; consistency-only fix.
+- **Retry-path claim release on pre-`UpdateStepStatusAsync` throw untested** — `ExecutionEndpointsTests.cs`. Start-path has `Start_SetStatusThrowsAlreadyRunning_Returns409AndReleasesClaim`; Retry's symmetric case (a throw between `TryClaim` and `SetInstanceStatusAsync`, e.g., JSONL truncate I/O error) is uncovered. The outer `catch { UnregisterInstance; throw }` at line 251 handles this correctly; this is a test-only gap.
