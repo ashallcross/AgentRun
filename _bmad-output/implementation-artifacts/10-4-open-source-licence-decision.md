@@ -1,6 +1,6 @@
 # Story 10.4: Open-Source Licence Decision — Apache 2.0
 
-Status: review
+Status: done
 
 **Depends on:** None. Zero code dependency on any other in-flight Epic 10 story — [epics.md §Story 10.4](../planning-artifacts/epics.md#L2185) describes this explicitly as "a product/legal decision, not a code task." Can run in parallel with Story 10.7c (in-progress).
 **Followed by:** Story 10.5 (marketplace listing & community launch). Marketplace publication requires an applied SPDX licence; this story is the prerequisite for 10.5 but is not on the critical path of any other Epic 10 work.
@@ -511,3 +511,4 @@ Notes:
 |---|---|---|
 | 2026-04-16 | Story spec created. Licence pre-locked as Apache 2.0 by Adam in the same session. Scope: LICENSE + NOTICE files at repo root, csproj SPDX expression update, README licence section, dependency audit, nupkg verification. 12 locked decisions, 7 ACs, 7 tasks, 5 F-cases. No code changes, no test changes, no version bump. Positional priority 12th in Epic 10; dependency-free, can run in parallel with in-progress Story 10.7c. | Bob (SM) |
 | 2026-04-16 | Implementation complete → `review`. Tasks 1–7 all done: LICENSE (Apache 2.0 verbatim + `Copyright 2026 Adam Shallcross`), NOTICE (Umbraco CMS / Umbraco.AI / AngleSharp / YamlDotNet attribution), csproj SPDX expression applied (9.3 TODO closed), README `## Licence` section appended, transitive dep audit (7 direct MIT + 196 transitives, zero conflicts, all Apache-2.0-outbound-compatible permissive), nupkg rebuilt + nuspec verified to carry `<license type="expression">Apache-2.0</license>`. Backend 713/713, frontend 235/235, build clean (2 pre-existing warnings only). | Amelia (Dev) |
+| 2026-04-16 | Code review → `done`. Single-pass AC-conformance audit (scope: licence/metadata/packaging only — adversarial parallel layers skipped by agreement as there is no `.cs`/`.ts` code to hunt). All 7 ACs verified; all 12 locked decisions verified; F4 scope discipline verified. LICENSE byte-diffed against canonical `apache.org/licenses/LICENSE-2.0.txt` — only the expected copyright substitution (line 190) differs. Zero findings. | Amelia (Review) |
