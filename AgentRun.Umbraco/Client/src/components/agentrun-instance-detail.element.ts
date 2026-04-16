@@ -207,22 +207,38 @@ export class AgentRunInstanceDetailElement extends UmbLitElement {
       const numbered = numberAndSortInstances(allInstances);
       const runNumber = numbered.find((n) => n.id === instance.id)?.runNumber ?? 0;
 
-      let chatMessages = this._state.chatMessages;
-      if (!this._state.streaming && chatMessages.length === 0) {
+      // History bootstrap — only fires on first load (chat empty + not
+      // streaming). Snapshotting state mid-stream and writing it back here
+      // would clobber any chatMessages a concurrent SSE consumer appended
+      // during the awaits above (manual E2E 2026-04-15 — Test 3 silent-drop
+      // root cause). Read state inside the branch so the snapshot is fresh.
+      let bootstrappedHistory: ChatMessage[] | null = null;
+      if (!this._state.streaming && this._state.chatMessages.length === 0) {
         const currentStep =
           instance.steps.find((s) => s.status === "Active" || s.status === "Error") ??
           instance.steps.findLast((s) => s.status === "Complete");
         if (currentStep) {
           try {
             const entries = await getConversation(instance.id, currentStep.id, token);
-            chatMessages = mapConversationToChat(entries);
+            bootstrappedHistory = mapConversationToChat(entries);
           } catch {
             // Non-critical — display empty chat rather than failing
           }
         }
       }
 
-      this._patch({ instance, runNumber, chatMessages, error: false });
+      // Re-check streaming/empty AFTER the awaits. If a concurrent SSE consumer
+      // started appending while getConversation was in flight, the bootstrap
+      // is stale — discard it and leave the live chatMessages alone.
+      const patch: Partial<InstanceDetailState> = { instance, runNumber, error: false };
+      if (
+        bootstrappedHistory !== null &&
+        !this._state.streaming &&
+        this._state.chatMessages.length === 0
+      ) {
+        patch.chatMessages = bootstrappedHistory;
+      }
+      this._patch(patch);
     } catch {
       this._patch({ error: true });
     } finally {
@@ -288,25 +304,31 @@ export class AgentRunInstanceDetailElement extends UmbLitElement {
 
     this._patch({ retrying: true, chatMessages: [] });
 
-    const token = await this.#authContext?.getLatestToken();
-    const result = await retryInstanceAction(instance.id, token);
+    try {
+      const token = await this.#authContext?.getLatestToken();
+      const result = await retryInstanceAction(instance.id, token);
 
-    if (result.kind !== "streaming") {
-      const patch: Partial<InstanceDetailState> = { retrying: false };
-      if (result.kind === "notRetryable") {
-        patch.chatMessages = [{
-          role: "system",
-          content: "Cannot retry — instance is no longer in a failed state.",
-          timestamp: this._now(),
-        }];
+      if (result.kind !== "streaming") {
+        if (result.kind === "notRetryable") {
+          this._patch({
+            chatMessages: [{
+              role: "system",
+              content: "Cannot retry — instance is no longer in a failed state.",
+              timestamp: this._now(),
+            }],
+          });
+        }
+        await this._loadData();
+        return;
       }
-      this._patch(patch);
-      await this._loadData();
-      return;
-    }
 
-    await this._streamSseResponse(result.response);
-    this._patch({ retrying: false });
+      await this._streamSseResponse(result.response);
+    } finally {
+      // Always clear retrying — a synchronous throw inside _streamSseResponse
+      // (reducer side-effect, parse error) must not leave the Retry button
+      // stuck disabled until page reload.
+      this._patch({ retrying: false });
+    }
   }
 
   private async _streamSseResponse(response: Response): Promise<void> {
@@ -353,6 +375,15 @@ export class AgentRunInstanceDetailElement extends UmbLitElement {
       this._patch({ stepCompletable: false });
       return;
     }
+    // Terminal instance states must never surface the "Continue to next step"
+    // button — a Cancelled run with Complete/Cancelled/Pending steps would
+    // otherwise satisfy the Pending-remaining check and let the user advance
+    // past a deliberate cancel (manual E2E 2026-04-15).
+    const status = instance.status;
+    if (status === "Cancelled" || status === "Failed" || status === "Completed") {
+      this._patch({ stepCompletable: false });
+      return;
+    }
     const hasActive = instance.steps.some((s) => s.status === "Active");
     const hasComplete = instance.steps.some((s) => s.status === "Complete");
     const hasPending = instance.steps.some((s) => s.status === "Pending");
@@ -363,9 +394,15 @@ export class AgentRunInstanceDetailElement extends UmbLitElement {
     this._state = reduceSseEvent(this._state, { event: eventType, data });
 
     // Side effects that don't belong in the pure reducer live here, triggered
-    // after the reducer produces new state. Currently just the auto-open
-    // popover on run.finished — fires only during streaming, not on _loadData.
-    if (eventType === "run.finished" && this._state.instance) {
+    // after the reducer produces new state. Auto-open the artifact popover
+    // only on a genuine Completed outcome — firing on Cancelled / Failed
+    // (manual E2E 2026-04-15) surfaced a stale prior-step artifact when the
+    // user cancelled a later step.
+    if (
+      eventType === "run.finished" &&
+      this._state.instance &&
+      this._state.instance.status === "Completed"
+    ) {
       const lastCompleteStep = [...this._state.instance.steps]
         .reverse()
         .find((s) => s.status === "Complete" && s.writesTo && s.writesTo.length > 0);

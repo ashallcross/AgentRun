@@ -248,6 +248,37 @@ describe("instance-detail-sse-reducer", () => {
       expect(next.chatMessages.at(-1)!.content).to.equal("Workflow complete.");
     });
 
+    it("run.finished with Cancelled payload does NOT append 'Workflow complete.' (manual E2E 2026-04-15)", () => {
+      // Backend emits run.finished with status=Cancelled on user cancel. Pre-fix
+      // the reducer unconditionally appended "Workflow complete." producing the
+      // misleading "Workflow complete. / Run cancelled." two-line render.
+      const state = withInstance();
+      const next = reduceSseEvent(
+        state,
+        { event: "run.finished", data: { status: "Cancelled" } },
+        { now },
+      );
+      expect(next.instance!.status).to.equal("Cancelled");
+      const lastMessage = next.chatMessages.at(-1);
+      if (lastMessage) {
+        expect(lastMessage.content).to.not.equal("Workflow complete.");
+      }
+    });
+
+    it("run.finished with Failed payload preserves Failed and does NOT append 'Workflow complete.'", () => {
+      const state = withInstance();
+      const next = reduceSseEvent(
+        state,
+        { event: "run.finished", data: { status: "Failed" } },
+        { now },
+      );
+      expect(next.instance!.status).to.equal("Failed");
+      const lastMessage = next.chatMessages.at(-1);
+      if (lastMessage) {
+        expect(lastMessage.content).to.not.equal("Workflow complete.");
+      }
+    });
+
     it("run.error marks instance Failed and emits the provided error message", () => {
       const state = withInstance();
       const next = reduceSseEvent(

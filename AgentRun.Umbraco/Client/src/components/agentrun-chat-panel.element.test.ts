@@ -2,51 +2,58 @@ import { expect } from "@open-wc/testing";
 import type { ChatMessage, InstanceDetailResponse } from "../api/types.js";
 import { initialInstanceDetailState } from "../utils/instance-detail-store.js";
 import { reduceSseEvent } from "../utils/instance-detail-sse-reducer.js";
-import { computeChatInputGate } from "../utils/instance-detail-helpers.js";
+import {
+  computeChatInputGate,
+  shouldShowCursor,
+} from "../utils/instance-detail-helpers.js";
 
 describe("agentrun-chat-panel", () => {
-  // Track F — chat cursor visibility predicate mirrors the attribute expression
-  // at agentrun-chat-panel.element.ts:184. Tests assert the exact condition the
-  // element evaluates, so any drift requires updating both sides in lockstep.
+  // Track F — cursor visibility tests call the same shouldShowCursor helper
+  // the Lit template calls at agentrun-chat-panel.element.ts, so template and
+  // test share a single source of truth. The project's test runner is not
+  // wired up with a Bellissima import map (no DOM fixture possible against a
+  // UmbLitElement-derived component), so shared-helper inversion gives the
+  // drift-protection a DOM fixture would give without the infra lift.
   describe("Track F — cursor visibility (AC3)", () => {
-    const cursorOn = (
-      i: number,
-      lastIndex: number,
+    const msg = (
       role: ChatMessage["role"],
-      isStreaming: boolean,
-      msgIsStreaming: boolean | undefined,
-    ): boolean =>
-      i === lastIndex && role === "agent" && isStreaming && msgIsStreaming === true;
+      isStreaming: boolean | undefined,
+    ): ChatMessage => ({
+      role,
+      content: "",
+      timestamp: "2026-04-15T00:00:00.000Z",
+      isStreaming,
+    });
 
     it("cursor present when both connection- and message-level streaming are true", () => {
-      expect(cursorOn(0, 0, "agent", true, true)).to.be.true;
+      expect(shouldShowCursor(0, 0, msg("agent", true), true)).to.be.true;
     });
 
     it("cursor absent when connection is streaming but the message is not (tool-call / waiting state)", () => {
-      // This is the Tom Madden beta repro: SSE connection alive throughout the
-      // run, but the assistant message isStreaming flips false the moment a
-      // tool.start fires. Pre-fix the cursor flashed throughout tool execution.
-      expect(cursorOn(0, 0, "agent", true, false)).to.be.false;
+      // Tom Madden beta repro: SSE connection alive throughout the run, but
+      // the assistant message isStreaming flips false the moment a tool.start
+      // fires. Pre-fix the cursor flashed throughout tool execution.
+      expect(shouldShowCursor(0, 0, msg("agent", false), true)).to.be.false;
     });
 
     it("cursor absent when msg.isStreaming is undefined (history / non-streaming message)", () => {
-      expect(cursorOn(0, 0, "agent", true, undefined)).to.be.false;
+      expect(shouldShowCursor(0, 0, msg("agent", undefined), true)).to.be.false;
     });
 
     it("cursor absent when the connection is not streaming regardless of msg flag", () => {
-      expect(cursorOn(0, 0, "agent", false, true)).to.be.false;
+      expect(shouldShowCursor(0, 0, msg("agent", true), false)).to.be.false;
     });
 
     it("cursor absent on user / system messages even if they were last", () => {
-      expect(cursorOn(0, 0, "user", true, true)).to.be.false;
-      expect(cursorOn(0, 0, "system", true, true)).to.be.false;
+      expect(shouldShowCursor(0, 0, msg("user", true), true)).to.be.false;
+      expect(shouldShowCursor(0, 0, msg("system", true), true)).to.be.false;
     });
 
     it("cursor absent on non-last messages even when the last message is streaming", () => {
       // last=2 → message at index 0 or 1 cannot show the cursor, only index 2.
-      expect(cursorOn(0, 2, "agent", true, true)).to.be.false;
-      expect(cursorOn(1, 2, "agent", true, true)).to.be.false;
-      expect(cursorOn(2, 2, "agent", true, true)).to.be.true;
+      expect(shouldShowCursor(0, 2, msg("agent", true), true)).to.be.false;
+      expect(shouldShowCursor(1, 2, msg("agent", true), true)).to.be.false;
+      expect(shouldShowCursor(2, 2, msg("agent", true), true)).to.be.true;
     });
   });
 

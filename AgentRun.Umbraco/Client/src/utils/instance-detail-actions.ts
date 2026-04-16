@@ -16,7 +16,15 @@ export async function startInstanceAction(
   instanceId: string,
   token: string | undefined,
 ): Promise<StartInstanceResult> {
-  const response = await startInstance(instanceId, token);
+  let response: Response;
+  try {
+    response = await startInstance(instanceId, token);
+  } catch {
+    // Network-level failure before a Response is produced (offline, DNS,
+    // aborted). Surface as { kind: "failed", status: 0 } so the caller can
+    // clear loading flags without an unhandled promise rejection.
+    return { kind: "failed", status: 0 };
+  }
   if (response.ok) return { kind: "streaming", response };
   if (response.status === 400) return { kind: "providerError" };
   return { kind: "failed", status: response.status };
@@ -31,7 +39,12 @@ export async function retryInstanceAction(
   instanceId: string,
   token: string | undefined,
 ): Promise<RetryInstanceResult> {
-  const response = await retryInstance(instanceId, token);
+  let response: Response;
+  try {
+    response = await retryInstance(instanceId, token);
+  } catch {
+    return { kind: "failed", status: 0 };
+  }
   if (response.ok) return { kind: "streaming", response };
   if (response.status === 409) return { kind: "notRetryable" };
   return { kind: "failed", status: response.status };

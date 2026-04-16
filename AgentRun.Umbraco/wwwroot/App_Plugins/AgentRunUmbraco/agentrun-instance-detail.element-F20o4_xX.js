@@ -1,13 +1,71 @@
 import { UmbLitElement as M } from "@umbraco-cms/backoffice/lit-element";
-import { css as I, property as d, state as b, customElement as z, html as c, nothing as u } from "@umbraco-cms/backoffice/external/lit";
+import { css as I, property as d, state as b, customElement as z, html as c, nothing as p } from "@umbraco-cms/backoffice/external/lit";
 import { UMB_AUTH_CONTEXT as W } from "@umbraco-cms/backoffice/auth";
 import { umbConfirmModal as j } from "@umbraco-cms/backoffice/modal";
-import { s as U, e as K, b as q, r as J, d as G, f as X, a as Y, h as T, m as E, i as Q } from "./index-BH_yTY2V.js";
+import { s as U, e as K, b as q, r as J, d as G, f as X, a as Y, h as T, m as E, i as Q } from "./index-YzWDK3IS.js";
 import { n as Z } from "./instance-list-helpers-JWQgi_HM.js";
-var ee = Object.defineProperty, te = Object.getOwnPropertyDescriptor, w = (e, t, s, a) => {
-  for (var n = a > 1 ? void 0 : a ? te(t, s) : t, r = e.length - 1, i; r >= 0; r--)
+function ee(e) {
+  const t = e.split("/");
+  return decodeURIComponent(t[t.length - 1]);
+}
+function te(e, t) {
+  const s = e.split("/");
+  return s.length >= 2 && s.splice(-2, 2, "workflows", encodeURIComponent(t)), s.join("/");
+}
+function R(e) {
+  switch (e.status) {
+    case "Pending":
+      return "Pending";
+    case "Active":
+      return "In progress";
+    case "Complete":
+      return e.writesTo?.[0] ?? "Complete";
+    case "Error":
+      return "Error";
+    case "Cancelled":
+      return "Cancelled";
+    default:
+      return e.status;
+  }
+}
+function se(e) {
+  switch (e) {
+    case "Pending":
+      return "icon-circle-dotted";
+    case "Active":
+      return "icon-sync";
+    case "Complete":
+      return "icon-check";
+    case "Error":
+      return "icon-wrong";
+    case "Cancelled":
+      return "icon-block";
+    default:
+      return "icon-circle-dotted";
+  }
+}
+function ae(e, t) {
+  return e === "Active" && t;
+}
+function ne(e) {
+  return e.instanceStatus === "Running" && !e.hasActiveStep && !e.isStreaming && e.hasPendingSteps;
+}
+function ie(e) {
+  if (e.instanceStatus === "Interrupted")
+    return { inputEnabled: !1, inputPlaceholder: "Run interrupted — click Retry to resume." };
+  if (e.isInteractive)
+    return e.isTerminal ? { inputEnabled: !1, inputPlaceholder: e.instanceStatus === "Cancelled" ? "Run cancelled." : e.instanceStatus === "Failed" ? "Run failed — click Retry to resume." : "Workflow complete." } : e.isViewingStepHistory ? { inputEnabled: !1, inputPlaceholder: "Viewing step history" } : e.agentResponding ? { inputEnabled: !1, inputPlaceholder: "Agent is responding..." } : e.isBetweenSteps ? { inputEnabled: !1, inputPlaceholder: "Click Continue to run the next step." } : e.isStreaming || e.hasActiveStep ? { inputEnabled: !0, inputPlaceholder: "Message the agent..." } : { inputEnabled: !1, inputPlaceholder: "Send a message to start." };
+  const t = e.isStreaming && !e.isViewingStepHistory;
+  let s;
+  return e.isTerminal ? s = e.instanceStatus === "Cancelled" ? "Run cancelled." : e.instanceStatus === "Failed" ? "Run failed — click Retry to resume." : "Workflow complete." : e.hasActiveStep ? s = "Step complete" : s = "Click 'Start' to begin the workflow.", { inputEnabled: t, inputPlaceholder: s };
+}
+function re(e, t, s, a) {
+  return e === t && s.role === "agent" && a && s.isStreaming === !0;
+}
+var oe = Object.defineProperty, le = Object.getOwnPropertyDescriptor, w = (e, t, s, a) => {
+  for (var n = a > 1 ? void 0 : a ? le(t, s) : t, r = e.length - 1, i; r >= 0; r--)
     (i = e[r]) && (n = (a ? i(t, s, n) : i(n)) || n);
-  return a && n && ee(t, s, n), n;
+  return a && n && oe(t, s, n), n;
 };
 let m = class extends M {
   constructor() {
@@ -28,13 +86,13 @@ let m = class extends M {
         ${this.arguments ? c`
               <div class="section-label">Arguments</div>
               <div class="mono-block">${JSON.stringify(this.arguments, null, 2)}</div>
-            ` : u}
+            ` : p}
         ${this.result != null ? c`
               <div class="section-label">Result</div>
               <div class="mono-block">${this.result}</div>
-            ` : u}
+            ` : p}
       </div>
-    ` : u;
+    ` : p;
   }
   render() {
     const e = this.status !== "running";
@@ -43,8 +101,8 @@ let m = class extends M {
         class="tool-call ${this.status}"
         role="group"
         aria-label="Tool call: ${this.toolName}"
-        aria-expanded=${e ? String(this._expanded) : u}
-        tabindex=${e ? "0" : u}
+        aria-expanded=${e ? String(this._expanded) : p}
+        tabindex=${e ? "0" : p}
         @click=${this._toggle}
         @keydown=${this._onKeydown}
       >
@@ -52,7 +110,7 @@ let m = class extends M {
           ${this._renderStatusIcon()}
           <span class="tool-name">${this.toolName}</span>
           <span class="tool-summary">${this.summary ? `— ${this.summary}` : ""}</span>
-          ${e ? c`<uui-icon class="chevron ${this._expanded ? "open" : ""}" name="icon-navigation-down"></uui-icon>` : u}
+          ${e ? c`<uui-icon class="chevron ${this._expanded ? "open" : ""}" name="icon-navigation-down"></uui-icon>` : p}
         </div>
         ${this._renderBody()}
       </div>
@@ -176,12 +234,12 @@ w([
 m = w([
   z("agentrun-tool-call")
 ], m);
-var se = Object.defineProperty, ae = Object.getOwnPropertyDescriptor, $ = (e, t, s, a) => {
-  for (var n = a > 1 ? void 0 : a ? ae(t, s) : t, r = e.length - 1, i; r >= 0; r--)
+var ce = Object.defineProperty, ue = Object.getOwnPropertyDescriptor, $ = (e, t, s, a) => {
+  for (var n = a > 1 ? void 0 : a ? ue(t, s) : t, r = e.length - 1, i; r >= 0; r--)
     (i = e[r]) && (n = (a ? i(t, s, n) : i(n)) || n);
-  return a && n && se(t, s, n), n;
+  return a && n && ce(t, s, n), n;
 };
-let y = class extends M {
+let _ = class extends M {
   constructor() {
     super(...arguments), this.role = "agent", this.content = "", this.timestamp = "", this.isStreaming = !1, this.toolCalls = [];
   }
@@ -216,7 +274,7 @@ let y = class extends M {
       return c`
         <div class="user-message" role="listitem" aria-label="Your message">
           <span class="user-content">${this.content}</span>
-          ${this.timestamp ? c`<span class="user-timestamp">${this._formatTime(this.timestamp)}</span>` : u}
+          ${this.timestamp ? c`<span class="user-timestamp">${this._formatTime(this.timestamp)}</span>` : p}
         </div>
       `;
     const e = this.isStreaming ? c`<span class="agent-content" style="white-space:pre-wrap">${this.content}<span class="cursor">▋</span></span>` : this._renderMarkdown(this.content);
@@ -235,12 +293,12 @@ let y = class extends M {
         `)}
         ${this.timestamp ? c`<span class="agent-timestamp"
               >${this._formatTime(this.timestamp)}</span
-            >` : u}
+            >` : p}
       </div>
     `;
   }
 };
-y.styles = I`
+_.styles = I`
     :host {
       display: block;
     }
@@ -366,26 +424,26 @@ y.styles = I`
   `;
 $([
   d({ type: String })
-], y.prototype, "role", 2);
+], _.prototype, "role", 2);
 $([
   d({ type: String })
-], y.prototype, "content", 2);
+], _.prototype, "content", 2);
 $([
   d({ type: String })
-], y.prototype, "timestamp", 2);
+], _.prototype, "timestamp", 2);
 $([
   d({ type: Boolean, attribute: "is-streaming" })
-], y.prototype, "isStreaming", 2);
+], _.prototype, "isStreaming", 2);
 $([
   d({ attribute: !1 })
-], y.prototype, "toolCalls", 2);
-y = $([
+], _.prototype, "toolCalls", 2);
+_ = $([
   z("agentrun-chat-message")
-], y);
-var ne = Object.defineProperty, ie = Object.getOwnPropertyDescriptor, _ = (e, t, s, a) => {
-  for (var n = a > 1 ? void 0 : a ? ie(t, s) : t, r = e.length - 1, i; r >= 0; r--)
+], _);
+var pe = Object.defineProperty, de = Object.getOwnPropertyDescriptor, y = (e, t, s, a) => {
+  for (var n = a > 1 ? void 0 : a ? de(t, s) : t, r = e.length - 1, i; r >= 0; r--)
     (i = e[r]) && (n = (a ? i(t, s, n) : i(n)) || n);
-  return a && n && ne(t, s, n), n;
+  return a && n && pe(t, s, n), n;
 };
 let g = class extends M {
   constructor() {
@@ -436,7 +494,7 @@ let g = class extends M {
                 .content=${t.content}
                 .timestamp=${t.timestamp}
                 .toolCalls=${t.toolCalls ?? []}
-                ?is-streaming=${s === e && t.role === "agent" && this.isStreaming && t.isStreaming === !0}
+                ?is-streaming=${re(s, e, t, this.isStreaming)}
               ></agentrun-chat-message>
             `
     )}
@@ -454,7 +512,7 @@ let g = class extends M {
                 New messages ↓
               </uui-button>
             </div>
-          ` : u}
+          ` : p}
 
       <div class="input-area">
         <uui-textarea
@@ -544,89 +602,34 @@ g.styles = I`
       border-width: 0;
     }
   `;
-_([
+y([
   d({ attribute: !1 })
 ], g.prototype, "messages", 2);
-_([
+y([
   d({ type: Boolean, attribute: "is-streaming" })
 ], g.prototype, "isStreaming", 2);
-_([
+y([
   d({ type: Boolean, attribute: "input-enabled" })
 ], g.prototype, "inputEnabled", 2);
-_([
+y([
   d({ type: String, attribute: "input-placeholder" })
 ], g.prototype, "inputPlaceholder", 2);
-_([
+y([
   b()
 ], g.prototype, "_inputValue", 2);
-_([
+y([
   b()
 ], g.prototype, "_autoScrollPaused", 2);
-_([
+y([
   b()
 ], g.prototype, "_hasNewMessages", 2);
-_([
+y([
   b()
 ], g.prototype, "_wasStreaming", 2);
-g = _([
+g = y([
   z("agentrun-chat-panel")
 ], g);
-function re(e) {
-  const t = e.split("/");
-  return decodeURIComponent(t[t.length - 1]);
-}
-function oe(e, t) {
-  const s = e.split("/");
-  return s.length >= 2 && s.splice(-2, 2, "workflows", encodeURIComponent(t)), s.join("/");
-}
-function R(e) {
-  switch (e.status) {
-    case "Pending":
-      return "Pending";
-    case "Active":
-      return "In progress";
-    case "Complete":
-      return e.writesTo?.[0] ?? "Complete";
-    case "Error":
-      return "Error";
-    case "Cancelled":
-      return "Cancelled";
-    default:
-      return e.status;
-  }
-}
-function le(e) {
-  switch (e) {
-    case "Pending":
-      return "icon-circle-dotted";
-    case "Active":
-      return "icon-sync";
-    case "Complete":
-      return "icon-check";
-    case "Error":
-      return "icon-wrong";
-    case "Cancelled":
-      return "icon-block";
-    default:
-      return "icon-circle-dotted";
-  }
-}
-function ce(e, t) {
-  return e === "Active" && t;
-}
-function ue(e) {
-  return e.instanceStatus === "Running" && !e.hasActiveStep && !e.isStreaming && e.hasPendingSteps;
-}
-function pe(e) {
-  if (e.instanceStatus === "Interrupted")
-    return { inputEnabled: !1, inputPlaceholder: "Run interrupted — click Retry to resume." };
-  if (e.isInteractive)
-    return e.isTerminal ? { inputEnabled: !1, inputPlaceholder: e.instanceStatus === "Cancelled" ? "Run cancelled." : e.instanceStatus === "Failed" ? "Run failed — click Retry to resume." : "Workflow complete." } : e.isViewingStepHistory ? { inputEnabled: !1, inputPlaceholder: "Viewing step history" } : e.agentResponding ? { inputEnabled: !1, inputPlaceholder: "Agent is responding..." } : e.isBetweenSteps ? { inputEnabled: !1, inputPlaceholder: "Click Continue to run the next step." } : e.isStreaming || e.hasActiveStep ? { inputEnabled: !0, inputPlaceholder: "Message the agent..." } : { inputEnabled: !1, inputPlaceholder: "Send a message to start." };
-  const t = e.isStreaming && !e.isViewingStepHistory;
-  let s;
-  return e.isTerminal ? s = e.instanceStatus === "Cancelled" ? "Run cancelled." : e.instanceStatus === "Failed" ? "Run failed — click Retry to resume." : "Workflow complete." : e.hasActiveStep ? s = "Step complete" : s = "Click 'Start' to begin the workflow.", { inputEnabled: t, inputPlaceholder: s };
-}
-function de() {
+function he() {
   return {
     instance: null,
     loading: !0,
@@ -646,28 +649,28 @@ function de() {
     toolBatchOpen: !1
   };
 }
-function he(e, t, s = {}) {
+function ge(e, t, s = {}) {
   const a = s.now ?? (() => (/* @__PURE__ */ new Date()).toISOString()), { event: n, data: r } = t;
   let i = e;
-  switch ((n === "text.delta" || n === "tool.start") && (i = i.agentResponding ? i : { ...i, agentResponding: !0 }), (n === "text.delta" || n === "tool.start" || n === "step.started") && i.instance && (i.instance.status === "Failed" || i.instance.status === "Interrupted") && (i = { ...i, instance: { ...i.instance, status: "Running" } }), n) {
+  switch ((n === "text.delta" || n === "tool.start") && (i = i.agentResponding ? i : { ...i, agentResponding: !0 }), (n === "text.delta" || n === "tool.start") && i.instance && (i.instance.status === "Failed" || i.instance.status === "Interrupted") && (i = { ...i, instance: { ...i.instance, status: "Running" } }), n) {
     case "text.delta":
-      return ge(i, r, a);
-    case "tool.start":
       return me(i, r, a);
+    case "tool.start":
+      return fe(i, r, a);
     case "tool.args":
-      return fe(i, r);
-    case "tool.end":
       return ve(i, r);
+    case "tool.end":
+      return ye(i, r);
     case "tool.result":
       return _e(i, r);
     case "step.started":
-      return ye(i, r, a);
-    case "step.finished":
       return be(i, r, a);
+    case "step.finished":
+      return we(i, r, a);
     case "run.finished":
-      return we(i, a);
+      return Se(i, r, a);
     case "input.wait":
-      return Se(i);
+      return Ce(i);
     case "run.error":
       return xe(i, r, a);
     case "user.message":
@@ -676,21 +679,32 @@ function he(e, t, s = {}) {
       return i;
   }
 }
-function k(e) {
+function x(e, t = {}) {
   if (!e.streamingText) return e;
-  const t = e.chatMessages.length - 1, s = e.chatMessages[t];
-  if (!s || s.role !== "agent" || !s.isStreaming)
-    return { ...e, streamingText: "" };
-  const a = [
-    ...e.chatMessages.slice(0, t),
-    { ...s, content: e.streamingText, isStreaming: !1 }
+  const s = t.now ?? (() => (/* @__PURE__ */ new Date()).toISOString()), a = e.chatMessages.length - 1, n = e.chatMessages[a];
+  if (!n || n.role !== "agent" || !n.isStreaming)
+    return {
+      ...e,
+      chatMessages: [
+        ...e.chatMessages,
+        {
+          role: "agent",
+          content: e.streamingText,
+          timestamp: s(),
+          isStreaming: !1
+        }
+      ],
+      streamingText: ""
+    };
+  const r = [
+    ...e.chatMessages.slice(0, a),
+    { ...n, content: e.streamingText, isStreaming: !1 }
   ];
-  return { ...e, chatMessages: a, streamingText: "" };
+  return { ...e, chatMessages: r, streamingText: "" };
 }
-function ge(e, t, s) {
-  const a = t.content;
-  if (!a) return e;
-  const n = e.streamingText + a, r = e.chatMessages.length - 1, i = e.chatMessages[r];
+function me(e, t, s) {
+  if (typeof t.content != "string" || t.content === "") return e;
+  const a = t.content, n = e.streamingText + a, r = e.chatMessages.length - 1, i = e.chatMessages[r];
   let o;
   return i && i.role === "agent" && i.isStreaming ? o = [
     ...e.chatMessages.slice(0, r),
@@ -705,8 +719,10 @@ function ge(e, t, s) {
     }
   ], { ...e, toolBatchOpen: !1, streamingText: n, chatMessages: o };
 }
-function me(e, t, s) {
-  const a = k(e), n = t.toolCallId, r = t.toolName, i = {
+function fe(e, t, s) {
+  if (typeof t.toolCallId != "string" || typeof t.toolName != "string")
+    return e;
+  const a = x(e, { now: s }), n = t.toolCallId, r = t.toolName, i = {
     toolCallId: n,
     toolName: r,
     summary: r,
@@ -714,16 +730,16 @@ function me(e, t, s) {
     result: null,
     status: "running"
   }, o = a.chatMessages.length - 1, l = a.chatMessages[o];
-  let p;
-  return a.toolBatchOpen && l && l.role === "agent" ? p = [
+  let u;
+  return a.toolBatchOpen && l && l.role === "agent" ? u = [
     ...a.chatMessages.slice(0, o),
     { ...l, toolCalls: [...l.toolCalls ?? [], i] },
     ...a.chatMessages.slice(o + 1)
-  ] : l && l.role === "agent" && !l.toolCalls?.length ? p = [
+  ] : l && l.role === "agent" && !l.toolCalls?.length ? u = [
     ...a.chatMessages.slice(0, o),
     { ...l, toolCalls: [i] },
     ...a.chatMessages.slice(o + 1)
-  ] : p = [
+  ] : u = [
     ...a.chatMessages,
     {
       role: "agent",
@@ -731,11 +747,11 @@ function me(e, t, s) {
       timestamp: s(),
       toolCalls: [i]
     }
-  ], { ...a, chatMessages: p, toolBatchOpen: !0 };
+  ], { ...a, chatMessages: u, toolBatchOpen: !0 };
 }
-function fe(e, t) {
+function ve(e, t) {
   const s = t.toolCallId, a = t.arguments, n = e.chatMessages.findLastIndex(
-    (l) => l.role === "agent" && l.toolCalls?.some((p) => p.toolCallId === s)
+    (l) => l.role === "agent" && l.toolCalls?.some((u) => u.toolCallId === s)
   );
   if (n === -1) return e;
   const r = e.chatMessages[n], i = r.toolCalls.map(
@@ -747,7 +763,7 @@ function fe(e, t) {
   ];
   return { ...e, chatMessages: o };
 }
-function ve(e, t) {
+function ye(e, t) {
   const s = t.toolCallId, a = e.chatMessages.findLastIndex(
     (o) => o.role === "agent" && o.toolCalls?.some((l) => l.toolCallId === s)
   );
@@ -762,7 +778,8 @@ function ve(e, t) {
   return { ...e, chatMessages: i };
 }
 function _e(e, t) {
-  const s = t.toolCallId, a = t.result, n = typeof a == "string" ? a : JSON.stringify(a), r = typeof n == "string" && n.startsWith("Tool '") && (n.includes("error") || n.includes("failed")), i = e.chatMessages.findLastIndex(
+  if (typeof t.toolCallId != "string") return e;
+  const s = t.toolCallId, a = t.result, n = a == null ? "" : typeof a == "string" ? a : JSON.stringify(a), r = n.startsWith("Tool '") && (n.includes("error") || n.includes("failed")), i = e.chatMessages.findLastIndex(
     (h) => h.role === "agent" && h.toolCalls?.some((S) => S.toolCallId === s)
   );
   if (i === -1) return e;
@@ -772,15 +789,15 @@ function _e(e, t) {
       result: n,
       status: r ? "error" : "complete"
     } : h
-  ), p = [
+  ), u = [
     ...e.chatMessages.slice(0, i),
     { ...o, toolCalls: l },
     ...e.chatMessages.slice(i + 1)
   ];
-  return { ...e, chatMessages: p };
+  return { ...e, chatMessages: u };
 }
-function ye(e, t, s) {
-  const a = k(e), n = t.stepId, r = t.stepName || n, i = A(a.instance, n, "Active"), o = [
+function be(e, t, s) {
+  const a = x(e, { now: s }), n = t.stepId, r = t.stepName || n, i = A(a.instance, n, "Active"), o = [
     ...a.chatMessages,
     {
       role: "system",
@@ -790,8 +807,8 @@ function ye(e, t, s) {
   ];
   return { ...a, instance: i, toolBatchOpen: !1, chatMessages: o };
 }
-function be(e, t, s) {
-  const a = k(e), n = t.stepId, r = t.status, i = t.stepName || n, o = r === "Error" ? "failed" : "completed", l = A(a.instance, n, r), p = [
+function we(e, t, s) {
+  const a = x(e, { now: s }), n = t.stepId, r = typeof t.status == "string" ? t.status : "Complete", i = t.stepName || n, o = r === "Error" ? "failed" : "completed", l = A(a.instance, n, r), u = [
     ...a.chatMessages,
     {
       role: "system",
@@ -799,26 +816,29 @@ function be(e, t, s) {
       timestamp: s()
     }
   ];
-  return { ...a, instance: l, chatMessages: p };
+  return { ...a, instance: l, chatMessages: u };
 }
-function we(e, t) {
-  const s = k(e);
-  if (!s.instance) return s;
-  const a = { ...s.instance, status: "Completed" }, n = [
-    ...s.chatMessages,
+function Se(e, t, s) {
+  const a = x(e, { now: s });
+  if (!a.instance) return a;
+  const n = a.instance.status, r = typeof t.status == "string" ? t.status : void 0, i = n === "Failed" || n === "Cancelled" ? n : r ?? "Completed", o = { ...a.instance, status: i };
+  if (i !== "Completed")
+    return { ...a, instance: o };
+  const l = [
+    ...a.chatMessages,
     {
       role: "system",
       content: "Workflow complete.",
-      timestamp: t()
+      timestamp: s()
     }
   ];
-  return { ...s, instance: a, chatMessages: n };
+  return { ...a, instance: o, chatMessages: l };
 }
-function Se(e) {
-  return { ...k(e), agentResponding: !1 };
+function Ce(e) {
+  return { ...x(e), agentResponding: !1 };
 }
 function xe(e, t, s) {
-  const a = k(e), n = t.message || "An error occurred.", r = a.instance ? { ...a.instance, status: "Failed" } : a.instance, i = [
+  const a = x(e, { now: s }), n = t.message || "An error occurred.", r = a.instance ? { ...a.instance, status: "Failed" } : a.instance, i = [
     ...a.chatMessages,
     {
       role: "system",
@@ -836,31 +856,41 @@ function A(e, t, s) {
   return { ...e, steps: a };
 }
 async function ke(e, t) {
-  const s = await q(e, t);
+  let s;
+  try {
+    s = await q(e, t);
+  } catch {
+    return { kind: "failed", status: 0 };
+  }
   return s.ok ? { kind: "streaming", response: s } : s.status === 400 ? { kind: "providerError" } : { kind: "failed", status: s.status };
 }
-async function Ce(e, t) {
-  const s = await J(e, t);
+async function $e(e, t) {
+  let s;
+  try {
+    s = await J(e, t);
+  } catch {
+    return { kind: "failed", status: 0 };
+  }
   return s.ok ? { kind: "streaming", response: s } : s.status === 409 ? { kind: "notRetryable" } : { kind: "failed", status: s.status };
 }
-async function $e(e, t) {
+async function Me(e, t) {
   try {
     return await G(e, t), { kind: "ok" };
   } catch (s) {
     return (s instanceof Error ? s.message : String(s)).includes("409") ? { kind: "conflict" } : { kind: "failed", error: s };
   }
 }
-var Me = Object.defineProperty, Ie = Object.getOwnPropertyDescriptor, N = (e) => {
+var Ie = Object.defineProperty, ze = Object.getOwnPropertyDescriptor, N = (e) => {
   throw TypeError(e);
 }, P = (e, t, s, a) => {
-  for (var n = a > 1 ? void 0 : a ? Ie(t, s) : t, r = e.length - 1, i; r >= 0; r--)
+  for (var n = a > 1 ? void 0 : a ? ze(t, s) : t, r = e.length - 1, i; r >= 0; r--)
     (i = e[r]) && (n = (a ? i(t, s, n) : i(n)) || n);
-  return a && n && Me(t, s, n), n;
-}, O = (e, t, s) => t.has(e) || N("Cannot " + s), C = (e, t, s) => (O(e, t, "read from private field"), s ? s.call(e) : t.get(e)), ze = (e, t, s) => t.has(e) ? N("Cannot add the same private member more than once") : t instanceof WeakSet ? t.add(e) : t.set(e, s), Pe = (e, t, s, a) => (O(e, t, "write to private field"), t.set(e, s), s), v;
-let x = class extends M {
+  return a && n && Ie(t, s, n), n;
+}, O = (e, t, s) => t.has(e) || N("Cannot " + s), k = (e, t, s) => (O(e, t, "read from private field"), s ? s.call(e) : t.get(e)), Pe = (e, t, s) => t.has(e) ? N("Cannot add the same private member more than once") : t instanceof WeakSet ? t.add(e) : t.set(e, s), Te = (e, t, s, a) => (O(e, t, "write to private field"), t.set(e, s), s), v;
+let C = class extends M {
   constructor() {
-    super(), ze(this, v), this._state = de(), this._popoverOpen = !1, this._popoverArtifactPath = null, this.consumeContext(W, (e) => {
-      Pe(this, v, e);
+    super(), Pe(this, v), this._state = he(), this._popoverOpen = !1, this._popoverArtifactPath = null, this.consumeContext(W, (e) => {
+      Te(this, v, e);
     });
   }
   _patch(e) {
@@ -877,18 +907,19 @@ let x = class extends M {
   }
   async _loadData() {
     try {
-      const e = re(window.location.pathname), t = await C(this, v)?.getLatestToken(), s = await X(e, t), a = await Y(s.workflowAlias, t), r = Z(a).find((o) => o.id === s.id)?.runNumber ?? 0;
-      let i = this._state.chatMessages;
-      if (!this._state.streaming && i.length === 0) {
-        const o = s.steps.find((l) => l.status === "Active" || l.status === "Error") ?? s.steps.findLast((l) => l.status === "Complete");
-        if (o)
+      const e = ee(window.location.pathname), t = await k(this, v)?.getLatestToken(), s = await X(e, t), a = await Y(s.workflowAlias, t), r = Z(a).find((l) => l.id === s.id)?.runNumber ?? 0;
+      let i = null;
+      if (!this._state.streaming && this._state.chatMessages.length === 0) {
+        const l = s.steps.find((u) => u.status === "Active" || u.status === "Error") ?? s.steps.findLast((u) => u.status === "Complete");
+        if (l)
           try {
-            const l = await T(s.id, o.id, t);
-            i = E(l);
+            const u = await T(s.id, l.id, t);
+            i = E(u);
           } catch {
           }
       }
-      this._patch({ instance: s, runNumber: r, chatMessages: i, error: !1 });
+      const o = { instance: s, runNumber: r, error: !1 };
+      i !== null && !this._state.streaming && this._state.chatMessages.length === 0 && (o.chatMessages = i), this._patch(o);
     } catch {
       this._patch({ error: !0 });
     } finally {
@@ -898,7 +929,7 @@ let x = class extends M {
   _navigateBack() {
     const e = this._state.instance;
     if (!e) return;
-    const t = oe(window.location.pathname, e.workflowAlias);
+    const t = te(window.location.pathname, e.workflowAlias);
     window.history.pushState({}, "", t);
   }
   async _onStepClick(e) {
@@ -915,7 +946,7 @@ let x = class extends M {
       }
       this._patch({ viewingStepId: e.id });
       try {
-        const t = await C(this, v)?.getLatestToken(), s = await T(this._state.instance.id, e.id, t);
+        const t = await k(this, v)?.getLatestToken(), s = await T(this._state.instance.id, e.id, t);
         this._patch({ historyMessages: E(s) });
       } catch {
         this._patch({ historyMessages: [] });
@@ -927,7 +958,7 @@ let x = class extends M {
   }
   async _onStartClick() {
     if (this._state.streaming || !this._state.instance) return;
-    const e = await C(this, v)?.getLatestToken(), t = await ke(this._state.instance.id, e);
+    const e = await k(this, v)?.getLatestToken(), t = await ke(this._state.instance.id, e);
     if (t.kind === "providerError") {
       this._patch({ providerError: !0 });
       return;
@@ -940,19 +971,25 @@ let x = class extends M {
   }
   async _onRetryClick() {
     const e = this._state.instance;
-    if (this._state.retrying || this._state.streaming || !e || e.status !== "Failed" && e.status !== "Interrupted") return;
-    this._patch({ retrying: !0, chatMessages: [] });
-    const t = await C(this, v)?.getLatestToken(), s = await Ce(e.id, t);
-    if (s.kind !== "streaming") {
-      const a = { retrying: !1 };
-      s.kind === "notRetryable" && (a.chatMessages = [{
-        role: "system",
-        content: "Cannot retry — instance is no longer in a failed state.",
-        timestamp: this._now()
-      }]), this._patch(a), await this._loadData();
-      return;
+    if (!(this._state.retrying || this._state.streaming || !e) && !(e.status !== "Failed" && e.status !== "Interrupted")) {
+      this._patch({ retrying: !0, chatMessages: [] });
+      try {
+        const t = await k(this, v)?.getLatestToken(), s = await $e(e.id, t);
+        if (s.kind !== "streaming") {
+          s.kind === "notRetryable" && this._patch({
+            chatMessages: [{
+              role: "system",
+              content: "Cannot retry — instance is no longer in a failed state.",
+              timestamp: this._now()
+            }]
+          }), await this._loadData();
+          return;
+        }
+        await this._streamSseResponse(s.response);
+      } finally {
+        this._patch({ retrying: !1 });
+      }
     }
-    await this._streamSseResponse(s.response), this._patch({ retrying: !1 });
   }
   async _streamSseResponse(e) {
     this._patch({
@@ -975,12 +1012,12 @@ let x = class extends M {
         a = i.pop();
         for (const o of i) {
           const l = o.split(`
-`), p = l.find((S) => S.startsWith("event:"))?.slice(7), h = l.find((S) => S.startsWith("data:"))?.slice(5);
-          p && h && this._handleSseEvent(p, JSON.parse(h));
+`), u = l.find((S) => S.startsWith("event:"))?.slice(7), h = l.find((S) => S.startsWith("data:"))?.slice(5);
+          u && h && this._handleSseEvent(u, JSON.parse(h));
         }
       }
     } catch {
-      this._state = k(this._state), this._appendMessage({ role: "system", content: "Connection lost.", timestamp: this._now() });
+      this._state = x(this._state), this._appendMessage({ role: "system", content: "Connection lost.", timestamp: this._now() });
     } finally {
       this._patch({ streaming: !1, agentResponding: !1 }), await this._loadData(), this._checkStepCompletable();
     }
@@ -992,11 +1029,16 @@ let x = class extends M {
       this._patch({ stepCompletable: !1 });
       return;
     }
-    const t = e.steps.some((n) => n.status === "Active"), s = e.steps.some((n) => n.status === "Complete"), a = e.steps.some((n) => n.status === "Pending");
-    this._patch({ stepCompletable: !t && s && a });
+    const t = e.status;
+    if (t === "Cancelled" || t === "Failed" || t === "Completed") {
+      this._patch({ stepCompletable: !1 });
+      return;
+    }
+    const s = e.steps.some((r) => r.status === "Active"), a = e.steps.some((r) => r.status === "Complete"), n = e.steps.some((r) => r.status === "Pending");
+    this._patch({ stepCompletable: !s && a && n });
   }
   _handleSseEvent(e, t) {
-    if (this._state = he(this._state, { event: e, data: t }), e === "run.finished" && this._state.instance) {
+    if (this._state = ge(this._state, { event: e, data: t }), e === "run.finished" && this._state.instance && this._state.instance.status === "Completed") {
       const s = [...this._state.instance.steps].reverse().find((a) => a.status === "Complete" && a.writesTo && a.writesTo.length > 0);
       s && s.writesTo && (this._popoverArtifactPath = s.writesTo[s.writesTo.length - 1], this._popoverOpen = !0);
     }
@@ -1006,7 +1048,7 @@ let x = class extends M {
     if (!t) return !1;
     this._appendMessage({ role: "user", content: e, timestamp: this._now() });
     try {
-      const s = await C(this, v)?.getLatestToken();
+      const s = await k(this, v)?.getLatestToken();
       return await Q(t.id, e, s), !0;
     } catch {
       return this._appendMessage({
@@ -1040,8 +1082,8 @@ let x = class extends M {
       }
       this._patch({ cancelling: !0 });
       try {
-        const t = await C(this, v)?.getLatestToken();
-        (await $e(e.id, t)).kind === "failed" && console.warn("Failed to cancel instance"), await this._loadData();
+        const t = await k(this, v)?.getLatestToken();
+        (await Me(e.id, t)).kind === "failed" && console.warn("Failed to cancel instance"), await this._loadData();
       } finally {
         this._patch({ cancelling: !1 });
       }
@@ -1064,13 +1106,13 @@ let x = class extends M {
                   ${t.status !== "Pending" ? "clickable" : ""}
                   ${this._state.selectedStepId === t.id ? "selected" : ""}"
                 aria-label="Step ${s + 1}: ${t.name} — ${R(t)}"
-                @click=${t.status !== "Pending" ? () => this._onStepClick(t) : u}
-                aria-current=${t.status === "Active" ? "step" : u}
+                @click=${t.status !== "Pending" ? () => this._onStepClick(t) : p}
+                aria-current=${t.status === "Active" ? "step" : p}
               >
                 <div class="step-icon-wrapper">
                   <uui-icon
-                    class="step-icon ${ce(t.status, this._state.agentResponding) ? "step-icon-spin" : ""}"
-                    name=${le(t.status)}
+                    class="step-icon ${ae(t.status, this._state.agentResponding) ? "step-icon-spin" : ""}"
+                    name=${se(t.status)}
                   ></uui-icon>
                 </div>
                 <div class="step-text">
@@ -1087,7 +1129,7 @@ let x = class extends M {
           @artifact-selected=${this._onArtifactSelected}
         ></agentrun-artifact-list>
       </div>
-    ` : u;
+    ` : p;
   }
   _onArtifactSelected(e) {
     this._popoverArtifactPath = e.detail.path, this._popoverOpen = !0;
@@ -1105,12 +1147,12 @@ let x = class extends M {
           and try refreshing the page.
         </div>
       `;
-    const t = e.instance, s = t.workflowMode !== "autonomous", a = t.status === "Completed" || t.status === "Failed" || t.status === "Cancelled", n = t.steps.some((f) => f.status === "Active"), r = t.status === "Pending" && !e.streaming, i = (t.status === "Failed" || t.status === "Interrupted") && !e.streaming, o = s && e.stepCompletable && !e.agentResponding, l = ue({
+    const t = e.instance, s = t.workflowMode !== "autonomous", a = t.status === "Completed" || t.status === "Failed" || t.status === "Cancelled", n = t.steps.some((f) => f.status === "Active"), r = t.status === "Pending" && !e.streaming, i = (t.status === "Failed" || t.status === "Interrupted") && !e.streaming, o = s && e.stepCompletable && !e.agentResponding, l = ne({
       instanceStatus: t.status,
       hasActiveStep: n,
       isStreaming: e.streaming,
       hasPendingSteps: t.steps.some((f) => f.status === "Pending")
-    }), p = l && !o, h = t.status === "Running" || t.status === "Pending", { inputEnabled: S, inputPlaceholder: B } = pe({
+    }), u = l && !o, h = t.status === "Running" || t.status === "Pending", { inputEnabled: S, inputPlaceholder: D } = ie({
       instanceStatus: t.status,
       isInteractive: s,
       isTerminal: a,
@@ -1119,7 +1161,7 @@ let x = class extends M {
       isViewingStepHistory: e.viewingStepId !== null,
       agentResponding: e.agentResponding,
       isBetweenSteps: l
-    }), D = s && !e.streaming ? (f) => this._onSendAndStream(f) : (f) => this._onSendMessage(f), L = t.steps.every((f) => f.status === "Complete"), H = s && a && L, F = e.viewingStepId ? e.historyMessages : e.chatMessages, V = e.providerError ? c`<div class="main-placeholder">Configure an AI provider in Umbraco.AI before workflows can run.</div>` : c`
+    }), B = s && !e.streaming ? (f) => this._onSendAndStream(f) : (f) => this._onSendMessage(f), L = t.steps.every((f) => f.status === "Complete"), F = s && a && L, H = e.viewingStepId ? e.historyMessages : e.chatMessages, V = e.providerError ? c`<div class="main-placeholder">Configure an AI provider in Umbraco.AI before workflows can run.</div>` : c`
           <div class="main-panel">
             ${o ? c`
                   <div class="completion-banner">
@@ -1128,18 +1170,18 @@ let x = class extends M {
                       Continue to next step
                     </uui-button>
                   </div>
-                ` : u}
-            ${H ? c`
+                ` : p}
+            ${F ? c`
                   <div class="completion-banner">
                     <span>Workflow complete — all steps finished</span>
                   </div>
-                ` : u}
+                ` : p}
             <agentrun-chat-panel
-              .messages=${F}
+              .messages=${H}
               ?is-streaming=${e.streaming && !e.viewingStepId}
               ?input-enabled=${S}
-              input-placeholder=${B}
-              @send-message=${D}
+              input-placeholder=${D}
+              @send-message=${B}
             ></agentrun-chat-panel>
           </div>`;
     return c`
@@ -1148,13 +1190,13 @@ let x = class extends M {
           <uui-icon name="icon-arrow-left"></uui-icon>
         </uui-button>
         <h2>${t.workflowName || t.workflowAlias} — Run #${e.runNumber}</h2>
-        ${r ? c`<uui-button label="Start" look="primary" @click=${this._onStartClick}>Start</uui-button>` : u}
+        ${r ? c`<uui-button label="Start" look="primary" @click=${this._onStartClick}>Start</uui-button>` : p}
         ${i ? c`
               <uui-button label="Retry" look="primary" ?disabled=${e.retrying} @click=${this._onRetryClick}>
                 ${e.retrying ? c`<uui-loader></uui-loader>` : "Retry"}
               </uui-button>
-            ` : u}
-        ${p ? c`<uui-button label="Continue" look="primary" @click=${this._onStartClick}>Continue</uui-button>` : u}
+            ` : p}
+        ${u ? c`<uui-button label="Continue" look="primary" @click=${this._onStartClick}>Continue</uui-button>` : p}
         ${h ? c`
               <uui-button
                 label="Cancel"
@@ -1165,7 +1207,7 @@ let x = class extends M {
               >
                 Cancel
               </uui-button>
-            ` : u}
+            ` : p}
       </div>
 
       <div class="detail-grid">
@@ -1182,7 +1224,7 @@ let x = class extends M {
   }
 };
 v = /* @__PURE__ */ new WeakMap();
-x.styles = I`
+C.styles = I`
     :host { display: block; padding: var(--uui-size-layout-1); }
     .header {
       display: flex;
@@ -1300,19 +1342,19 @@ x.styles = I`
   `;
 P([
   b()
-], x.prototype, "_state", 2);
+], C.prototype, "_state", 2);
 P([
   b()
-], x.prototype, "_popoverOpen", 2);
+], C.prototype, "_popoverOpen", 2);
 P([
   b()
-], x.prototype, "_popoverArtifactPath", 2);
-x = P([
+], C.prototype, "_popoverArtifactPath", 2);
+C = P([
   z("agentrun-instance-detail")
-], x);
-const Be = x;
+], C);
+const Be = C;
 export {
-  x as AgentRunInstanceDetailElement,
+  C as AgentRunInstanceDetailElement,
   Be as default
 };
-//# sourceMappingURL=agentrun-instance-detail.element-BGEt7UVN.js.map
+//# sourceMappingURL=agentrun-instance-detail.element-F20o4_xX.js.map

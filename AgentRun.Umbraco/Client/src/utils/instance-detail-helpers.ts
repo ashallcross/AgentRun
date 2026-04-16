@@ -1,4 +1,4 @@
-import type { StepDetailResponse } from "../api/types.js";
+import type { ChatMessage, StepDetailResponse } from "../api/types.js";
 
 export function extractInstanceId(pathname: string): string {
   const segments = pathname.split("/");
@@ -149,4 +149,23 @@ export function computeChatInputGate(input: ChatInputGateInput): ChatInputGate {
     inputPlaceholder = "Click 'Start' to begin the workflow.";
   }
   return { inputEnabled, inputPlaceholder };
+}
+
+// Single source of truth for the chat-panel block-cursor visibility. Called
+// from both the Lit template in agentrun-chat-panel.element.ts and its test
+// so the predicate cannot drift — Track F / AC3 depends on this gating the
+// cursor to active text streaming only (Tom Madden beta repro: cursor must
+// not flash during tool calls or waiting states).
+export function shouldShowCursor(
+  messageIndex: number,
+  lastIndex: number,
+  msg: ChatMessage,
+  connectionIsStreaming: boolean,
+): boolean {
+  return (
+    messageIndex === lastIndex &&
+    msg.role === "agent" &&
+    connectionIsStreaming &&
+    msg.isStreaming === true
+  );
 }

@@ -35,11 +35,15 @@ export function reduceSseEvent(
   // Track G (AC5) — first post-retry activity event clears stale Failed /
   // Interrupted instance status so computeChatInputGate flips to the live
   // "Message the agent..." placeholder the moment the retry LLM turn begins,
-  // instead of when the step completes. The fix is set-to-Running (F4 —
-  // idempotent, not a toggle): double-click on Retry cannot re-strand the UI
-  // because a second transition from Running → Running is a no-op.
+  // instead of when the step completes. Trigger limited to {text.delta,
+  // tool.start} — both unambiguously confirm a live LLM turn. step.started is
+  // deliberately excluded: backend resume paths can fire step.started without
+  // a fresh LLM turn, and silently flipping to Running there would mask
+  // genuine intermediate states. The fix is set-to-Running (F4 — idempotent,
+  // not a toggle): double-click on Retry cannot re-strand the UI because a
+  // second transition from Running → Running is a no-op.
   if (
-    (type === "text.delta" || type === "tool.start" || type === "step.started") &&
+    (type === "text.delta" || type === "tool.start") &&
     next.instance &&
     (next.instance.status === "Failed" || next.instance.status === "Interrupted")
   ) {
@@ -62,7 +66,7 @@ export function reduceSseEvent(
     case "step.finished":
       return applyStepFinished(next, data, now);
     case "run.finished":
-      return applyRunFinished(next, now);
+      return applyRunFinished(next, data, now);
     case "input.wait":
       return applyInputWait(next);
     case "run.error":
@@ -77,12 +81,33 @@ export function reduceSseEvent(
 // Close the streaming agent message — mirror of the component's
 // _finaliseStreamingMessage helper. Returns state unchanged when there is no
 // active streaming text to seal.
-export function finaliseStreamingMessage(state: InstanceDetailState): InstanceDetailState {
+export function finaliseStreamingMessage(
+  state: InstanceDetailState,
+  options: ReducerOptions = {},
+): InstanceDetailState {
   if (!state.streamingText) return state;
+  const now = options.now ?? (() => new Date().toISOString());
   const lastIndex = state.chatMessages.length - 1;
   const last = state.chatMessages[lastIndex];
   if (!last || last.role !== "agent" || !last.isStreaming) {
-    return { ...state, streamingText: "" };
+    // F5 invariant — never silently drop streaming text. If the last message
+    // isn't an active streaming agent message (e.g. a tool.start finalised
+    // and a text.delta seeded a fresh streaming message which a subsequent
+    // event then closed inconsistently), seal the streaming text into a new
+    // finalised agent message rather than discarding it.
+    return {
+      ...state,
+      chatMessages: [
+        ...state.chatMessages,
+        {
+          role: "agent",
+          content: state.streamingText,
+          timestamp: now(),
+          isStreaming: false,
+        },
+      ],
+      streamingText: "",
+    };
   }
   const chatMessages = [
     ...state.chatMessages.slice(0, lastIndex),
@@ -96,8 +121,8 @@ function applyTextDelta(
   data: Record<string, unknown>,
   now: () => string,
 ): InstanceDetailState {
-  const content = data.content as string;
-  if (!content) return state;
+  if (typeof data.content !== "string" || data.content === "") return state;
+  const content = data.content;
   const streamingText = state.streamingText + content;
   const lastIndex = state.chatMessages.length - 1;
   const last = state.chatMessages[lastIndex];
@@ -130,9 +155,12 @@ function applyToolStart(
   data: Record<string, unknown>,
   now: () => string,
 ): InstanceDetailState {
-  const finalised = finaliseStreamingMessage(state);
-  const toolCallId = data.toolCallId as string;
-  const toolName = data.toolName as string;
+  if (typeof data.toolCallId !== "string" || typeof data.toolName !== "string") {
+    return state;
+  }
+  const finalised = finaliseStreamingMessage(state, { now });
+  const toolCallId = data.toolCallId;
+  const toolName = data.toolName;
   const newToolCall: ToolCallData = {
     toolCallId,
     toolName,
@@ -221,12 +249,19 @@ function applyToolResult(
   state: InstanceDetailState,
   data: Record<string, unknown>,
 ): InstanceDetailState {
-  const tcId = data.toolCallId as string;
+  if (typeof data.toolCallId !== "string") return state;
+  const tcId = data.toolCallId;
   const rawResult = data.result;
+  // undefined / null → empty string rather than JSON.stringify(undefined)
+  // which returns the value undefined (not a string) and would corrupt the
+  // tool-call record with a non-string result field.
   const resultStr =
-    typeof rawResult === "string" ? rawResult : JSON.stringify(rawResult);
+    rawResult === undefined || rawResult === null
+      ? ""
+      : typeof rawResult === "string"
+        ? rawResult
+        : JSON.stringify(rawResult);
   const isError =
-    typeof resultStr === "string" &&
     resultStr.startsWith("Tool '") &&
     (resultStr.includes("error") || resultStr.includes("failed"));
   const msgIndex = state.chatMessages.findLastIndex(
@@ -256,7 +291,7 @@ function applyStepStarted(
   data: Record<string, unknown>,
   now: () => string,
 ): InstanceDetailState {
-  const finalised = finaliseStreamingMessage(state);
+  const finalised = finaliseStreamingMessage(state, { now });
   const stepId = data.stepId as string;
   const stepName = (data.stepName as string) || stepId;
   const instance = replaceStepStatus(finalised.instance, stepId, "Active");
@@ -276,9 +311,12 @@ function applyStepFinished(
   data: Record<string, unknown>,
   now: () => string,
 ): InstanceDetailState {
-  const finalised = finaliseStreamingMessage(state);
+  const finalised = finaliseStreamingMessage(state, { now });
   const stepId = data.stepId as string;
-  const stepStatus = data.status as string;
+  // Default to "Complete" when the backend omits status — writing literal
+  // undefined into step.status misses every renderer branch and the step
+  // icon disappears entirely.
+  const stepStatus = typeof data.status === "string" ? data.status : "Complete";
   const stepName = (data.stepName as string) || stepId;
   const outcome = stepStatus === "Error" ? "failed" : "completed";
   const instance = replaceStepStatus(finalised.instance, stepId, stepStatus);
@@ -293,10 +331,30 @@ function applyStepFinished(
   return { ...finalised, instance, chatMessages };
 }
 
-function applyRunFinished(state: InstanceDetailState, now: () => string): InstanceDetailState {
-  const finalised = finaliseStreamingMessage(state);
+function applyRunFinished(
+  state: InstanceDetailState,
+  data: Record<string, unknown>,
+  now: () => string,
+): InstanceDetailState {
+  const finalised = finaliseStreamingMessage(state, { now });
   if (!finalised.instance) return finalised;
-  const instance = { ...finalised.instance, status: "Completed" };
+  // Out-of-order finalisation defence: if the run already resolved to a
+  // terminal failure state (Failed / Cancelled), preserve it rather than
+  // overwriting with Completed. Backend also emits run.finished with a
+  // non-Completed status (e.g. "Cancelled") on user cancel — honour it.
+  const priorStatus = finalised.instance.status;
+  const payloadStatus = typeof data.status === "string" ? data.status : undefined;
+  const nextStatus =
+    priorStatus === "Failed" || priorStatus === "Cancelled"
+      ? priorStatus
+      : payloadStatus ?? "Completed";
+  const instance = { ...finalised.instance, status: nextStatus };
+  // Only announce "Workflow complete." when the run actually completed —
+  // appending it after a cancel produces the misleading two-line render
+  // "Workflow complete. / Run cancelled." (manual E2E 2026-04-15).
+  if (nextStatus !== "Completed") {
+    return { ...finalised, instance };
+  }
   const chatMessages = [
     ...finalised.chatMessages,
     {
@@ -318,7 +376,7 @@ function applyRunError(
   data: Record<string, unknown>,
   now: () => string,
 ): InstanceDetailState {
-  const finalised = finaliseStreamingMessage(state);
+  const finalised = finaliseStreamingMessage(state, { now });
   const message = (data.message as string) || "An error occurred.";
   const instance = finalised.instance
     ? { ...finalised.instance, status: "Failed" }

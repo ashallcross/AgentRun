@@ -8,6 +8,7 @@ import {
   nothing,
 } from "@umbraco-cms/backoffice/external/lit";
 import type { ChatMessage } from "../api/types.js";
+import { shouldShowCursor } from "../utils/instance-detail-helpers.js";
 import "./agentrun-chat-message.element.js";
 
 @customElement("agentrun-chat-panel")
@@ -181,10 +182,7 @@ export class AgentRunChatPanelElement extends UmbLitElement {
                 .content=${msg.content}
                 .timestamp=${msg.timestamp}
                 .toolCalls=${msg.toolCalls ?? []}
-                ?is-streaming=${i === lastIndex &&
-                msg.role === "agent" &&
-                this.isStreaming &&
-                msg.isStreaming === true}
+                ?is-streaming=${shouldShowCursor(i, lastIndex, msg, this.isStreaming)}
               ></agentrun-chat-message>
             `,
           )}
