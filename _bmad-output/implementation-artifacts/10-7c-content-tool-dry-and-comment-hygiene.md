@@ -151,15 +151,15 @@ These decisions were locked in the parent story on 2026-04-15 and are preserved 
 
 ### Task 2: Track H — CSS re-format closure on `agentrun-instance-detail.element.ts` (AC5)
 
-- [ ] 2.1 Read the CSS block at [`agentrun-instance-detail.element.ts:58-173`](../../AgentRun.Umbraco/Client/src/components/agentrun-instance-detail.element.ts#L58) in full.
-- [ ] 2.2 For each rule / rule cluster, apply locked decision 7:
-  - **Expand** to conventional multi-line CSS format if the current form is a multi-property one-liner that a reader cannot scan at a glance (e.g. a 5-property rule jammed onto one line).
-  - **Preserve** if the current compact form is more readable than the expanded form (single-property utility rules, state-matrix one-liner groups where the column of parallel lines communicates the state→style mapping at a glance, `@keyframes spin`, the `.step-icon` state-colour triple).
-  - **Judgement call threshold:** if you are unsure whether expanding helps, leave it. The file is shipping to public launch — over-expansion adds churn without adding clarity. Under-expansion leaves behind exactly the debt we are closing.
-- [ ] 2.3 Save the file. Run `npm run build` inside `AgentRun.Umbraco/Client/` — verify the `wwwroot/App_Plugins/AgentRunUmbraco/` bundle rebuilds clean.
-- [ ] 2.4 Manual visual check: start TestSite (`dotnet run` from `AgentRun.Umbraco.TestSite/`), load a running instance, verify the instance-detail view renders visually identically to the pre-reformat version. Hard-refresh the browser (Cmd+Shift+R) to bypass the 10-second Umbraco manifest cache.
-- [ ] 2.5 Run `npm test` in `AgentRun.Umbraco/Client/` — all green (no frontend-logic changes; count unchanged from 10.7b baseline of 235).
-- [ ] 2.6 Strike through the deferred-work entry at [deferred-work.md:374](./deferred-work.md) with the pattern `~~...~~ **RESOLVED in Story 10.7c Track H** (2026-04-16)`. Also strike through the 10-7b review-defer entry at [10-7b:321](./10-7b-frontend-instance-detail-and-chat-cursor.md#L321) with the same mark.
+- [x] 2.1 Read the CSS block at [`agentrun-instance-detail.element.ts:58-173`](../../AgentRun.Umbraco/Client/src/components/agentrun-instance-detail.element.ts#L58) in full.
+- [x] 2.2 For each rule / rule cluster, apply locked decision 7:
+  - **Expanded** (3 rules): `.sidebar-divider`, `.error-state`, `.main-panel` — each had 3 distinct properties on one line; expansion makes the property list scannable without breaking a preserved group.
+  - **Preserved**: state-matrix `.step-item.{pending,active,complete,error} .step-icon-wrapper` 4-liner, `.step-icon` state-colour triple, `.step-text` / `.step-name` / `.step-subtitle` / `.step-item.pending .step-name` family, `@keyframes spin`, all single-property utilities (`.step-item.clickable`, `.step-item.clickable:hover`, `.step-icon`, `.step-icon-spin`, `.completion-banner uui-button`), and the 2-prop `:host` utility.
+  - **Judgement call threshold honoured:** borderline rules (e.g. the 4-prop `.step-text`) left alone per locked decision 7's explicit "`.step-text` family" preservation clause.
+- [x] 2.3 Save the file. Run `npm run build` inside `AgentRun.Umbraco/Client/` — bundle rebuilds clean (20 modules, `agentrun-instance-detail.element-B1z9OojA.js` 44.31 KB).
+- [ ] 2.4 Manual visual check: start TestSite (`dotnet run` from `AgentRun.Umbraco.TestSite/`), load a running instance, verify the instance-detail view renders visually identically to the pre-reformat version. Hard-refresh the browser (Cmd+Shift+R) to bypass the 10-second Umbraco manifest cache. _— Adam's gate (Task 4.6 step 5 scheduled)._
+- [x] 2.5 Run `npm test` in `AgentRun.Umbraco/Client/` — 235/235 green (count unchanged from 10.7b baseline).
+- [x] 2.6 Strike through the deferred-work entry at [deferred-work.md:374](./deferred-work.md) with the pattern `~~...~~ **RESOLVED in Story 10.7c Track H** (2026-04-16)`. Also strike through the 10-7b review-defer entry at [10-7b:321](./10-7b-frontend-instance-detail-and-chat-cursor.md#L321) with the same mark.
 
 ### Task 3: Track G — Comment hygiene pass (AC3)
 

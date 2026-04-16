@@ -371,7 +371,7 @@ Identified during manual testing of Story 9.12 content tools. On a 26-node test 
 - **Token type `string | undefined` flows unchecked into action wrappers** [`Client/src/utils/instance-detail-actions.ts` all actions] — unauthenticated path produces 401 with no guard or test.
 - **`Response.body === null` not guarded in SSE consumer** [`Client/src/components/agentrun-instance-detail.element.ts` SSE consumer] — silent state corruption if server returns 200 with no body; rare server config.
 - **`_onStepClick` non-null assertion crash on disconnect mid-await** [`Client/src/components/agentrun-instance-detail.element.ts` _onStepClick] — `this._state.instance!` raises TypeError if element disconnects before `getLatestToken` / `getConversation` resolve.
-- **CSS block minified to one-line rules to fit AC1 line budget** [`Client/src/components/agentrun-instance-detail.element.ts`] — line count satisfied, reasoning-load goal only partially met; candidate for a 10.7c style-format polish pass.
+- ~~**CSS block minified to one-line rules to fit AC1 line budget** [`Client/src/components/agentrun-instance-detail.element.ts`] — line count satisfied, reasoning-load goal only partially met; candidate for a 10.7c style-format polish pass.~~ **RESOLVED in Story 10.7c Track H** (2026-04-16) — judgement-led expansion of three multi-property utility rules (`.sidebar-divider`, `.error-state`, `.main-panel`); state-matrix groups + `.step-text` family + `@keyframes spin` + single-property utilities preserved per locked decision 7. Final line count 688.
 
 ## Deferred from: manual E2E of 10-7b (2026-04-15)
 

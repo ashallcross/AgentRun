@@ -318,7 +318,7 @@ Manual E2E surfaced four bugs the unit suite did not catch (memory `feedback_man
 - [x] [Review][Defer] Token type `string | undefined` flows unchecked into action wrappers — unauthenticated path produces 401 with no guard or test [`instance-detail-actions.ts` all actions].
 - [x] [Review][Defer] `Response.body === null` not guarded in SSE consumer — rare server config; current behaviour silently flips streaming false with no user feedback [`agentrun-instance-detail.element.ts` SSE consumer].
 - [x] [Review][Defer] `_onStepClick` non-null assertion `this._state.instance!` could crash if element disconnects mid-await — rare timing edge, low impact.
-- [x] [Review][Defer] CSS block in `agentrun-instance-detail.element.ts` was minified to one-line rules to fit AC1 ≤ 700 budget — line count satisfied, reasoning-load goal partially met. Polish pass to re-format styles cleanly is a candidate for 10.7c.
+- [x] ~~[Review][Defer] CSS block in `agentrun-instance-detail.element.ts` was minified to one-line rules to fit AC1 ≤ 700 budget — line count satisfied, reasoning-load goal partially met. Polish pass to re-format styles cleanly is a candidate for 10.7c.~~ **RESOLVED in Story 10.7c Track H** (2026-04-16) — three multi-property utility rules expanded; state-matrix + family + utility one-liners preserved; final line count 688.
 
 **Dismissed (8) — noise / false positive / handled elsewhere:**
 

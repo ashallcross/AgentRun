@@ -146,7 +146,11 @@ export class AgentRunInstanceDetailElement extends UmbLitElement {
     .step-subtitle { color: var(--uui-color-text-alt); font-size: var(--uui-type-small-size); }
     @keyframes spin { to { transform: rotate(360deg); } }
     .step-icon-spin { animation: spin 1.5s linear infinite; }
-    .sidebar-divider { border: none; border-top: 1px solid var(--uui-color-border); margin: var(--uui-size-space-4) 0; }
+    .sidebar-divider {
+      border: none;
+      border-top: 1px solid var(--uui-color-border);
+      margin: var(--uui-size-space-4) 0;
+    }
     .main-placeholder {
       display: flex;
       align-items: center;
@@ -155,8 +159,16 @@ export class AgentRunInstanceDetailElement extends UmbLitElement {
       color: var(--uui-color-text-alt);
       text-align: center;
     }
-    .error-state { padding: var(--uui-size-layout-1); color: var(--uui-color-text); text-align: center; }
-    .main-panel { display: flex; flex-direction: column; min-width: 0; }
+    .error-state {
+      padding: var(--uui-size-layout-1);
+      color: var(--uui-color-text);
+      text-align: center;
+    }
+    .main-panel {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
     .completion-banner {
       display: flex;
       align-items: center;

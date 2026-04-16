@@ -2,7 +2,7 @@ import { UmbLitElement as M } from "@umbraco-cms/backoffice/lit-element";
 import { css as I, property as d, state as b, customElement as z, html as c, nothing as p } from "@umbraco-cms/backoffice/external/lit";
 import { UMB_AUTH_CONTEXT as W } from "@umbraco-cms/backoffice/auth";
 import { umbConfirmModal as j } from "@umbraco-cms/backoffice/modal";
-import { s as U, e as K, b as q, r as J, d as G, f as X, a as Y, h as T, m as E, i as Q } from "./index-YzWDK3IS.js";
+import { s as U, e as K, b as q, r as J, d as G, f as X, a as Y, h as T, m as E, i as Q } from "./index-QeZdEPr6.js";
 import { n as Z } from "./instance-list-helpers-JWQgi_HM.js";
 function ee(e) {
   const t = e.split("/");
@@ -1315,7 +1315,11 @@ C.styles = I`
     .step-subtitle { color: var(--uui-color-text-alt); font-size: var(--uui-type-small-size); }
     @keyframes spin { to { transform: rotate(360deg); } }
     .step-icon-spin { animation: spin 1.5s linear infinite; }
-    .sidebar-divider { border: none; border-top: 1px solid var(--uui-color-border); margin: var(--uui-size-space-4) 0; }
+    .sidebar-divider {
+      border: none;
+      border-top: 1px solid var(--uui-color-border);
+      margin: var(--uui-size-space-4) 0;
+    }
     .main-placeholder {
       display: flex;
       align-items: center;
@@ -1324,8 +1328,16 @@ C.styles = I`
       color: var(--uui-color-text-alt);
       text-align: center;
     }
-    .error-state { padding: var(--uui-size-layout-1); color: var(--uui-color-text); text-align: center; }
-    .main-panel { display: flex; flex-direction: column; min-width: 0; }
+    .error-state {
+      padding: var(--uui-size-layout-1);
+      color: var(--uui-color-text);
+      text-align: center;
+    }
+    .main-panel {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
     .completion-banner {
       display: flex;
       align-items: center;
@@ -1357,4 +1369,4 @@ export {
   C as AgentRunInstanceDetailElement,
   Be as default
 };
-//# sourceMappingURL=agentrun-instance-detail.element-F20o4_xX.js.map
+//# sourceMappingURL=agentrun-instance-detail.element-B1z9OojA.js.map
