@@ -39,10 +39,10 @@ public class WorkflowOrchestrator : IWorkflowOrchestrator
         ISseEventEmitter emitter,
         CancellationToken cancellationToken)
     {
-        // Story 10.1: attach first so the finally below releases the claim on
-        // every exit path, including throws from GetWorkflow / linked-CTS
-        // construction. The endpoint's TryClaim already created the registry
-        // entry; AttachOrClaim reuses it (or creates a fresh one for direct
+        // Attach first so the finally below releases the claim on every exit
+        // path, including throws from GetWorkflow / linked-CTS construction.
+        // The endpoint's TryClaim already created the registry entry;
+        // AttachOrClaim reuses it (or creates a fresh one for direct
         // orchestrator invocation, e.g., unit tests).
         var userMessageReader = _activeInstanceRegistry.AttachOrClaim(instanceId);
 
@@ -55,9 +55,9 @@ public class WorkflowOrchestrator : IWorkflowOrchestrator
             var workflow = registered.Definition;
             var isFirstStep = true;
 
-            // Story 10.8: combine the HTTP request token (existing) with the
-            // per-instance cancellation token (new). Either source firing cancels
-            // the run. Disposed in finally to avoid leaking the subscription chain.
+            // Combine the HTTP request token with the per-instance cancellation
+            // token. Either source firing cancels the run. Disposed in finally
+            // to avoid leaking the subscription chain.
             var instanceToken = _activeInstanceRegistry.GetCancellationToken(instanceId)
                 ?? CancellationToken.None;
             linkedCts = CancellationTokenSource.CreateLinkedTokenSource(

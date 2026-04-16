@@ -44,10 +44,10 @@ public class ReadFileTool : IWorkflowTool
             throw new ToolExecutionException($"File not found: '{relativePath}'");
         }
 
-        // Story 9.9: tool tuning values must come through the resolver chain.
-        // Missing Step/Workflow on the execution context is an engine wiring bug.
-        // Throw a typed AgentRunException subtype so LlmErrorClassifier does not
-        // silently rewrite it as a generic provider failure.
+        // Tool tuning values must come through the resolver chain. Missing
+        // Step/Workflow on the execution context is an engine wiring bug.
+        // Throw a typed AgentRunException subtype so LlmErrorClassifier does
+        // not silently rewrite it as a generic provider failure.
         if (context.Step is null || context.Workflow is null)
         {
             throw new ToolContextMissingException(
@@ -57,12 +57,12 @@ public class ReadFileTool : IWorkflowTool
 
         var limit = _limitResolver.ResolveReadFileMaxResponseBytes(context.Step, context.Workflow);
 
-        // Story 9.9 (post-D1 review): single bounded-read code path. Allocate
-        // `byte[limit]` once and read on a single FileStream handle. There is no
-        // separate FileInfo.Length stat — the only "file size" we observe comes
-        // from the same handle we read on, eliminating the TOCTOU window where a
-        // small file could grow past the limit between stat and read and be
-        // returned via an unbounded File.ReadAllTextAsync.
+        // Single bounded-read code path. Allocate `byte[limit]` once and read
+        // on a single FileStream handle. There is no separate FileInfo.Length
+        // stat — the only "file size" we observe comes from the same handle
+        // we read on, eliminating the TOCTOU window where a small file could
+        // grow past the limit between stat and read and be returned via an
+        // unbounded File.ReadAllTextAsync.
         var buffer = new byte[limit];
         int read = 0;
         long totalBytes;

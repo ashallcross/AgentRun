@@ -120,7 +120,6 @@ public sealed class WorkflowRegistry : IWorkflowRegistry
 
         definition.Alias = alias;
 
-        // Story 9.6: enforce site-level ceilings on tool tuning values.
         try
         {
             _validator.EnforceCeilings(definition);

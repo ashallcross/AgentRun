@@ -12,14 +12,13 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AgentRun.Umbraco.Tools;
 
-// Story 10.7a Track A: extracted from FetchUrlTool. Owns the `.fetch-cache/`
-// path sandbox + file I/O. FetchUrlTool stays the transport + validation
-// owner; this writer is the only class in Tools/ that touches the cache
-// directory on disk.
+// Owns the `.fetch-cache/` path sandbox + file I/O. FetchUrlTool is the
+// transport + validation owner; this writer is the only class in Tools/
+// that touches the cache directory on disk.
 //
-// Defence-in-depth invariant (architect review 2026-04-08, Story 9.10): every
-// write path MUST go through PathSandbox.ValidatePath and use the canonical
-// path it returns — do NOT separately compute a target via Path.Combine.
+// Defence-in-depth invariant: every write path MUST go through
+// PathSandbox.ValidatePath and use the canonical path it returns — do NOT
+// separately compute a target via Path.Combine.
 public class FetchCacheWriter : IFetchCacheWriter
 {
     private static readonly JsonSerializerOptions HandleJsonOptions = new()

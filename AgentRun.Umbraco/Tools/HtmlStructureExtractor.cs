@@ -9,16 +9,15 @@ using AngleSharp.Html.Parser;
 
 namespace AgentRun.Umbraco.Tools;
 
-// Story 10.7a Track A: extracted from FetchUrlTool. Owns AngleSharp-backed
-// parsing of HTML response bodies into the structured-fact shape that the
-// CQA scanner + Accessibility Quick Scan workflows consume. FetchUrlTool
-// stays the transport + validation owner and becomes a coordinator over
+// Owns AngleSharp-backed parsing of HTML response bodies into the
+// structured-fact shape that downstream scanner/analyser workflows consume.
+// FetchUrlTool is the transport + validation owner and coordinates over
 // this extractor + FetchCacheWriter.
 //
 // The "what to surface" policy lives here; the "what it means" judgement
-// belongs to the calling workflow's scanner prompt (FR23 / NFR25 — runner
-// stays workflow-generic). The 200-entry heading cap and 100-entry anchor
-// cap are defensive ceilings against pathological inputs, not workflow rules.
+// belongs to the calling workflow's scanner prompt (runner stays workflow-
+// generic). The 200-entry heading cap and 100-entry anchor cap are
+// defensive ceilings against pathological inputs, not workflow rules.
 public class HtmlStructureExtractor : IHtmlStructureExtractor
 {
     private const int HeadingSequenceCap = 200;
@@ -44,7 +43,7 @@ public class HtmlStructureExtractor : IHtmlStructureExtractor
             .QuerySelector("meta[name=description i]")
             ?.GetAttribute("content");
 
-        // Story 9.4 Task 1.B: single heading walk produces h1, h2, h3_h6_count,
+        // Single heading walk produces h1, h2, h3_h6_count,
         // AND the ordered tag sequence (capped at 200 entries via early break —
         // a pathological 50k-heading page must not allocate the full sequence
         // list). The h1/h2/h3_h6_count tallies are uncapped to preserve the
@@ -101,9 +100,9 @@ public class HtmlStructureExtractor : IHtmlStructureExtractor
         var anchors = document.QuerySelectorAll("a[href]");
         var internalLinks = 0;
         var externalLinks = 0;
-        // Story 9.4 Task 1.B: collect anchor text samples within the existing
-        // anchor walk. Cap at 100 entries via early break on the COLLECTION only
-        // — internal/external tallies stay uncapped so the 9.1b invariant
+        // Collect anchor text samples within the existing anchor walk. Cap at
+        // 100 entries via early break on the COLLECTION only — internal/external
+        // tallies stay uncapped so the invariant
         // `internal + external == document.QuerySelectorAll("a[href]").Length`
         // continues to hold. Original case is preserved (the scanner prompt
         // does case-insensitive matching itself); empty-text anchors are skipped

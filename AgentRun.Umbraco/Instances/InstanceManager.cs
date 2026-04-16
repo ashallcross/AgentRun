@@ -16,14 +16,15 @@ public sealed partial class InstanceManager : IInstanceManager
     private readonly ISerializer _yamlSerializer;
     private readonly IDeserializer _yamlDeserializer;
 
-    // Story 10.1: per-instance SemaphoreSlim serialises read-modify-write on the
-    // locked mutation methods (SetInstanceStatusAsync, UpdateStepStatusAsync,
-    // AdvanceStepAsync, DeleteInstanceAsync). Pure reads are unlocked (file-level
-    // File.Move atomicity is sufficient — AC4). Lock dict is never pruned in v1
-    // (AC13): size is bounded by total instance count in process lifetime, each
-    // lock is ≈ 96 bytes, 10k instances < 1 MB. Pruning under contention is a v2
-    // concern. Locks survive terminal transitions and are reused on any
-    // subsequent mutation path (e.g., DeleteInstanceAsync of a completed run).
+    // Per-instance SemaphoreSlim serialises read-modify-write on the locked
+    // mutation methods (SetInstanceStatusAsync, UpdateStepStatusAsync,
+    // AdvanceStepAsync, DeleteInstanceAsync). Pure reads are unlocked
+    // (file-level File.Move atomicity is sufficient). The lock dict is
+    // never pruned: size is bounded by total instance count in process
+    // lifetime, each lock is ≈ 96 bytes, 10k instances < 1 MB. Pruning
+    // under contention is a future concern. Locks survive terminal
+    // transitions and are reused on any subsequent mutation path (e.g.,
+    // DeleteInstanceAsync of a completed run).
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _instanceLocks = new();
 
     // Test seam for AC13 lock-dictionary growth visibility. Expose count internally
@@ -177,7 +178,6 @@ public sealed partial class InstanceManager : IInstanceManager
         var instanceDir = GetInstanceDirectory(workflowAlias, instanceId);
         var yamlPath = Path.Combine(instanceDir, "instance.yaml");
 
-        // Story 10.1: serialise read-modify-write on this instance.
         var sem = GetOrCreateInstanceLock(instanceId);
         await sem.WaitAsync(cancellationToken);
         try
@@ -229,7 +229,6 @@ public sealed partial class InstanceManager : IInstanceManager
         var instanceDir = GetInstanceDirectory(workflowAlias, instanceId);
         var yamlPath = Path.Combine(instanceDir, "instance.yaml");
 
-        // Story 10.1: serialise read-modify-write on this instance.
         var sem = GetOrCreateInstanceLock(instanceId);
         await sem.WaitAsync(cancellationToken);
         try
@@ -286,10 +285,10 @@ public sealed partial class InstanceManager : IInstanceManager
         var instanceDir = GetInstanceDirectory(workflowAlias, instanceId);
         var yamlPath = Path.Combine(instanceDir, "instance.yaml");
 
-        // Story 10.1: serialise delete against any in-flight read-modify-write
-        // on the same instance. Pure File.Exists before the lock is a cheap
-        // fast path but not a TOCTOU — the re-check after the lock is held is
-        // authoritative.
+        // Serialise delete against any in-flight read-modify-write on the
+        // same instance. The File.Exists before the lock is a cheap fast
+        // path — not a TOCTOU — because the re-check after the lock is
+        // held is authoritative.
         if (!File.Exists(yamlPath))
         {
             return false;
@@ -374,7 +373,6 @@ public sealed partial class InstanceManager : IInstanceManager
         var instanceDir = GetInstanceDirectory(workflowAlias, instanceId);
         var yamlPath = Path.Combine(instanceDir, "instance.yaml");
 
-        // Story 10.1: serialise read-modify-write on this instance.
         var sem = GetOrCreateInstanceLock(instanceId);
         await sem.WaitAsync(cancellationToken);
         try

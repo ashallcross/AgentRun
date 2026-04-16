@@ -124,14 +124,14 @@ public sealed class ConversationStore : IConversationStore
             return;
         }
 
-        // Story 9.0 fix: if a tool result (or anything other than the assistant
-        // entry itself) follows the last assistant entry, the conversation is
-        // ALREADY at a clean tool_use → tool_result boundary. Removing the
-        // assistant entry now would orphan the trailing tool_result and the
-        // next provider call would 400 ("tool_result with no matching tool_use
-        // in previous message"). This happens specifically when a stall fires
-        // after a successful tool call: the stall's empty turn is not recorded,
-        // so the last "assistant" entry is the tool_call that just succeeded.
+        // If a tool result (or anything other than the assistant entry itself)
+        // follows the last assistant entry, the conversation is ALREADY at a
+        // clean tool_use → tool_result boundary. Removing the assistant entry
+        // now would orphan the trailing tool_result and the next provider call
+        // would 400 ("tool_result with no matching tool_use in previous
+        // message"). This happens specifically when a stall fires after a
+        // successful tool call: the stall's empty turn is not recorded, so
+        // the last "assistant" entry is the tool_call that just succeeded.
         // The conversation is fine; truncating it is wrong.
         if (lastAssistantIndex != nonEmptyLines.Count - 1)
         {

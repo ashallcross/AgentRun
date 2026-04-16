@@ -160,21 +160,19 @@ public class StepExecutor : IStepExecutor
                 messages.AddRange(ConvertHistoryToMessages(history));
             }
 
-            // Story 9.1b Phase 1 carve-out #3 (root cause, 2026-04-09):
-            // hardcode MaxOutputTokens to 32768 to fix CQA scanner stall on
-            // multi-URL batches. Without this, the M.E.AI Anthropic provider
-            // defaults to ~4096 output tokens — Sonnet 4.6 with thinking
-            // enabled consumes a meaningful chunk of that on internal thinking
-            // tokens before any visible output, and the ceiling is hit
-            // mid-write_file with FinishReason=length and accumulatedTextLength=0.
-            // Diagnosed via the FinishReason instrumentation Winston gated as a
-            // pre-commit diagnostic — see Story 9.1b investigation report.
-            // Sonnet 4.6 documented max output is 64k; 32k leaves comfortable
-            // headroom for thinking-token bursts plus a multi-page markdown write
-            // while still bounded enough to prevent runaway generation.
-            // Follow-up: Story 9.6.1 will wire this through IToolLimitResolver
-            // for per-step / per-workflow override. Until then, this is the
-            // global default for every workflow.
+            // Hardcoded MaxOutputTokens = 32768 to avoid a silent-truncation
+            // stall mode. The Microsoft.Extensions.AI Anthropic provider
+            // defaults to ~4096 output tokens — Sonnet-class models with
+            // thinking enabled consume a meaningful chunk of that on internal
+            // thinking tokens before any visible output, and the ceiling is
+            // hit mid-write_file presenting as FinishReason=length with
+            // accumulatedTextLength=0 (detected via empty-turn FinishReason
+            // telemetry in StallRecoveryPolicy). Sonnet 4.6 documented max
+            // output is 64k; 32k leaves comfortable headroom for thinking-
+            // token bursts plus a multi-page markdown write while still bounded
+            // enough to prevent runaway generation. Per-step / per-workflow
+            // override via IToolLimitResolver is a planned follow-up; until
+            // then this is the global default for every workflow.
             var chatOptions = new ChatOptions
             {
                 Tools = aiTools,
@@ -186,7 +184,6 @@ public class StepExecutor : IStepExecutor
                 ? async ct => (await _completionChecker.CheckAsync(step.CompletionCheck, context.InstanceFolderPath, ct)).Passed
                 : null;
 
-            // Story 10.2: resolve compaction threshold for this step
             var compactionThreshold = _toolLimitResolver.ResolveCompactionTurnThreshold(step, workflow);
 
             // Run the tool loop
@@ -243,9 +240,11 @@ public class StepExecutor : IStepExecutor
                 "Step {StepId} failed for workflow {WorkflowAlias} instance {InstanceId}",
                 step.Id, instance.WorkflowAlias, instance.InstanceId);
 
-            // Story 10.7a Track C: classification delegated to
-            // IStepExecutionFailureHandler (Engine/). The handler preserves the
-            // AgentRunException → bypass-classifier invariant; see its test file.
+            // Classification delegated to IStepExecutionFailureHandler. The
+            // handler preserves the AgentRunException → bypass-classifier
+            // invariant (engine-domain exceptions must not be routed through
+            // LlmErrorClassifier, or their messages get masked as generic
+            // provider failures); see StepExecutionFailureHandlerTests.
             context.LlmError = _failureHandler.Classify(ex);
 
             try

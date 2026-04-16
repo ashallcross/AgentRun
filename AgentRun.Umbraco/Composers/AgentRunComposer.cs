@@ -30,14 +30,14 @@ public class AgentRunComposer : IComposer
         // Conversation persistence (JSONL append-only per step)
         builder.Services.AddSingleton<IConversationStore, ConversationStore>();
 
-        // Tool limit resolver (Story 9.6) — singleton, stateless, depends only on IOptions<>.
+        // Tool limit resolver — singleton, stateless, depends only on IOptions<>.
         builder.Services.AddSingleton<IToolLimitResolver, ToolLimitResolver>();
 
         // Engine services
         builder.Services.AddSingleton<IPromptAssembler, PromptAssembler>();
-        // Story 10.11: Engine-boundary adapter — holds Umbraco.AI.* deps so
-        // ProfileResolver (Engine/) can stay Umbraco-free. Registered BEFORE
-        // IProfileResolver so DI resolution order is intuitive.
+        // Engine-boundary adapter — holds Umbraco.AI.* deps so ProfileResolver
+        // (Engine/) can stay Umbraco-free. Registered BEFORE IProfileResolver
+        // so DI resolution order is intuitive.
         builder.Services.AddSingleton<IAIChatClientFactory, UmbracoAIChatClientFactory>();
         builder.Services.AddSingleton<IProfileResolver, ProfileResolver>();
         builder.Services.AddSingleton<ICompletionChecker, CompletionChecker>();
@@ -49,15 +49,14 @@ public class AgentRunComposer : IComposer
         // Active instance registry (message queue for running instances)
         builder.Services.AddSingleton<IActiveInstanceRegistry, ActiveInstanceRegistry>();
 
-        // Step execution engine
-        // Story 10.7a Track C: StepExecutor delegates failure classification to
-        // IStepExecutionFailureHandler (preserves AgentRunException bypass invariant).
+        // Step execution engine. StepExecutor delegates failure classification
+        // to IStepExecutionFailureHandler (preserves the AgentRunException
+        // bypass invariant — must not be routed through LlmErrorClassifier).
         builder.Services.AddSingleton<IStepExecutionFailureHandler, StepExecutionFailureHandler>();
-        // Story 10.7a Track B: IStreamingResponseAccumulator + IStallRecoveryPolicy
-        // are instantiated directly by ToolLoop as stateless static-readonly
-        // defaults — DI resolution adds a dead branch (ToolLoop is a static class
-        // and cannot consume constructor-injected services). Replacement via DI
-        // is deferred to Epic 12 (background execution rewrite) if needed.
+        // IStreamingResponseAccumulator + IStallRecoveryPolicy are instantiated
+        // directly by ToolLoop as stateless static-readonly defaults — ToolLoop
+        // is a static class and cannot consume constructor-injected services,
+        // so DI registration would just be a dead branch.
         builder.Services.AddSingleton<IStepExecutor, StepExecutor>();
 
         // Workflow orchestrator (step sequencing + mode logic)
@@ -68,28 +67,28 @@ public class AgentRunComposer : IComposer
         builder.Services.AddSingleton<IWorkflowTool, WriteFileTool>();
         builder.Services.AddSingleton<IWorkflowTool, ListFilesTool>();
 
-        // SSRF protection + fetch_url tool (Story 5.3)
+        // SSRF protection + fetch_url tool
         builder.Services.AddSingleton<INetworkAccessPolicy, DefaultNetworkAccessPolicy>();
         builder.Services.AddSingleton<SsrfProtection>();
-        // FetchUrl HttpClient — timeout is applied per-request via IToolLimitResolver
-        // (Story 9.6), NOT via HttpClient.Timeout.
-        // Auto-redirect is disabled (Story 9.1b Locked Decision #11): FetchUrlTool
-        // implements a manual redirect loop that re-runs SsrfProtection.ValidateUrlAsync
-        // against every Location target, closing a pre-existing SSRF redirect bypass.
-        // Do NOT switch this back to AllowAutoRedirect = true under any circumstances.
+        // FetchUrl HttpClient — timeout is applied per-request via
+        // IToolLimitResolver, NOT via HttpClient.Timeout. Auto-redirect is
+        // disabled so FetchUrlTool can run its manual redirect loop that
+        // re-validates every Location target through SsrfProtection — this
+        // closes an SSRF redirect bypass. Do NOT switch back to
+        // AllowAutoRedirect = true under any circumstances.
         builder.Services.AddHttpClient("FetchUrl")
             .ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.HttpClientHandler
             {
                 AllowAutoRedirect = false
             });
-        // Story 10.7a Track A — FetchUrlTool becomes a coordinator over two collaborators:
+        // FetchUrlTool coordinates over two collaborators:
         //   IHtmlStructureExtractor owns AngleSharp parsing + structured-fact walks.
         //   IFetchCacheWriter owns .fetch-cache/ path sandbox + file I/O.
         builder.Services.AddSingleton<IHtmlStructureExtractor, HtmlStructureExtractor>();
         builder.Services.AddSingleton<IFetchCacheWriter, FetchCacheWriter>();
         builder.Services.AddSingleton<IWorkflowTool, FetchUrlTool>();
 
-        // Umbraco content tools (Story 9.12) — in-process access to published content
+        // Umbraco content tools — in-process access to published content
         builder.Services.AddSingleton<IWorkflowTool, ListContentTool>();
         builder.Services.AddSingleton<IWorkflowTool, GetContentTool>();
         builder.Services.AddSingleton<IWorkflowTool, ListContentTypesTool>();

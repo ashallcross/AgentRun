@@ -108,11 +108,11 @@ public class InstanceEndpoints : ControllerBase
         var updated = await _instanceManager.SetInstanceStatusAsync(
             state.WorkflowAlias, state.InstanceId, InstanceStatus.Cancelled, cancellationToken);
 
-        // Story 10.10: clean up any Active step so the reopened UI does not
-        // render it as live. Must happen BEFORE RequestCancellation fires the
-        // CTS — the orchestrator, when it observes cancellation and returns,
-        // should see the step as Cancelled, not Active. Defensive loop handles
-        // zero (cancel in the between-steps window) or multiple (pathological;
+        // Clean up any Active step so the reopened UI does not render it as
+        // live. Must happen BEFORE RequestCancellation fires the CTS — when
+        // the orchestrator observes cancellation and returns, it should see
+        // the step as Cancelled, not Active. Defensive loop handles zero
+        // (cancel in the between-steps window) or multiple (pathological;
         // should not occur) Active steps.
         for (int i = 0; i < updated.Steps.Count; i++)
         {
@@ -124,9 +124,9 @@ public class InstanceEndpoints : ControllerBase
             }
         }
 
-        // Story 10.8: persist FIRST, signal SECOND. The SSE OCE handler reads
-        // the persisted status when it catches OCE and skips the Failed
-        // overwrite if it sees Cancelled. Reversing the order would race.
+        // Persist FIRST, signal SECOND. The SSE OCE handler reads the
+        // persisted status when it catches OCE and skips the Failed overwrite
+        // if it sees Cancelled. Reversing the order would race.
         _activeInstanceRegistry.RequestCancellation(state.InstanceId);
 
         return Ok(MapToResponse(updated));

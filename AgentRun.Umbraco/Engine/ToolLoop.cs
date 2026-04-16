@@ -17,10 +17,9 @@ public static class ToolLoop
     /// </summary>
     internal const string CompactionPlaceholderPrefix = "[Content offloaded";
 
-    // Story 10.7a Track B: default collaborators used when callers do not
-    // inject their own. Stateless, so a single shared instance is fine.
-    // Tests that need to verify .Received(n) on either collaborator can pass
-    // in NSubstitute mocks via the optional parameters on RunAsync.
+    // Default collaborators when callers do not inject their own. Stateless,
+    // so a single shared instance is fine. Tests can pass NSubstitute mocks
+    // via the optional parameters on RunAsync.
     private static readonly IStreamingResponseAccumulator DefaultAccumulator = new StreamingResponseAccumulator();
     private static readonly IStallRecoveryPolicy DefaultStallPolicy = new StallRecoveryPolicy();
 
@@ -45,31 +44,26 @@ public static class ToolLoop
         accumulator ??= DefaultAccumulator;
         stallPolicy ??= DefaultStallPolicy;
 
-        // The user-message wait window (Story 9.6) is only needed in interactive
-        // mode (when userMessageReader is non-null). Resolution is deferred until
-        // first use; in interactive mode without an override, missing resolver or
-        // Step/Workflow context is a wiring bug — fail loud.
+        // The user-message wait window is only needed in interactive mode
+        // (when userMessageReader is non-null). Resolution is deferred until
+        // first use; in interactive mode without an override, a missing resolver
+        // or Step/Workflow context is a wiring bug — fail loud.
         TimeSpan? userMessageTimeout = userMessageTimeoutOverride;
 
-        // Story 9.1b Phase 1 carve-out (manual E2E gate, 2026-04-09):
-        // single-shot stall recovery via synthetic user nudge. When the model
+        // Single-shot stall recovery via synthetic user nudge. When the model
         // loses track mid-batch and emits an empty turn after a tool round-trip
         // before the workflow is structurally complete (completionCheck fails),
         // give it ONE more turn with a directive synthetic user message before
-        // throwing StallDetectedException. Diagnosed via the CQA 5-URL batch:
-        // Sonnet 4.6 reliably stalls after the final fetch_url at N=5 but not
-        // at N=1. The 1-URL canary proved the model can do the fetch→write
-        // transition; it's the cumulative turn count that loses it. This is the
-        // missing sibling to Story 9.0's completion-check-on-stall recovery
-        // (which handled "model finished but went silent"; this handles "model
-        // lost track and needs a nudge to finish"). Single attempt — if the
-        // nudge also stalls, the exception throws as before. Generic wording
-        // so it does not bake any workflow-specific tool name into the engine.
+        // throwing StallDetectedException. Complements the completion-check-on-stall
+        // recovery path ("model finished but went silent") — this handles the
+        // sibling case "model lost track and needs a nudge to finish". Single
+        // attempt; if the nudge also stalls, the exception throws. Generic wording
+        // avoids baking workflow-specific tool names into the engine.
         var nudgeAttempted = false;
 
-        // Story 10.2: conversation compaction state. Track which tool results
-        // have been compacted (by CallId) and when they were added (by assistant
-        // turn count). The threshold is resolved once here to avoid per-iteration
+        // Conversation-compaction state: track which tool results have been
+        // compacted (by CallId) and when they were added (by assistant turn
+        // count). Threshold is resolved once here to avoid per-iteration
         // resolver calls; -1 disables compaction entirely.
         var compactThreshold = compactionTurnThreshold ?? -1;
         var compactedCallIds = new HashSet<string>(StringComparer.Ordinal);
@@ -81,11 +75,11 @@ public static class ToolLoop
         var iteration = 0;
         while (true)
         {
-            // Story 10.8: observe cancellation between iterations. The streaming
-            // response and per-tool calls already respect the token, but the
-            // gap between tool-batch completion and the next LLM call is the
-            // window this check closes — cancellation is observed within the
-            // same tool turn instead of waiting for the next streaming chunk.
+            // Observe cancellation between iterations. The streaming response
+            // and per-tool calls already respect the token; this check closes
+            // the window between tool-batch completion and the next LLM call
+            // so cancellation is observed within the same tool turn instead
+            // of waiting for the next streaming chunk.
             cancellationToken.ThrowIfCancellationRequested();
 
             if (++iteration > MaxIterations)
@@ -100,16 +94,14 @@ public static class ToolLoop
             // Drain any user messages queued from the message endpoint
             await DrainUserMessagesAsync(userMessageReader, messages, recorder, emitter, cancellationToken);
 
-            // Story 10.2: compact old tool results before the LLM call to keep
-            // the in-memory context bounded. Only the Result string is replaced;
-            // the message structure stays intact (no orphaned tool_calls).
+            // Compact old tool results before the LLM call to keep the
+            // in-memory context bounded. Only the Result string is replaced;
+            // message structure stays intact (no orphaned tool_calls).
             if (compactThreshold > 0)
             {
                 CompactOldToolResults(messages, assistantTurnCount, compactThreshold, compactedCallIds, toolResultTurnMap, logger, context);
             }
 
-            // Story 10.7a Track B: streaming accumulation + partial-text-on-error
-            // recording delegated to IStreamingResponseAccumulator.
             var accumulated = await accumulator.AccumulateAsync(
                 client.GetStreamingResponseAsync(messages, options, cancellationToken),
                 emitter, recorder, cancellationToken);
@@ -119,7 +111,6 @@ public static class ToolLoop
             // Assemble streaming updates into messages for conversation context
             messages.AddMessages(updates);
 
-            // Story 10.2: track assistant turns for compaction age calculation
             assistantTurnCount++;
 
             // Extract function calls from the last assistant message only (not previously processed ones)
@@ -129,11 +120,9 @@ public static class ToolLoop
 
             if (functionCalls.Count == 0)
             {
-                // Story 10.7a Track B: empty-turn decision tree delegated to
-                // IStallRecoveryPolicy (ProviderEmpty detection, FinishReason
-                // telemetry, stall classification, one-shot nudge recovery).
-                // ToolLoop owns the nudgeAttempted flag because it persists
-                // across loop iterations; the policy is stateless.
+                // Empty-turn decision tree delegated to IStallRecoveryPolicy.
+                // The nudgeAttempted flag lives here (not in the policy) because
+                // it persists across loop iterations; the policy is stateless.
                 var stallDecision = await stallPolicy.EvaluateAsync(
                     messages, accumulatedText, functionCalls, updates,
                     assistantTurnCount, nudgeAttempted,
@@ -326,13 +315,11 @@ public static class ToolLoop
             // Add tool results as a single tool-role message
             messages.Add(new ChatMessage(ChatRole.Tool, resultContents));
 
-            // Story 10.8: observe cancellation after the tool batch completes.
-            // Prevents a cancelled run from racing into the next LLM call when
-            // cancel fires mid-batch.
+            // Observe cancellation after the tool batch completes. Prevents
+            // a cancelled run from racing into the next LLM call when cancel
+            // fires mid-batch.
             cancellationToken.ThrowIfCancellationRequested();
 
-            // Story 10.2: register tool result CallIds at the current assistant turn
-            // so compaction knows when they were added.
             if (compactThreshold > 0)
             {
                 foreach (var rc in resultContents.OfType<FunctionResultContent>())

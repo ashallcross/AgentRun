@@ -9,11 +9,10 @@ using AgentRun.Umbraco.Engine.Events;
 
 namespace AgentRun.Umbraco.Engine;
 
-// Story 10.7a Track B: extracted from ToolLoop.cs. Owns the text builder +
-// updates list + SSE text-delta fan-out + partial-text recording-on-error.
-// The downstream FinishReason telemetry and empty-turn stall logic stay in
-// ToolLoop because they operate on the post-accumulation result (locked
-// decision 5).
+// Owns the text builder + updates list + SSE text-delta fan-out +
+// partial-text recording-on-error for a streaming LLM response. Downstream
+// FinishReason telemetry and empty-turn stall logic stay in ToolLoop /
+// IStallRecoveryPolicy because they operate on the post-accumulation result.
 public class StreamingResponseAccumulator : IStreamingResponseAccumulator
 {
     private readonly ILogger<StreamingResponseAccumulator> _logger;
@@ -31,11 +30,11 @@ public class StreamingResponseAccumulator : IStreamingResponseAccumulator
     {
         var textBuilder = new StringBuilder();
         var updates = new List<ChatResponseUpdate>();
-        // Story 10.7a review monitoring (SSE-flake triage): count + total-chars
-        // instrumentation at the emit boundary. Logged at Debug so the default
-        // production level stays quiet; flip a single category to Debug in
-        // appsettings when reproducing the intermittent UI-dropout to correlate
-        // backend emit with frontend receipt. Zero cost when Debug is off.
+        // Emit-boundary instrumentation (count + total-chars). Logged at Debug
+        // so the default production level stays quiet; flip a single category
+        // to Debug in appsettings when reproducing intermittent UI-dropouts to
+        // correlate backend emit with frontend receipt. Zero cost when Debug
+        // is off.
         var emitCount = 0;
         var emitChars = 0;
 

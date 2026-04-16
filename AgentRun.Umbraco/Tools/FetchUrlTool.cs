@@ -24,14 +24,13 @@ public class FetchUrlTool : IWorkflowTool
         }
         """).RootElement;
 
-    // Story 9.1b Phase 1 carve-out (manual E2E gate, 2026-04-09): without an
-    // explicit User-Agent, many WAFs / CDNs (Cloudflare, Fastly, AWS WAF) and
-    // sites with bot protection (Wikipedia, GitHub, news sites) return 403 to
-    // requests with no UA, treating them as suspicious script traffic. A sane
-    // generic engine default unblocks any workflow that fetches arbitrary
-    // public URLs. NOT workflow-specific — this is a property of fetch_url.
-    // If a future workflow needs a custom UA, that becomes a Story 9.6-style
-    // ToolLimitResolver / workflow-YAML tunable, not a hardcoded change here.
+    // Without an explicit User-Agent, many WAFs / CDNs (Cloudflare, Fastly,
+    // AWS WAF) and sites with bot protection (Wikipedia, GitHub, news sites)
+    // return 403 to requests with no UA, treating them as suspicious script
+    // traffic. A sane generic engine default unblocks any workflow that
+    // fetches arbitrary public URLs. NOT workflow-specific — this is a
+    // property of fetch_url. A custom UA would become a ToolLimitResolver /
+    // workflow-YAML tunable, not a hardcoded change here.
     private const string DefaultUserAgent = "AgentRun/1.0";
 
     private static readonly JsonSerializerOptions HandleJsonOptions = new()
@@ -80,11 +79,10 @@ public class FetchUrlTool : IWorkflowTool
         if (!Uri.TryCreate(urlString, UriKind.Absolute, out var uri))
             throw new ToolExecutionException($"Invalid URL: '{urlString}'");
 
-        // Story 9.6: tool tuning values must come through the resolver chain.
-        // Missing Step/Workflow on the execution context is an engine wiring bug.
-        // Throw a typed AgentRunException subtype (Story 9.9 D2 cross-cutting fix)
-        // so LlmErrorClassifier does not silently rewrite this as a generic
-        // provider failure.
+        // Tool tuning values must come through the resolver chain. Missing
+        // Step/Workflow on the execution context is an engine wiring bug.
+        // Throw a typed AgentRunException subtype so LlmErrorClassifier does
+        // not silently rewrite this as a generic provider failure.
         if (context.Step is null || context.Workflow is null)
         {
             throw new ToolContextMissingException(
@@ -92,9 +90,9 @@ public class FetchUrlTool : IWorkflowTool
                 "This is an engine wiring bug, not a workflow configuration issue.");
         }
 
-        // Story 9.7: raw mode requires the instance folder for cache writes.
-        // Story 9.1b: structured mode skips the cache (architect-locked Q1 = (a)),
-        // so the InstanceFolderPath check is only enforced for raw.
+        // Raw mode requires the instance folder for cache writes. Structured
+        // mode skips the cache, so the InstanceFolderPath check is only
+        // enforced for raw.
         if (extractMode == ExtractMode.Raw && string.IsNullOrEmpty(context.InstanceFolderPath))
         {
             throw new InvalidOperationException(
@@ -204,9 +202,9 @@ public class FetchUrlTool : IWorkflowTool
             {
                 if (extractMode == ExtractMode.Structured)
                 {
-                    // Story 9.4 Task 1.D: empty-body short-circuit must still return
-                    // the structured shape with zero-valued versions of every field,
-                    // including the new generic primitives. Story 9.1b P5 precedent.
+                    // Empty-body short-circuit must still return the structured
+                    // shape with zero-valued versions of every field, including
+                    // the generic primitives.
                     var emptyStructured = new StructuredFetchHandle(
                         urlString,
                         status,
@@ -231,14 +229,14 @@ public class FetchUrlTool : IWorkflowTool
             }
 
             var truncated = totalRead > maxBytes;
-            // Story 9.1b Q2 (architect-locked): the un-marked slice is the source of truth.
-            // The raw branch derives bytesToWrite from this slice + marker; the structured
-            // branch parses this slice directly so AngleSharp never sees the truncation
-            // marker text as HTML.
+            // The un-marked slice is the source of truth. The raw branch
+            // derives bytesToWrite from this slice + marker; the structured
+            // branch parses this slice directly so AngleSharp never sees the
+            // truncation marker text as HTML.
             var unmarkedLength = truncated ? maxBytes : totalRead;
 
-            // Story 9.1b: structured mode parses the un-marked bytes via AngleSharp and
-            // returns a small structured handle. No disk write — Q1 (a), architect-locked.
+            // Structured mode parses the un-marked bytes via AngleSharp and
+            // returns a small structured handle. No disk write.
             if (extractMode == ExtractMode.Structured)
             {
                 // AC #9 / Edge Case #8: non-HTML content types fail loud rather than
@@ -342,15 +340,8 @@ public class FetchUrlTool : IWorkflowTool
             || contentType.Equals("application/xhtml+xml", StringComparison.OrdinalIgnoreCase);
     }
 
-    // P1 (Story 9.1b code-review fix pass 2026-04-09): the previous schema also
-    // exposed `truncated_during_parse`, which was wired to the same value as
-    // `truncated` and could never diverge. Two semantically distinct fields
-    // collapsed to one bit was contract drift; the honest fix is to drop the
-    // dead alias rather than fabricate a second signal. Scanner.md and the
-    // tests were updated in the same commit.
-    // Story 9.4 Task 1.B (re-review patch): top-level generic primitives
-    // appended additively. CQA's existing scanner / analyser / reporter tests
-    // and prompts consume the pre-9.4 shape unchanged. Do NOT rename, reorder,
+    // Top-level generic primitives. Existing CQA scanner / analyser / reporter
+    // tests and prompts consume this shape unchanged — do NOT rename, reorder,
     // or alter any existing fields or JsonPropertyName values. New fields
     // added here must be generic HTML primitives that any future workflow
     // could reuse — no workflow-domain vocabulary in this file.
