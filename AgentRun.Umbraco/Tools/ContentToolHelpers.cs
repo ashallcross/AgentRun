@@ -59,6 +59,18 @@ public static class ContentToolHelpers
     // `serialise` owns the outer shape so GetContentTool can wrap the subset in a
     // result object while the List* tools serialise the list directly.
     // Returns (Json, IncludedCount); IncludedCount < items.Count signals truncation.
+    //
+    // Monotonicity invariant: the fit predicate
+    //     utf8Bytes(serialise(items.Take(n)) + markerFor(n)) <= limitBytes
+    // MUST be monotone-non-increasing in n (i.e. if prefix-of-N+1 fits, so does prefix-of-N).
+    // All three current callers satisfy this because `serialise(prefix)` grows with n and
+    // `markerFor(n)` is `"… {n} of {total} …"` whose length is non-decreasing in n.
+    // A caller whose marker length shrinks as n grows (e.g. "… {total - n} omitted …") can
+    // break the search and silently return a prefix that overruns limitBytes.
+    //
+    // When even `serialise(empty) + markerFor(0)` exceeds limitBytes the method returns that
+    // minimal payload rather than throwing — callers accept it as a best-effort "over budget,
+    // nothing truncatable fit" result.
     public static (string Json, int IncludedCount) TruncateToByteLimit<T>(
         IList<T> items,
         int limitBytes,
@@ -108,7 +120,9 @@ public static class ContentToolHelpers
             double d when double.IsNaN(d) || double.IsInfinity(d) || d > int.MaxValue || d < int.MinValue
                 => throw new ToolExecutionException($"Argument '{name}' is out of range"),
             double d => (int)d,
-            JsonElement { ValueKind: JsonValueKind.Number } je => je.GetInt32(),
+            JsonElement { ValueKind: JsonValueKind.Number } je when je.TryGetInt32(out var n) => n,
+            JsonElement { ValueKind: JsonValueKind.Number }
+                => throw new ToolExecutionException($"Argument '{name}' must be an integer"),
             JsonElement { ValueKind: JsonValueKind.String } je when int.TryParse(je.GetString(), out var parsed)
                 => parsed,
             _ => throw new ToolExecutionException($"Argument '{name}' must be an integer")

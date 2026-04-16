@@ -75,6 +75,14 @@ public class ContentToolHelpersTests
         var negative = new Dictionary<string, object?> { ["neg"] = -1 };
         Assert.Throws<ToolExecutionException>(
             () => ContentToolHelpers.ExtractOptionalIntArgument(negative, "neg"));
+
+        var zero = new Dictionary<string, object?> { ["z"] = 0 };
+        Assert.Throws<ToolExecutionException>(
+            () => ContentToolHelpers.ExtractOptionalIntArgument(zero, "z"));
+
+        var fractional = new Dictionary<string, object?> { ["frac"] = JsonDocument.Parse("3.5").RootElement };
+        Assert.Throws<ToolExecutionException>(
+            () => ContentToolHelpers.ExtractOptionalIntArgument(fractional, "frac"));
     }
 
     [Test]
@@ -107,8 +115,9 @@ public class ContentToolHelpersTests
     [Test]
     public void TruncateToByteLimit_BinarySearchMatchesLinearReference()
     {
-        // Characterisation test: binary-search result matches the linear "remove-from-end-until-fits" loop
-        // for a representative truncation scenario. Difference of ±1 is tolerated per F1.
+        // Characterisation test: under the helper's monotonicity invariant (markerFor length
+        // non-decreasing in count) the binary-search prefix MUST equal the linear reference
+        // exactly — any drift would indicate an off-by-one in the search bounds.
         var items = Enumerable.Range(0, 200)
             .Select(i => new { id = i, name = $"item-{i:D3}", description = new string('x', 50) })
             .ToList();
@@ -118,11 +127,14 @@ public class ContentToolHelpersTests
 
         var objectItems = items.Cast<object>().ToList();
 
-        // Pick a limit that forces truncation (well under the full size)
         var fullSize = Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(objectItems));
         var limit = fullSize / 3;
 
         var linearCount = ComputeLinearReferenceCount(objectItems, limit, serialiseObj, markerFor);
+
+        // Guard against a vacuous pass: the chosen limit must actually exercise truncation.
+        Assert.That(linearCount, Is.GreaterThan(0).And.LessThan(objectItems.Count),
+            $"Test input must force a non-trivial truncation (linearCount={linearCount})");
 
         var (bsJson, bsCount) = ContentToolHelpers.TruncateToByteLimit(
             objectItems,
@@ -130,8 +142,8 @@ public class ContentToolHelpersTests
             serialiseObj,
             markerFor);
 
-        Assert.That(Math.Abs(bsCount - linearCount), Is.LessThanOrEqualTo(1),
-            $"Binary-search count {bsCount} diverged from linear reference {linearCount} by more than 1");
+        Assert.That(bsCount, Is.EqualTo(linearCount),
+            $"Binary-search count {bsCount} diverged from linear reference {linearCount} under monotone marker — off-by-one in search bounds");
         Assert.That(Encoding.UTF8.GetByteCount(bsJson), Is.LessThanOrEqualTo(limit),
             "Binary-search result must fit within the byte limit");
         Assert.That(bsJson, Does.Contain($"returned {bsCount} of {items.Count}"),
@@ -151,6 +163,37 @@ public class ContentToolHelpersTests
 
         Assert.That(count, Is.EqualTo(0));
         Assert.That(json, Does.Contain("[truncated — 0 of 3]"));
+    }
+
+    [Test]
+    public void TruncateToByteLimit_EmptyList_ReturnsEmptyJsonAndZero()
+    {
+        var items = new List<object>();
+
+        var (json, count) = ContentToolHelpers.TruncateToByteLimit(
+            items,
+            limitBytes: 10_000,
+            sub => JsonSerializer.Serialize(sub),
+            _ => "[truncated]");
+
+        Assert.That(count, Is.EqualTo(0));
+        Assert.That(json, Is.EqualTo("[]"));
+        Assert.That(json, Does.Not.Contain("[truncated]"));
+    }
+
+    [Test]
+    public void TruncateToByteLimit_SingleItemOverLimit_ReturnsMarkerOnlyWithZeroCount()
+    {
+        var items = new List<object> { new { id = 0, payload = new string('x', 500) } };
+
+        var (json, count) = ContentToolHelpers.TruncateToByteLimit(
+            items,
+            limitBytes: 50,
+            sub => JsonSerializer.Serialize(sub),
+            markerFor: c => $"[truncated — {c} of 1]");
+
+        Assert.That(count, Is.EqualTo(0));
+        Assert.That(json, Does.Contain("[truncated — 0 of 1]"));
     }
 
     private static int ComputeLinearReferenceCount<T>(
