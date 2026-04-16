@@ -2,7 +2,7 @@
   "$schema": "https://marketplace.umbraco.com/umbraco-marketplace-schema.json",
   "Title": "AgentRun for Umbraco",
   "Description": "AI-powered workflow engine for Umbraco. Define multi-step agent workflows in YAML and run them from the backoffice. Ships with three ready-to-run examples: Umbraco Content Audit (analyses your site's content tree), Content Quality Audit (scores any public URL), and Accessibility Quick-Scan (WCAG 2.1 AA findings). Extensible tool system — add custom tools for your editorial workflows. Apache 2.0 licensed, built on Umbraco.AI.",
-  "Categories": "Artificial Intelligence",
+  "Category": "Artificial Intelligence",
   "AlternateCategory": "Developer Tools",
   "PackageType": "Package",
   "LicenseTypes": ["Free"],

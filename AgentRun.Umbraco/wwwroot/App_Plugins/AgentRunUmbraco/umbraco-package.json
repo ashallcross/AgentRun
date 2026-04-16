@@ -1,7 +1,7 @@
 {
   "id": "AgentRun.Umbraco",
   "name": "AgentRun.Umbraco",
-  "version": "1.0.0-rc.2",
+  "version": "1.0.0",
   "allowTelemetry": true,
   "extensions": [
     {
