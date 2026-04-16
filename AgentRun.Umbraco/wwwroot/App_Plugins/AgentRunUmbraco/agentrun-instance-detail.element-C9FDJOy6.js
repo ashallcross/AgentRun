@@ -1,18 +1,18 @@
 import { UmbLitElement as M } from "@umbraco-cms/backoffice/lit-element";
 import { css as I, property as d, state as b, customElement as z, html as c, nothing as p } from "@umbraco-cms/backoffice/external/lit";
-import { UMB_AUTH_CONTEXT as W } from "@umbraco-cms/backoffice/auth";
-import { umbConfirmModal as j } from "@umbraco-cms/backoffice/modal";
-import { s as U, e as K, b as q, r as J, d as G, f as X, a as Y, h as T, m as E, i as Q } from "./index-QeZdEPr6.js";
-import { n as Z } from "./instance-list-helpers-JWQgi_HM.js";
-function ee(e) {
+import { UMB_AUTH_CONTEXT as U } from "@umbraco-cms/backoffice/auth";
+import { umbConfirmModal as K } from "@umbraco-cms/backoffice/modal";
+import { s as q, e as J, b as G, r as X, d as Y, f as Q, a as Z, h as T, m as R, i as ee } from "./index-B203nx70.js";
+import { n as te } from "./instance-list-helpers-JWQgi_HM.js";
+function se(e) {
   const t = e.split("/");
   return decodeURIComponent(t[t.length - 1]);
 }
-function te(e, t) {
+function ae(e, t) {
   const s = e.split("/");
   return s.length >= 2 && s.splice(-2, 2, "workflows", encodeURIComponent(t)), s.join("/");
 }
-function R(e) {
+function E(e) {
   switch (e.status) {
     case "Pending":
       return "Pending";
@@ -28,7 +28,7 @@ function R(e) {
       return e.status;
   }
 }
-function se(e) {
+function ne(e) {
   switch (e) {
     case "Pending":
       return "icon-circle-dotted";
@@ -44,13 +44,13 @@ function se(e) {
       return "icon-circle-dotted";
   }
 }
-function ae(e, t) {
+function ie(e, t) {
   return e === "Active" && t;
 }
-function ne(e) {
+function re(e) {
   return e.instanceStatus === "Running" && !e.hasActiveStep && !e.isStreaming && e.hasPendingSteps;
 }
-function ie(e) {
+function oe(e) {
   if (e.instanceStatus === "Interrupted")
     return { inputEnabled: !1, inputPlaceholder: "Run interrupted — click Retry to resume." };
   if (e.isInteractive)
@@ -59,13 +59,30 @@ function ie(e) {
   let s;
   return e.isTerminal ? s = e.instanceStatus === "Cancelled" ? "Run cancelled." : e.instanceStatus === "Failed" ? "Run failed — click Retry to resume." : "Workflow complete." : e.hasActiveStep ? s = "Step complete" : s = "Click 'Start' to begin the workflow.", { inputEnabled: t, inputPlaceholder: s };
 }
-function re(e, t, s, a) {
+function A(e) {
+  switch (e) {
+    case "Completed":
+      return "Workflow complete.";
+    case "Cancelled":
+      return "Run cancelled.";
+    case "Failed":
+      return "Run failed.";
+    case "Interrupted":
+      return "Run interrupted.";
+    default:
+      return null;
+  }
+}
+function N(e, t) {
+  return e !== t;
+}
+function le(e, t, s, a) {
   return e === t && s.role === "agent" && a && s.isStreaming === !0;
 }
-var oe = Object.defineProperty, le = Object.getOwnPropertyDescriptor, w = (e, t, s, a) => {
-  for (var n = a > 1 ? void 0 : a ? le(t, s) : t, r = e.length - 1, i; r >= 0; r--)
+var ce = Object.defineProperty, ue = Object.getOwnPropertyDescriptor, w = (e, t, s, a) => {
+  for (var n = a > 1 ? void 0 : a ? ue(t, s) : t, r = e.length - 1, i; r >= 0; r--)
     (i = e[r]) && (n = (a ? i(t, s, n) : i(n)) || n);
-  return a && n && oe(t, s, n), n;
+  return a && n && ce(t, s, n), n;
 };
 let m = class extends M {
   constructor() {
@@ -234,10 +251,10 @@ w([
 m = w([
   z("agentrun-tool-call")
 ], m);
-var ce = Object.defineProperty, ue = Object.getOwnPropertyDescriptor, $ = (e, t, s, a) => {
-  for (var n = a > 1 ? void 0 : a ? ue(t, s) : t, r = e.length - 1, i; r >= 0; r--)
+var pe = Object.defineProperty, de = Object.getOwnPropertyDescriptor, $ = (e, t, s, a) => {
+  for (var n = a > 1 ? void 0 : a ? de(t, s) : t, r = e.length - 1, i; r >= 0; r--)
     (i = e[r]) && (n = (a ? i(t, s, n) : i(n)) || n);
-  return a && n && ce(t, s, n), n;
+  return a && n && pe(t, s, n), n;
 };
 let _ = class extends M {
   constructor() {
@@ -252,7 +269,7 @@ let _ = class extends M {
     }
   }
   _renderMarkdown(e) {
-    const t = U(e), s = document.createElement("div");
+    const t = q(e), s = document.createElement("div");
     return s.className = "agent-content", s.innerHTML = t, c`${this._templateFromNode(s)}`;
   }
   _templateFromNode(e) {
@@ -440,10 +457,10 @@ $([
 _ = $([
   z("agentrun-chat-message")
 ], _);
-var pe = Object.defineProperty, de = Object.getOwnPropertyDescriptor, y = (e, t, s, a) => {
-  for (var n = a > 1 ? void 0 : a ? de(t, s) : t, r = e.length - 1, i; r >= 0; r--)
+var he = Object.defineProperty, ge = Object.getOwnPropertyDescriptor, y = (e, t, s, a) => {
+  for (var n = a > 1 ? void 0 : a ? ge(t, s) : t, r = e.length - 1, i; r >= 0; r--)
     (i = e[r]) && (n = (a ? i(t, s, n) : i(n)) || n);
-  return a && n && pe(t, s, n), n;
+  return a && n && he(t, s, n), n;
 };
 let g = class extends M {
   constructor() {
@@ -494,7 +511,7 @@ let g = class extends M {
                 .content=${t.content}
                 .timestamp=${t.timestamp}
                 .toolCalls=${t.toolCalls ?? []}
-                ?is-streaming=${re(s, e, t, this.isStreaming)}
+                ?is-streaming=${le(s, e, t, this.isStreaming)}
               ></agentrun-chat-message>
             `
     )}
@@ -629,7 +646,7 @@ y([
 g = y([
   z("agentrun-chat-panel")
 ], g);
-function he() {
+function me() {
   return {
     instance: null,
     loading: !0,
@@ -649,37 +666,37 @@ function he() {
     toolBatchOpen: !1
   };
 }
-function ge(e, t, s = {}) {
+function fe(e, t, s = {}) {
   const a = s.now ?? (() => (/* @__PURE__ */ new Date()).toISOString()), { event: n, data: r } = t;
   let i = e;
   switch ((n === "text.delta" || n === "tool.start") && (i = i.agentResponding ? i : { ...i, agentResponding: !0 }), (n === "text.delta" || n === "tool.start") && i.instance && (i.instance.status === "Failed" || i.instance.status === "Interrupted") && (i = { ...i, instance: { ...i.instance, status: "Running" } }), n) {
     case "text.delta":
-      return me(i, r, a);
+      return ve(i, r, a);
     case "tool.start":
-      return fe(i, r, a);
+      return ye(i, r, a);
     case "tool.args":
-      return ve(i, r);
-    case "tool.end":
-      return ye(i, r);
-    case "tool.result":
       return _e(i, r);
+    case "tool.end":
+      return be(i, r);
+    case "tool.result":
+      return we(i, r);
     case "step.started":
-      return be(i, r, a);
-    case "step.finished":
-      return we(i, r, a);
-    case "run.finished":
       return Se(i, r, a);
+    case "step.finished":
+      return Ce(i, r, a);
+    case "run.finished":
+      return ke(i, r, a);
     case "input.wait":
-      return Ce(i);
+      return xe(i);
     case "run.error":
-      return xe(i, r, a);
+      return $e(i, r, a);
     case "user.message":
       return i;
     default:
       return i;
   }
 }
-function x(e, t = {}) {
+function k(e, t = {}) {
   if (!e.streamingText) return e;
   const s = t.now ?? (() => (/* @__PURE__ */ new Date()).toISOString()), a = e.chatMessages.length - 1, n = e.chatMessages[a];
   if (!n || n.role !== "agent" || !n.isStreaming)
@@ -702,7 +719,7 @@ function x(e, t = {}) {
   ];
   return { ...e, chatMessages: r, streamingText: "" };
 }
-function me(e, t, s) {
+function ve(e, t, s) {
   if (typeof t.content != "string" || t.content === "") return e;
   const a = t.content, n = e.streamingText + a, r = e.chatMessages.length - 1, i = e.chatMessages[r];
   let o;
@@ -719,10 +736,10 @@ function me(e, t, s) {
     }
   ], { ...e, toolBatchOpen: !1, streamingText: n, chatMessages: o };
 }
-function fe(e, t, s) {
+function ye(e, t, s) {
   if (typeof t.toolCallId != "string" || typeof t.toolName != "string")
     return e;
-  const a = x(e, { now: s }), n = t.toolCallId, r = t.toolName, i = {
+  const a = k(e, { now: s }), n = t.toolCallId, r = t.toolName, i = {
     toolCallId: n,
     toolName: r,
     summary: r,
@@ -749,13 +766,13 @@ function fe(e, t, s) {
     }
   ], { ...a, chatMessages: u, toolBatchOpen: !0 };
 }
-function ve(e, t) {
+function _e(e, t) {
   const s = t.toolCallId, a = t.arguments, n = e.chatMessages.findLastIndex(
     (l) => l.role === "agent" && l.toolCalls?.some((u) => u.toolCallId === s)
   );
   if (n === -1) return e;
   const r = e.chatMessages[n], i = r.toolCalls.map(
-    (l) => l.toolCallId === s ? { ...l, arguments: a, summary: K(l.toolName, a) } : l
+    (l) => l.toolCallId === s ? { ...l, arguments: a, summary: J(l.toolName, a) } : l
   ), o = [
     ...e.chatMessages.slice(0, n),
     { ...r, toolCalls: i },
@@ -763,7 +780,7 @@ function ve(e, t) {
   ];
   return { ...e, chatMessages: o };
 }
-function ye(e, t) {
+function be(e, t) {
   const s = t.toolCallId, a = e.chatMessages.findLastIndex(
     (o) => o.role === "agent" && o.toolCalls?.some((l) => l.toolCallId === s)
   );
@@ -777,7 +794,7 @@ function ye(e, t) {
   ];
   return { ...e, chatMessages: i };
 }
-function _e(e, t) {
+function we(e, t) {
   if (typeof t.toolCallId != "string") return e;
   const s = t.toolCallId, a = t.result, n = a == null ? "" : typeof a == "string" ? a : JSON.stringify(a), r = n.startsWith("Tool '") && (n.includes("error") || n.includes("failed")), i = e.chatMessages.findLastIndex(
     (h) => h.role === "agent" && h.toolCalls?.some((S) => S.toolCallId === s)
@@ -796,8 +813,8 @@ function _e(e, t) {
   ];
   return { ...e, chatMessages: u };
 }
-function be(e, t, s) {
-  const a = x(e, { now: s }), n = t.stepId, r = t.stepName || n, i = A(a.instance, n, "Active"), o = [
+function Se(e, t, s) {
+  const a = k(e, { now: s }), n = t.stepId, r = t.stepName || n, i = O(a.instance, n, "Active"), o = [
     ...a.chatMessages,
     {
       role: "system",
@@ -807,8 +824,8 @@ function be(e, t, s) {
   ];
   return { ...a, instance: i, toolBatchOpen: !1, chatMessages: o };
 }
-function we(e, t, s) {
-  const a = x(e, { now: s }), n = t.stepId, r = typeof t.status == "string" ? t.status : "Complete", i = t.stepName || n, o = r === "Error" ? "failed" : "completed", l = A(a.instance, n, r), u = [
+function Ce(e, t, s) {
+  const a = k(e, { now: s }), n = t.stepId, r = typeof t.status == "string" ? t.status : "Complete", i = t.stepName || n, o = r === "Error" ? "failed" : "completed", l = O(a.instance, n, r), u = [
     ...a.chatMessages,
     {
       role: "system",
@@ -818,27 +835,34 @@ function we(e, t, s) {
   ];
   return { ...a, instance: l, chatMessages: u };
 }
-function Se(e, t, s) {
-  const a = x(e, { now: s });
+function ke(e, t, s) {
+  const a = k(e, { now: s });
   if (!a.instance) return a;
-  const n = a.instance.status, r = typeof t.status == "string" ? t.status : void 0, i = n === "Failed" || n === "Cancelled" ? n : r ?? "Completed", o = { ...a.instance, status: i };
-  if (i !== "Completed")
+  const n = a.instance.status, r = typeof t.status == "string" ? t.status : void 0;
+  if (r !== void 0 && A(r) === null)
+    return console.warn(
+      `run.finished: unrecognised status "${r}" (priorStatus=${n}) — preserving prior status, skipping chat append`
+    ), a;
+  const i = n === "Failed" || n === "Cancelled" ? n : r ?? "Completed", o = { ...a.instance, status: i }, l = A(i);
+  if (l === null)
     return { ...a, instance: o };
-  const l = [
+  if (!N(a.chatMessages.at(-1)?.content, l))
+    return { ...a, instance: o };
+  const u = [
     ...a.chatMessages,
     {
       role: "system",
-      content: "Workflow complete.",
+      content: l,
       timestamp: s()
     }
   ];
-  return { ...a, instance: o, chatMessages: l };
+  return { ...a, instance: o, chatMessages: u };
 }
-function Ce(e) {
-  return { ...x(e), agentResponding: !1 };
+function xe(e) {
+  return { ...k(e), agentResponding: !1 };
 }
-function xe(e, t, s) {
-  const a = x(e, { now: s }), n = t.message || "An error occurred.", r = a.instance ? { ...a.instance, status: "Failed" } : a.instance, i = [
+function $e(e, t, s) {
+  const a = k(e, { now: s }), n = t.message || "An error occurred.", r = a.instance ? { ...a.instance, status: "Failed" } : a.instance, i = [
     ...a.chatMessages,
     {
       role: "system",
@@ -848,49 +872,49 @@ function xe(e, t, s) {
   ];
   return { ...a, instance: r, chatMessages: i };
 }
-function A(e, t, s) {
+function O(e, t, s) {
   if (!e) return e;
   const a = e.steps.map(
     (n) => n.id === t ? { ...n, status: s } : n
   );
   return { ...e, steps: a };
 }
-async function ke(e, t) {
+async function Me(e, t) {
   let s;
   try {
-    s = await q(e, t);
+    s = await G(e, t);
   } catch {
     return { kind: "failed", status: 0 };
   }
   return s.ok ? { kind: "streaming", response: s } : s.status === 400 ? { kind: "providerError" } : { kind: "failed", status: s.status };
 }
-async function $e(e, t) {
+async function Ie(e, t) {
   let s;
   try {
-    s = await J(e, t);
+    s = await X(e, t);
   } catch {
     return { kind: "failed", status: 0 };
   }
   return s.ok ? { kind: "streaming", response: s } : s.status === 409 ? { kind: "notRetryable" } : { kind: "failed", status: s.status };
 }
-async function Me(e, t) {
+async function ze(e, t) {
   try {
-    return await G(e, t), { kind: "ok" };
+    return await Y(e, t), { kind: "ok" };
   } catch (s) {
     return (s instanceof Error ? s.message : String(s)).includes("409") ? { kind: "conflict" } : { kind: "failed", error: s };
   }
 }
-var Ie = Object.defineProperty, ze = Object.getOwnPropertyDescriptor, N = (e) => {
+var Pe = Object.defineProperty, Te = Object.getOwnPropertyDescriptor, D = (e) => {
   throw TypeError(e);
 }, P = (e, t, s, a) => {
-  for (var n = a > 1 ? void 0 : a ? ze(t, s) : t, r = e.length - 1, i; r >= 0; r--)
+  for (var n = a > 1 ? void 0 : a ? Te(t, s) : t, r = e.length - 1, i; r >= 0; r--)
     (i = e[r]) && (n = (a ? i(t, s, n) : i(n)) || n);
-  return a && n && Ie(t, s, n), n;
-}, O = (e, t, s) => t.has(e) || N("Cannot " + s), k = (e, t, s) => (O(e, t, "read from private field"), s ? s.call(e) : t.get(e)), Pe = (e, t, s) => t.has(e) ? N("Cannot add the same private member more than once") : t instanceof WeakSet ? t.add(e) : t.set(e, s), Te = (e, t, s, a) => (O(e, t, "write to private field"), t.set(e, s), s), v;
+  return a && n && Pe(t, s, n), n;
+}, B = (e, t, s) => t.has(e) || D("Cannot " + s), x = (e, t, s) => (B(e, t, "read from private field"), s ? s.call(e) : t.get(e)), Re = (e, t, s) => t.has(e) ? D("Cannot add the same private member more than once") : t instanceof WeakSet ? t.add(e) : t.set(e, s), Ee = (e, t, s, a) => (B(e, t, "write to private field"), t.set(e, s), s), v;
 let C = class extends M {
   constructor() {
-    super(), Pe(this, v), this._state = he(), this._popoverOpen = !1, this._popoverArtifactPath = null, this.consumeContext(W, (e) => {
-      Te(this, v, e);
+    super(), Re(this, v), this._state = me(), this._popoverOpen = !1, this._popoverArtifactPath = null, this.consumeContext(U, (e) => {
+      Ee(this, v, e);
     });
   }
   _patch(e) {
@@ -907,14 +931,14 @@ let C = class extends M {
   }
   async _loadData() {
     try {
-      const e = ee(window.location.pathname), t = await k(this, v)?.getLatestToken(), s = await X(e, t), a = await Y(s.workflowAlias, t), r = Z(a).find((l) => l.id === s.id)?.runNumber ?? 0;
+      const e = se(window.location.pathname), t = await x(this, v)?.getLatestToken(), s = await Q(e, t), a = await Z(s.workflowAlias, t), r = te(a).find((l) => l.id === s.id)?.runNumber ?? 0;
       let i = null;
       if (!this._state.streaming && this._state.chatMessages.length === 0) {
         const l = s.steps.find((u) => u.status === "Active" || u.status === "Error") ?? s.steps.findLast((u) => u.status === "Complete");
         if (l)
           try {
             const u = await T(s.id, l.id, t);
-            i = E(u);
+            i = R(u);
           } catch {
           }
       }
@@ -929,7 +953,7 @@ let C = class extends M {
   _navigateBack() {
     const e = this._state.instance;
     if (!e) return;
-    const t = te(window.location.pathname, e.workflowAlias);
+    const t = ae(window.location.pathname, e.workflowAlias);
     window.history.pushState({}, "", t);
   }
   async _onStepClick(e) {
@@ -946,8 +970,8 @@ let C = class extends M {
       }
       this._patch({ viewingStepId: e.id });
       try {
-        const t = await k(this, v)?.getLatestToken(), s = await T(this._state.instance.id, e.id, t);
-        this._patch({ historyMessages: E(s) });
+        const t = await x(this, v)?.getLatestToken(), s = await T(this._state.instance.id, e.id, t);
+        this._patch({ historyMessages: R(s) });
       } catch {
         this._patch({ historyMessages: [] });
       }
@@ -958,7 +982,7 @@ let C = class extends M {
   }
   async _onStartClick() {
     if (this._state.streaming || !this._state.instance) return;
-    const e = await k(this, v)?.getLatestToken(), t = await ke(this._state.instance.id, e);
+    const e = await x(this, v)?.getLatestToken(), t = await Me(this._state.instance.id, e);
     if (t.kind === "providerError") {
       this._patch({ providerError: !0 });
       return;
@@ -974,7 +998,7 @@ let C = class extends M {
     if (!(this._state.retrying || this._state.streaming || !e) && !(e.status !== "Failed" && e.status !== "Interrupted")) {
       this._patch({ retrying: !0, chatMessages: [] });
       try {
-        const t = await k(this, v)?.getLatestToken(), s = await $e(e.id, t);
+        const t = await x(this, v)?.getLatestToken(), s = await Ie(e.id, t);
         if (s.kind !== "streaming") {
           s.kind === "notRetryable" && this._patch({
             chatMessages: [{
@@ -1017,7 +1041,7 @@ let C = class extends M {
         }
       }
     } catch {
-      this._state = x(this._state), this._appendMessage({ role: "system", content: "Connection lost.", timestamp: this._now() });
+      this._state = k(this._state), this._appendMessage({ role: "system", content: "Connection lost.", timestamp: this._now() });
     } finally {
       this._patch({ streaming: !1, agentResponding: !1 }), await this._loadData(), this._checkStepCompletable();
     }
@@ -1038,7 +1062,7 @@ let C = class extends M {
     this._patch({ stepCompletable: !s && a && n });
   }
   _handleSseEvent(e, t) {
-    if (this._state = ge(this._state, { event: e, data: t }), e === "run.finished" && this._state.instance && this._state.instance.status === "Completed") {
+    if (this._state = fe(this._state, { event: e, data: t }), e === "run.finished" && this._state.instance && this._state.instance.status === "Completed") {
       const s = [...this._state.instance.steps].reverse().find((a) => a.status === "Complete" && a.writesTo && a.writesTo.length > 0);
       s && s.writesTo && (this._popoverArtifactPath = s.writesTo[s.writesTo.length - 1], this._popoverOpen = !0);
     }
@@ -1048,8 +1072,8 @@ let C = class extends M {
     if (!t) return !1;
     this._appendMessage({ role: "user", content: e, timestamp: this._now() });
     try {
-      const s = await k(this, v)?.getLatestToken();
-      return await Q(t.id, e, s), !0;
+      const s = await x(this, v)?.getLatestToken();
+      return await ee(t.id, e, s), !0;
     } catch {
       return this._appendMessage({
         role: "system",
@@ -1071,7 +1095,7 @@ let C = class extends M {
     const e = this._state.instance;
     if (!(this._state.cancelling || !e)) {
       try {
-        await j(this, {
+        await K(this, {
           headline: "Cancel workflow run",
           content: "Cancel this workflow run?",
           color: "danger",
@@ -1082,8 +1106,20 @@ let C = class extends M {
       }
       this._patch({ cancelling: !0 });
       try {
-        const t = await k(this, v)?.getLatestToken();
-        (await Me(e.id, t)).kind === "failed" && console.warn("Failed to cancel instance"), await this._loadData();
+        const t = await x(this, v)?.getLatestToken(), s = await ze(e.id, t);
+        if (s.kind === "failed")
+          console.warn("Failed to cancel instance");
+        else if (s.kind === "conflict")
+          console.warn("Cancel ignored — instance already in terminal state");
+        else if (s.kind === "ok") {
+          const a = this._state.chatMessages.at(-1)?.content;
+          N(a, "Run cancelled.") && this._appendMessage({
+            role: "system",
+            content: "Run cancelled.",
+            timestamp: this._now()
+          });
+        }
+        await this._loadData();
       } finally {
         this._patch({ cancelling: !1 });
       }
@@ -1105,19 +1141,19 @@ let C = class extends M {
                   ${t.status === "Error" ? "error" : ""}
                   ${t.status !== "Pending" ? "clickable" : ""}
                   ${this._state.selectedStepId === t.id ? "selected" : ""}"
-                aria-label="Step ${s + 1}: ${t.name} — ${R(t)}"
+                aria-label="Step ${s + 1}: ${t.name} — ${E(t)}"
                 @click=${t.status !== "Pending" ? () => this._onStepClick(t) : p}
                 aria-current=${t.status === "Active" ? "step" : p}
               >
                 <div class="step-icon-wrapper">
                   <uui-icon
-                    class="step-icon ${ae(t.status, this._state.agentResponding) ? "step-icon-spin" : ""}"
-                    name=${se(t.status)}
+                    class="step-icon ${ie(t.status, this._state.agentResponding) ? "step-icon-spin" : ""}"
+                    name=${ne(t.status)}
                   ></uui-icon>
                 </div>
                 <div class="step-text">
                   <span class="step-name">${t.name}</span>
-                  <span class="step-subtitle">${R(t)}</span>
+                  <span class="step-subtitle">${E(t)}</span>
                 </div>
               </li>
             `
@@ -1147,12 +1183,12 @@ let C = class extends M {
           and try refreshing the page.
         </div>
       `;
-    const t = e.instance, s = t.workflowMode !== "autonomous", a = t.status === "Completed" || t.status === "Failed" || t.status === "Cancelled", n = t.steps.some((f) => f.status === "Active"), r = t.status === "Pending" && !e.streaming, i = (t.status === "Failed" || t.status === "Interrupted") && !e.streaming, o = s && e.stepCompletable && !e.agentResponding, l = ne({
+    const t = e.instance, s = t.workflowMode !== "autonomous", a = t.status === "Completed" || t.status === "Failed" || t.status === "Cancelled", n = t.steps.some((f) => f.status === "Active"), r = t.status === "Pending" && !e.streaming, i = (t.status === "Failed" || t.status === "Interrupted") && !e.streaming, o = s && e.stepCompletable && !e.agentResponding, l = re({
       instanceStatus: t.status,
       hasActiveStep: n,
       isStreaming: e.streaming,
       hasPendingSteps: t.steps.some((f) => f.status === "Pending")
-    }), u = l && !o, h = t.status === "Running" || t.status === "Pending", { inputEnabled: S, inputPlaceholder: D } = ie({
+    }), u = l && !o, h = t.status === "Running" || t.status === "Pending", { inputEnabled: S, inputPlaceholder: L } = oe({
       instanceStatus: t.status,
       isInteractive: s,
       isTerminal: a,
@@ -1161,7 +1197,7 @@ let C = class extends M {
       isViewingStepHistory: e.viewingStepId !== null,
       agentResponding: e.agentResponding,
       isBetweenSteps: l
-    }), B = s && !e.streaming ? (f) => this._onSendAndStream(f) : (f) => this._onSendMessage(f), L = t.steps.every((f) => f.status === "Complete"), F = s && a && L, H = e.viewingStepId ? e.historyMessages : e.chatMessages, V = e.providerError ? c`<div class="main-placeholder">Configure an AI provider in Umbraco.AI before workflows can run.</div>` : c`
+    }), F = s && !e.streaming ? (f) => this._onSendAndStream(f) : (f) => this._onSendMessage(f), H = t.steps.every((f) => f.status === "Complete"), V = s && a && H, W = e.viewingStepId ? e.historyMessages : e.chatMessages, j = e.providerError ? c`<div class="main-placeholder">Configure an AI provider in Umbraco.AI before workflows can run.</div>` : c`
           <div class="main-panel">
             ${o ? c`
                   <div class="completion-banner">
@@ -1171,17 +1207,17 @@ let C = class extends M {
                     </uui-button>
                   </div>
                 ` : p}
-            ${F ? c`
+            ${V ? c`
                   <div class="completion-banner">
                     <span>Workflow complete — all steps finished</span>
                   </div>
                 ` : p}
             <agentrun-chat-panel
-              .messages=${H}
+              .messages=${W}
               ?is-streaming=${e.streaming && !e.viewingStepId}
               ?input-enabled=${S}
-              input-placeholder=${D}
-              @send-message=${B}
+              input-placeholder=${L}
+              @send-message=${F}
             ></agentrun-chat-panel>
           </div>`;
     return c`
@@ -1212,7 +1248,7 @@ let C = class extends M {
 
       <div class="detail-grid">
         ${this._renderStepProgress()}
-        ${V}
+        ${j}
       </div>
       <agentrun-artifact-popover
         .instanceId=${t.id}
@@ -1364,9 +1400,9 @@ P([
 C = P([
   z("agentrun-instance-detail")
 ], C);
-const Be = C;
+const Fe = C;
 export {
   C as AgentRunInstanceDetailElement,
-  Be as default
+  Fe as default
 };
-//# sourceMappingURL=agentrun-instance-detail.element-B1z9OojA.js.map
+//# sourceMappingURL=agentrun-instance-detail.element-C9FDJOy6.js.map

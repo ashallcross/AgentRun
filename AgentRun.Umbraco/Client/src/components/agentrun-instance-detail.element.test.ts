@@ -9,6 +9,8 @@ import {
   shouldAnimateStepIcon,
   shouldShowContinueButton,
   computeChatInputGate,
+  shouldAppendTerminalLine,
+  terminalChatLine,
 } from "../utils/instance-detail-helpers.js";
 import { numberAndSortInstances } from "../utils/instance-list-helpers.js";
 
@@ -323,6 +325,65 @@ describe("agentrun-instance-detail", () => {
       expect(shouldShowContinueButton({
         instanceStatus: "Running", hasActiveStep: false, isStreaming: false, hasPendingSteps: false,
       })).to.be.false;
+    });
+
+    // Story 10.13 AC3 / AC4: shared terminal chat-line table + dedupe guard.
+    // Both the SSE reducer and _onCancelClick consult this so a race or replay
+    // produces exactly one chat line per terminal transition.
+    it("terminalChatLine maps run statuses to canonical chat text", () => {
+      expect(terminalChatLine("Completed")).to.equal("Workflow complete.");
+      expect(terminalChatLine("Cancelled")).to.equal("Run cancelled.");
+      expect(terminalChatLine("Failed")).to.equal("Run failed.");
+      expect(terminalChatLine("Interrupted")).to.equal("Run interrupted.");
+      // Unknown status returns null — the reducer's out-of-order-finalisation
+      // defence preserves prior terminal state with no chat append.
+      expect(terminalChatLine("Pending")).to.be.null;
+      expect(terminalChatLine("Running")).to.be.null;
+      expect(terminalChatLine("")).to.be.null;
+    });
+
+    it("shouldAppendTerminalLine skips when the last message already matches", () => {
+      expect(shouldAppendTerminalLine(undefined, "Run cancelled.")).to.be.true;
+      expect(shouldAppendTerminalLine("Workflow complete.", "Run cancelled.")).to.be.true;
+      expect(shouldAppendTerminalLine("Run cancelled.", "Run cancelled.")).to.be.false;
+      expect(shouldAppendTerminalLine("Run failed.", "Run failed.")).to.be.false;
+    });
+
+    // Story 10.13 AC3 / Failure & Edge line 98: the _onCancelClick dispatch
+    // table must append "Run cancelled." only on kind === "ok". conflict (409 —
+    // instance already in a non-cancellable state) and failed (non-2xx with no
+    // state transition) must stay silent. Mirrors the branch in
+    // agentrun-instance-detail.element.ts:_onCancelClick; keeping the predicate
+    // exposed in the test lets us pin the invariant without mounting the
+    // component (Bellissima import-map dependency documented elsewhere).
+    it("_onCancelClick chat-append only fires on kind === 'ok' (AC3 dispatch table)", () => {
+      // Produces (appendChat, logWarn) tuple — same outcome as the branches in
+      // the handler at agentrun-instance-detail.element.ts:482-500.
+      const dispatchCancelResult = (
+        kind: "ok" | "conflict" | "failed",
+        lastChatContent: string | undefined,
+      ): { appendChat: boolean; logWarn: boolean } => {
+        if (kind === "failed") return { appendChat: false, logWarn: true };
+        if (kind === "ok") {
+          return {
+            appendChat: shouldAppendTerminalLine(lastChatContent, "Run cancelled."),
+            logWarn: false,
+          };
+        }
+        // conflict — chat stays silent ("Run cancelled." would be a lie about
+        // a non-cancellable terminal state) but a console.warn now fires for
+        // diagnostic symmetry with the failed branch (code-review patch).
+        return { appendChat: false, logWarn: true };
+      };
+
+      expect(dispatchCancelResult("ok", undefined)).to.deep.equal({ appendChat: true, logWarn: false });
+      // Dedupe guard still applies — AC4 reducer may have optimistically appended.
+      expect(dispatchCancelResult("ok", "Run cancelled.")).to.deep.equal({ appendChat: false, logWarn: false });
+      // conflict branch — silent chat, diagnostic warn for marketplace triage.
+      expect(dispatchCancelResult("conflict", undefined)).to.deep.equal({ appendChat: false, logWarn: true });
+      expect(dispatchCancelResult("conflict", "Run cancelled.")).to.deep.equal({ appendChat: false, logWarn: true });
+      // failed branch — console.warn, no chat append.
+      expect(dispatchCancelResult("failed", undefined)).to.deep.equal({ appendChat: false, logWarn: true });
     });
 
     // Action buttons hidden for terminal states

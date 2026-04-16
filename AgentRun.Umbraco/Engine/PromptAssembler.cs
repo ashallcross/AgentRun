@@ -37,7 +37,13 @@ public sealed class PromptAssembler : IPromptAssembler
 
         if (!File.Exists(agentPath))
         {
-            throw new AgentFileNotFoundException(agentPath);
+            // Pass the workflow-relative path (what the user wrote in workflow.yaml)
+            // — not the canonical absolute path. The canonical path is logged via
+            // the StepExecutor catch-block ILogger.LogError(ex, ...) for ops triage.
+            _logger.LogError(
+                "Agent file not found for step {StepId}. Resolved path: {AgentPath}",
+                context.Step.Id, agentPath);
+            throw new AgentFileNotFoundException(context.Step.Agent);
         }
 
         var builder = new StringBuilder();

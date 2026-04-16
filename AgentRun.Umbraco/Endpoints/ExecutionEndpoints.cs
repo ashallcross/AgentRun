@@ -277,14 +277,17 @@ public class ExecutionEndpoints : ControllerBase
                 }
                 catch (InvalidOperationException ex)
                 {
+                    // Story 10.13 AC5: do not echo ex.Message — it can leak file
+                    // paths or implementation detail to admins/marketplace users.
+                    // Full diagnostic context (including stack) is on the log.
                     _logger.LogError(ex,
-                        "Retry failed: could not wipe conversation history for {InstanceId}/{StepId}",
-                        instance.InstanceId, targetStep.Id);
+                        "Retry failed: could not wipe conversation history for {WorkflowAlias}/{InstanceId}/{StepId}",
+                        instance.WorkflowAlias, instance.InstanceId, targetStep.Id);
                     _activeInstanceRegistry.UnregisterInstance(id);
                     return Conflict(new ErrorResponse
                     {
                         Error = "retry_recovery_failed",
-                        Message = $"Failed to prepare conversation for retry: {ex.Message}"
+                        Message = "Failed to prepare conversation for retry. Check server logs for details."
                     });
                 }
 
@@ -486,7 +489,14 @@ public class ExecutionEndpoints : ControllerBase
 
                 try
                 {
-                    await emitter.EmitRunErrorAsync("execution_error", ex.Message, CancellationToken.None);
+                    // Story 10.13 AC5: classified-LLM messages flow through their
+                    // own emit path with safe text (LlmErrorClassifier). Anything
+                    // reaching the catch-all here is unclassified and must not
+                    // surface raw exception text to the client.
+                    await emitter.EmitRunErrorAsync(
+                        "execution_error",
+                        "Workflow execution failed. Check server logs for details.",
+                        CancellationToken.None);
                 }
                 catch (Exception sseEx)
                 {

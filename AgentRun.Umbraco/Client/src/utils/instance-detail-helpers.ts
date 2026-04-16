@@ -151,6 +151,37 @@ export function computeChatInputGate(input: ChatInputGateInput): ChatInputGate {
   return { inputEnabled, inputPlaceholder };
 }
 
+// Story 10.13 AC3 + AC4: shared chat-line text for terminal run states. Both
+// the SSE reducer (run.finished payload) and the Pending-cancel handler call
+// this so the dedupe guard in `shouldAppendTerminalLine` compares like-with-like.
+// Returns null for statuses where no chat append is appropriate (preserves the
+// out-of-order-finalisation defence in the reducer).
+export function terminalChatLine(status: string): string | null {
+  switch (status) {
+    case "Completed":
+      return "Workflow complete.";
+    case "Cancelled":
+      return "Run cancelled.";
+    case "Failed":
+      return "Run failed.";
+    case "Interrupted":
+      return "Run interrupted.";
+    default:
+      return null;
+  }
+}
+
+// Idempotency guard for AC3/AC4. Two paths can both append the same terminal
+// chat line: (a) the SSE reducer when run.finished arrives, (b) _onCancelClick
+// when the user cancels a Pending instance. Without this guard, racing the two
+// produces a duplicate line.
+export function shouldAppendTerminalLine(
+  lastMessageContent: string | undefined,
+  candidate: string,
+): boolean {
+  return lastMessageContent !== candidate;
+}
+
 // Single source of truth for the chat-panel block-cursor visibility. Called
 // from both the Lit template in agentrun-chat-panel.element.ts and its test
 // so the predicate cannot drift — Track F / AC3 depends on this gating the

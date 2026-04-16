@@ -1,5 +1,6 @@
 import type { ChatMessage, InstanceDetailResponse, StepDetailResponse, ToolCallData } from "../api/types.js";
 import { extractToolSummary } from "./tool-helpers.js";
+import { shouldAppendTerminalLine, terminalChatLine } from "./instance-detail-helpers.js";
 import type { InstanceDetailState } from "./instance-detail-store.js";
 
 export type SseEvent = {
@@ -344,22 +345,39 @@ function applyRunFinished(
   // non-Completed status (e.g. "Cancelled") on user cancel — honour it.
   const priorStatus = finalised.instance.status;
   const payloadStatus = typeof data.status === "string" ? data.status : undefined;
+  // Story 10.13 AC4 + code-review patch: an unrecognised payload status must
+  // never advance the badge. Pre-fix this only preserved when prior was Failed
+  // or Cancelled — a Running instance receiving run.finished("Pending") would
+  // silently regress the badge to "Pending". The out-of-order-finalisation
+  // defence is the *whole* point of this branch: prior state wins regardless
+  // of whether it's terminal or in-flight when the payload is meaningless.
+  if (payloadStatus !== undefined && terminalChatLine(payloadStatus) === null) {
+    console.warn(
+      `run.finished: unrecognised status "${payloadStatus}" (priorStatus=${priorStatus}) — preserving prior status, skipping chat append`,
+    );
+    return finalised;
+  }
   const nextStatus =
     priorStatus === "Failed" || priorStatus === "Cancelled"
       ? priorStatus
       : payloadStatus ?? "Completed";
   const instance = { ...finalised.instance, status: nextStatus };
-  // Only announce "Workflow complete." when the run actually completed —
-  // appending it after a cancel produces the misleading two-line render
-  // "Workflow complete. / Run cancelled." (manual E2E 2026-04-15).
-  if (nextStatus !== "Completed") {
+  const chatLine = terminalChatLine(nextStatus);
+  if (chatLine === null) {
+    return { ...finalised, instance };
+  }
+  // Idempotency: SSE replay after reconnect can re-fire run.finished, and the
+  // _onCancelClick AC3 path can append "Run cancelled." before the backend's
+  // run.finished arrives. Single-line dedupe handles both without structured
+  // tracking — race outcome is identical, only one line ever lands.
+  if (!shouldAppendTerminalLine(finalised.chatMessages.at(-1)?.content, chatLine)) {
     return { ...finalised, instance };
   }
   const chatMessages = [
     ...finalised.chatMessages,
     {
       role: "system" as const,
-      content: "Workflow complete.",
+      content: chatLine,
       timestamp: now(),
     },
   ];

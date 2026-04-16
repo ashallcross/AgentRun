@@ -27,6 +27,7 @@ import {
   shouldAnimateStepIcon,
   shouldShowContinueButton,
   computeChatInputGate,
+  shouldAppendTerminalLine,
 } from "../utils/instance-detail-helpers.js";
 import { numberAndSortInstances } from "../utils/instance-list-helpers.js";
 import {
@@ -480,6 +481,30 @@ export class AgentRunInstanceDetailElement extends UmbLitElement {
       const result = await cancelInstanceAction(instance.id, token);
       if (result.kind === "failed") {
         console.warn("Failed to cancel instance");
+      } else if (result.kind === "conflict") {
+        // Story 10.13 code-review patch: 409 means the instance was already in
+        // a terminal state by the time the cancel POST landed. Spec keeps chat
+        // intentionally silent (no "Run cancelled." lie about state), but a
+        // diagnostic console.warn pays off the first time a marketplace user
+        // reports "Cancel did nothing" — symmetry with the failed branch above.
+        // _loadData() below refreshes the badge to the actual terminal state.
+        console.warn("Cancel ignored — instance already in terminal state");
+      } else if (result.kind === "ok") {
+        // Story 10.13 AC3: Pending-cancel never reaches the SSE reducer (no
+        // active stream to fire run.finished into) so the chat would otherwise
+        // stay silent on a successful cancel. Mid-run cancel ALSO hits this
+        // path because the POST returns 200 — the dedupe guard ensures a
+        // racing run.finished(Cancelled) from the reducer can't double-stamp.
+        // Conflict (409) is intentionally silent: the instance was already in a
+        // non-cancellable terminal state, so "Run cancelled." would be a lie.
+        const last = this._state.chatMessages.at(-1)?.content;
+        if (shouldAppendTerminalLine(last, "Run cancelled.")) {
+          this._appendMessage({
+            role: "system",
+            content: "Run cancelled.",
+            timestamp: this._now(),
+          });
+        }
       }
       // Always reload so the view reflects the current server state regardless
       // of whether the POST won the race, lost the race, or was a no-op.

@@ -1,6 +1,7 @@
 using System.Threading.Channels;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -23,6 +24,7 @@ public class ExecutionEndpointsTests
     private IWorkflowOrchestrator _orchestrator = null!;
     private IProfileResolver _profileResolver = null!;
     private IWorkflowRegistry _workflowRegistry = null!;
+    private ILogger<ExecutionEndpoints> _logger = null!;
     private ExecutionEndpoints _endpoints = null!;
 
     [SetUp]
@@ -34,6 +36,7 @@ public class ExecutionEndpointsTests
         _orchestrator = Substitute.For<IWorkflowOrchestrator>();
         _profileResolver = Substitute.For<IProfileResolver>();
         _workflowRegistry = Substitute.For<IWorkflowRegistry>();
+        _logger = Substitute.For<ILogger<ExecutionEndpoints>>();
 
         _endpoints = new ExecutionEndpoints(
             _instanceManager,
@@ -43,7 +46,7 @@ public class ExecutionEndpointsTests
             _conversationStore,
             _activeInstanceRegistry,
             Options.Create(new AgentRunOptions()),
-            NullLogger<ExecutionEndpoints>.Instance,
+            _logger,
             NullLoggerFactory.Instance);
 
         // Story 10.1: default TryClaim to succeed so existing pre-10.1 tests
@@ -316,6 +319,58 @@ public class ExecutionEndpointsTests
         // so the disconnect branch must not fire.
         await _instanceManager.DidNotReceive().SetInstanceStatusAsync(
             Arg.Any<string>(), Arg.Any<string>(), InstanceStatus.Interrupted, Arg.Any<CancellationToken>());
+    }
+
+    // Story 10.13 AC5: catch-all in ExecuteSseAsync emits a fixed sanitised SSE
+    // execution_error message; the raw exception text MUST NOT reach the wire,
+    // and the full exception MUST land in the structured server log.
+    [Test]
+    public async Task Start_ExecutionFailure_EmitsSanitisedSseErrorAndLogsFullException()
+    {
+        AttachHttpContext();
+
+        var pending = MakeInstance(InstanceStatus.Pending);
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>())
+            .Returns(pending, MakeInstance(InstanceStatus.Running));
+        _instanceManager.SetInstanceStatusAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<InstanceStatus>(), Arg.Any<CancellationToken>())
+            .Returns(pending);
+        _profileResolver.HasConfiguredProviderAsync(Arg.Any<WorkflowDefinition?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        // Sentinel string mimics what an unsanitised ex.Message could leak —
+        // a filesystem path. The pre-fix code interpolated this directly into
+        // the SSE payload. Post-fix it must only appear in the log.
+        const string sentinelLeak = "/private/var/folders/secret-path/conversation.jsonl";
+        _orchestrator
+            .ExecuteNextStepAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<ISseEventEmitter>(), Arg.Any<CancellationToken>())
+            .Returns(_ => throw new InvalidOperationException(sentinelLeak));
+
+        await _endpoints.StartInstance("inst-001", CancellationToken.None);
+
+        // Pin that the catch block actually fired — without this, throw-stub silently
+        // not invoking would let the sanitisation assertions pass vacuously.
+        await _orchestrator.Received(1).ExecuteNextStepAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<ISseEventEmitter>(), Arg.Any<CancellationToken>());
+
+        // Read back what the SSE emitter wrote into Response.Body.
+        var body = (MemoryStream)_endpoints.ControllerContext.HttpContext.Response.Body;
+        body.Position = 0;
+        var responseText = new StreamReader(body).ReadToEnd();
+
+        Assert.That(responseText, Does.Contain("Workflow execution failed. Check server logs for details."));
+        Assert.That(responseText, Does.Not.Contain(sentinelLeak));
+        Assert.That(responseText, Does.Contain("execution_error"));
+
+        // Logger received the full exception with structured fields.
+        _logger.Received(1).Log(
+            LogLevel.Error,
+            Arg.Any<EventId>(),
+            Arg.Is<object>(o =>
+                o.ToString()!.Contains("inst-001")
+                && o.ToString()!.Contains("test-wf")),
+            Arg.Is<Exception>(e => e is InvalidOperationException
+                && e.Message == sentinelLeak),
+            Arg.Any<Func<object, Exception?, string>>());
     }
 
     // ---------------- Story 10.9: SSE disconnect resilience ---------------- //
@@ -634,7 +689,21 @@ public class ExecutionEndpointsTests
         var conflict = (ConflictObjectResult)result;
         var error = conflict.Value as ErrorResponse;
         Assert.That(error?.Error, Is.EqualTo("retry_recovery_failed"));
-        Assert.That(error?.Message, Does.Contain("archive conversation file collision"));
+        // Story 10.13 AC5: client message is the fixed sanitised prose. The
+        // raw exception text ("archive conversation file collision") MUST NOT
+        // leak to the response — admins read this in the UI.
+        Assert.That(error?.Message, Is.EqualTo("Failed to prepare conversation for retry. Check server logs for details."));
+        Assert.That(error!.Message, Does.Not.Contain("archive conversation file collision"));
+
+        // Logger MUST have received the full exception (Message, stack, inner) so
+        // diagnostic detail isn't lost just because we sanitised the wire.
+        _logger.Received(1).Log(
+            LogLevel.Error,
+            Arg.Any<EventId>(),
+            Arg.Any<object>(),
+            Arg.Is<Exception>(e => e is InvalidOperationException
+                && e.Message.Contains("archive conversation file collision")),
+            Arg.Any<Func<object, Exception?, string>>());
 
         // MUST NOT have proceeded to step reset or status transition after a failed wipe.
         await _instanceManager.DidNotReceive().UpdateStepStatusAsync(

@@ -42,7 +42,7 @@ const ot = [
     type: "sectionView",
     alias: "AgentRun.Umbraco.SectionView.Dashboard",
     name: "Agent Workflows Dashboard View",
-    element: () => import("./agentrun-dashboard.element-BVVvTu4r.js"),
+    element: () => import("./agentrun-dashboard.element-siPAiwEJ.js"),
     meta: {
       label: "Overview",
       pathname: "overview",
@@ -751,4 +751,4 @@ export {
   pt as r,
   N as s
 };
-//# sourceMappingURL=index-QeZdEPr6.js.map
+//# sourceMappingURL=index-B203nx70.js.map

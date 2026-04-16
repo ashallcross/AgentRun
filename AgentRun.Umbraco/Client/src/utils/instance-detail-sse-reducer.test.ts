@@ -279,6 +279,125 @@ describe("instance-detail-sse-reducer", () => {
       }
     });
 
+    // Story 10.13 AC4: positive terminal-state confirmation in chat. Pre-fix the
+    // reducer just stayed silent on non-Completed terminations, leaving the user
+    // to infer outcome from the badge alone.
+    it("run.finished with Cancelled payload appends 'Run cancelled.'", () => {
+      const state = withInstance();
+      const next = reduceSseEvent(
+        state,
+        { event: "run.finished", data: { status: "Cancelled" } },
+        { now },
+      );
+      expect(next.instance!.status).to.equal("Cancelled");
+      expect(next.chatMessages.at(-1)!.content).to.equal("Run cancelled.");
+      expect(next.chatMessages.at(-1)!.role).to.equal("system");
+    });
+
+    it("run.finished with Failed payload appends 'Run failed.'", () => {
+      const state = withInstance();
+      const next = reduceSseEvent(
+        state,
+        { event: "run.finished", data: { status: "Failed" } },
+        { now },
+      );
+      expect(next.instance!.status).to.equal("Failed");
+      expect(next.chatMessages.at(-1)!.content).to.equal("Run failed.");
+    });
+
+    it("run.finished with Interrupted payload appends 'Run interrupted.'", () => {
+      const state = withInstance({ instance: instance({ status: "Interrupted" }) });
+      const next = reduceSseEvent(
+        state,
+        { event: "run.finished", data: { status: "Interrupted" } },
+        { now },
+      );
+      expect(next.instance!.status).to.equal("Interrupted");
+      expect(next.chatMessages.at(-1)!.content).to.equal("Run interrupted.");
+    });
+
+    it("run.finished with unrecognised status is silent and logs a diagnostic Warn (AC4 + Failure line 99)", () => {
+      const state = withInstance({ instance: instance({ status: "Cancelled" }) });
+      const before = state.chatMessages.length;
+      const originalWarn = console.warn;
+      const warnCalls: unknown[][] = [];
+      console.warn = (...args: unknown[]) => warnCalls.push(args);
+      try {
+        const next = reduceSseEvent(
+          state,
+          { event: "run.finished", data: { status: "Pending" } },
+          { now },
+        );
+        // Prior terminal state (Cancelled) is preserved for the badge,
+        expect(next.instance!.status).to.equal("Cancelled");
+        // but no chat line leaks — the payload was unrecognised, so we do not
+        // lie about state by re-stamping the prior terminal's line.
+        expect(next.chatMessages.length).to.equal(before);
+        // Diagnostic trail per Failure & Edge Cases line 99.
+        expect(warnCalls.length).to.equal(1);
+        expect(String(warnCalls[0][0])).to.include("Pending");
+      } finally {
+        console.warn = originalWarn;
+      }
+    });
+
+    it("run.finished with unrecognised status preserves prior NON-terminal status (AC4 patch — out-of-order defence)", () => {
+      // Code-review patch: pre-fix the "preserve prior" guard only fired when prior
+      // was Failed or Cancelled. A Running instance receiving run.finished("Pending")
+      // would silently regress the badge to "Pending". The defence must apply
+      // regardless of whether prior was terminal — the whole point is "ignore
+      // meaningless payloads".
+      const state = withInstance({ instance: instance({ status: "Running" }) });
+      const before = state.chatMessages.length;
+      const originalWarn = console.warn;
+      const warnCalls: unknown[][] = [];
+      console.warn = (...args: unknown[]) => warnCalls.push(args);
+      try {
+        const next = reduceSseEvent(
+          state,
+          { event: "run.finished", data: { status: "Pending" } },
+          { now },
+        );
+        expect(next.instance!.status).to.equal("Running");
+        expect(next.chatMessages.length).to.equal(before);
+        expect(warnCalls.length).to.equal(1);
+      } finally {
+        console.warn = originalWarn;
+      }
+    });
+
+    it("run.finished replay does NOT double-append the terminal chat line (AC4 idempotency)", () => {
+      const state = withInstance();
+      const first = reduceSseEvent(
+        state,
+        { event: "run.finished", data: { status: "Cancelled" } },
+        { now },
+      );
+      const lengthAfterFirst = first.chatMessages.length;
+      const second = reduceSseEvent(
+        first,
+        { event: "run.finished", data: { status: "Cancelled" } },
+        { now },
+      );
+      expect(second.chatMessages.length).to.equal(lengthAfterFirst);
+      expect(second.chatMessages.at(-1)!.content).to.equal("Run cancelled.");
+    });
+
+    it("run.finished after _onCancelClick AC3 append does NOT duplicate 'Run cancelled.'", () => {
+      // Models the race the AC3 dedupe guard exists for: user clicks Cancel on
+      // a mid-run instance, the handler appends "Run cancelled." optimistically,
+      // then the backend's run.finished(Cancelled) lands a tick later.
+      const state = withInstance({
+        chatMessages: [{ role: "system", content: "Run cancelled.", timestamp: FIXED_NOW }],
+      });
+      const next = reduceSseEvent(
+        state,
+        { event: "run.finished", data: { status: "Cancelled" } },
+        { now },
+      );
+      expect(next.chatMessages.length).to.equal(1);
+    });
+
     it("run.error marks instance Failed and emits the provided error message", () => {
       const state = withInstance();
       const next = reduceSseEvent(

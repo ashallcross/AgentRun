@@ -212,6 +212,11 @@ public class PromptAssemblerTests
             async () => await _assembler.AssemblePromptAsync(context, CancellationToken.None));
 
         Assert.That(ex!.Message, Does.Contain("agents/nonexistent.md"));
+        // Story 10.13 follow-up (manual E2E 2026-04-16): exception message must
+        // not leak the absolute filesystem path to the chat panel via the
+        // run.error SSE payload. Full canonical path stays in the server log.
+        Assert.That(ex.Message, Does.Not.Contain(context.WorkflowFolderPath),
+            "AgentFileNotFoundException.Message must not contain the absolute workflow folder path");
     }
 
     [Test]
