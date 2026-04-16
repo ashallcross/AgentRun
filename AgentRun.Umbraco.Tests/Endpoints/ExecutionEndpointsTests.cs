@@ -1,0 +1,998 @@
+using System.Threading.Channels;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using NSubstitute;
+using AgentRun.Umbraco.Configuration;
+using AgentRun.Umbraco.Endpoints;
+using AgentRun.Umbraco.Engine;
+using AgentRun.Umbraco.Engine.Events;
+using AgentRun.Umbraco.Instances;
+using AgentRun.Umbraco.Models.ApiModels;
+using AgentRun.Umbraco.Workflows;
+
+namespace AgentRun.Umbraco.Tests.Endpoints;
+
+[TestFixture]
+public class ExecutionEndpointsTests
+{
+    private IInstanceManager _instanceManager = null!;
+    private IConversationStore _conversationStore = null!;
+    private IActiveInstanceRegistry _activeInstanceRegistry = null!;
+    private IWorkflowOrchestrator _orchestrator = null!;
+    private IProfileResolver _profileResolver = null!;
+    private IWorkflowRegistry _workflowRegistry = null!;
+    private ILogger<ExecutionEndpoints> _logger = null!;
+    private ExecutionEndpoints _endpoints = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        _instanceManager = Substitute.For<IInstanceManager>();
+        _conversationStore = Substitute.For<IConversationStore>();
+        _activeInstanceRegistry = Substitute.For<IActiveInstanceRegistry>();
+        _orchestrator = Substitute.For<IWorkflowOrchestrator>();
+        _profileResolver = Substitute.For<IProfileResolver>();
+        _workflowRegistry = Substitute.For<IWorkflowRegistry>();
+        _logger = Substitute.For<ILogger<ExecutionEndpoints>>();
+
+        _endpoints = new ExecutionEndpoints(
+            _instanceManager,
+            _profileResolver,
+            _orchestrator,
+            _workflowRegistry,
+            _conversationStore,
+            _activeInstanceRegistry,
+            Options.Create(new AgentRunOptions()),
+            _logger,
+            NullLoggerFactory.Instance);
+
+        // Story 10.1: default TryClaim to succeed so existing pre-10.1 tests
+        // reach their intended code paths. Tests that exercise the contention
+        // path override this with a false return.
+        //
+        // Limitation (Story 10.1 review): this default means happy-path tests
+        // implicitly acquire a claim. Because the orchestrator is mocked, its
+        // real finally-block `UnregisterInstance` never fires — so happy-path
+        // release is NOT verifiable at this unit-test layer. The AC12
+        // integration test in InstanceEndpointsTests
+        // (`CancelInstance_SerialisesAgainstConcurrentOrchestratorMutation`)
+        // exercises a real InstanceManager. Explicit release assertions on
+        // error paths (below) guard the endpoint-side `catch`-block release
+        // logic.
+        _activeInstanceRegistry.TryClaim(Arg.Any<string>()).Returns(true);
+    }
+
+    private void AttachHttpContext()
+    {
+        var httpContext = new DefaultHttpContext();
+        httpContext.Response.Body = new MemoryStream();
+        _endpoints.ControllerContext = new Microsoft.AspNetCore.Mvc.ControllerContext
+        {
+            HttpContext = httpContext
+        };
+    }
+
+    [Test]
+    public void SendMessage_NoRunningInstance_Returns409()
+    {
+        _activeInstanceRegistry.GetMessageWriter("inst-001").Returns((ChannelWriter<string>?)null);
+
+        var result = _endpoints.SendMessage("inst-001", new SendMessageRequest { Message = "Hello" });
+
+        Assert.That(result, Is.InstanceOf<ConflictObjectResult>());
+        var conflict = (ConflictObjectResult)result;
+        var error = conflict.Value as ErrorResponse;
+        Assert.That(error?.Error, Is.EqualTo("not_running"));
+    }
+
+    [Test]
+    public void SendMessage_EmptyMessage_Returns400()
+    {
+        var result = _endpoints.SendMessage("inst-001", new SendMessageRequest { Message = "   " });
+
+        Assert.That(result, Is.InstanceOf<BadRequestObjectResult>());
+        var badRequest = (BadRequestObjectResult)result;
+        var error = badRequest.Value as ErrorResponse;
+        Assert.That(error?.Error, Is.EqualTo("empty_message"));
+    }
+
+    [Test]
+    public async Task RetryInstance_NonFailedInstance_Returns409()
+    {
+        var instance = new InstanceState
+        {
+            InstanceId = "inst-001",
+            WorkflowAlias = "test-wf",
+            Status = InstanceStatus.Running,
+            Steps = [new StepState { Id = "step-0", Status = StepStatus.Active }]
+        };
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>()).Returns(instance);
+
+        var result = await _endpoints.RetryInstance("inst-001", CancellationToken.None);
+
+        Assert.That(result, Is.InstanceOf<ConflictObjectResult>());
+        var conflict = (ConflictObjectResult)result;
+        var error = conflict.Value as ErrorResponse;
+        Assert.That(error?.Error, Is.EqualTo("invalid_state"));
+    }
+
+    // Story 10.10 locked decision 5: Cancelled is NOT retry-eligible — the user
+    // explicitly stopped the run, the correct affordance is Delete. Guard against
+    // future drift where Cancelled gets added to Retry's accepted statuses or to
+    // the step-discovery match list.
+    [Test]
+    public async Task RetryInstance_CancelledInstance_Returns409()
+    {
+        var instance = new InstanceState
+        {
+            InstanceId = "inst-001",
+            WorkflowAlias = "test-wf",
+            Status = InstanceStatus.Cancelled,
+            Steps =
+            [
+                new StepState { Id = "step-0", Status = StepStatus.Complete },
+                new StepState { Id = "step-1", Status = StepStatus.Cancelled }
+            ]
+        };
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>()).Returns(instance);
+
+        var result = await _endpoints.RetryInstance("inst-001", CancellationToken.None);
+
+        Assert.That(result, Is.InstanceOf<ConflictObjectResult>());
+        var conflict = (ConflictObjectResult)result;
+        var error = conflict.Value as ErrorResponse;
+        Assert.That(error?.Error, Is.EqualTo("invalid_state"));
+
+        // Step-discovery must not have run — Retry's step-status match list is
+        // Error|Active only, never Cancelled.
+        await _instanceManager.DidNotReceive().UpdateStepStatusAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<StepStatus>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RetryInstance_NonExistentInstance_Returns404()
+    {
+        _instanceManager.FindInstanceAsync("nonexistent", Arg.Any<CancellationToken>()).Returns((InstanceState?)null);
+
+        var result = await _endpoints.RetryInstance("nonexistent", CancellationToken.None);
+
+        Assert.That(result, Is.InstanceOf<NotFoundObjectResult>());
+    }
+
+    [Test]
+    public async Task RetryInstance_FailedInstance_WipesConversationAndResetsStep()
+    {
+        var instance = new InstanceState
+        {
+            InstanceId = "inst-001",
+            WorkflowAlias = "test-wf",
+            Status = InstanceStatus.Failed,
+            Steps =
+            [
+                new StepState { Id = "step-0", Status = StepStatus.Complete },
+                new StepState { Id = "step-1", Status = StepStatus.Error }
+            ],
+            CurrentStepIndex = 1
+        };
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>()).Returns(instance);
+        _instanceManager.UpdateStepStatusAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<StepStatus>(), Arg.Any<CancellationToken>())
+            .Returns(instance);
+        _instanceManager.SetInstanceStatusAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<InstanceStatus>(), Arg.Any<CancellationToken>())
+            .Returns(instance);
+
+        // The endpoint calls ExecuteSseAsync which needs HttpResponse — it will throw because
+        // we don't have a real HTTP context. Verify the state changes were called before the throw.
+        try
+        {
+            await _endpoints.RetryInstance("inst-001", CancellationToken.None);
+        }
+        catch (NullReferenceException)
+        {
+            // Expected — no real HttpResponse in test context
+        }
+
+        // Story 10.6: Failed retries wipe the conversation (archive + fresh
+        // restart), replacing the pre-10.6 truncate-last-assistant-entry path.
+        await _conversationStore.Received(1).WipeHistoryAsync(
+            "test-wf", "inst-001", "step-1", Arg.Any<CancellationToken>());
+        await _conversationStore.DidNotReceive().TruncateLastAssistantEntryAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+
+        // Verify step was reset to Pending
+        await _instanceManager.Received(1).UpdateStepStatusAsync(
+            "test-wf", "inst-001", 1, StepStatus.Pending, Arg.Any<CancellationToken>());
+
+        // Verify instance was set to Running
+        await _instanceManager.Received(1).SetInstanceStatusAsync(
+            "test-wf", "inst-001", InstanceStatus.Running, Arg.Any<CancellationToken>());
+
+        // Story 10.1 leak guard: ExecuteSseAsync threw (NullReferenceException —
+        // no HttpContext). The endpoint's outer catch must have released the
+        // claim before rethrowing, otherwise a retry-error path would leak the
+        // slot permanently.
+        _activeInstanceRegistry.Received(1).UnregisterInstance("inst-001");
+    }
+
+    [Test]
+    public void SendMessage_RunningInstance_WritesToChannelAndReturns200()
+    {
+        var channel = Channel.CreateUnbounded<string>();
+        _activeInstanceRegistry.GetMessageWriter("inst-001").Returns(channel.Writer);
+
+        var result = _endpoints.SendMessage("inst-001", new SendMessageRequest { Message = "Hello agent" });
+
+        Assert.That(result, Is.InstanceOf<OkResult>());
+        Assert.That(channel.Reader.TryRead(out var msg), Is.True);
+        Assert.That(msg, Is.EqualTo("Hello agent"));
+    }
+
+    // ---------------- Story 10.8: SSE OCE handler ---------------- //
+
+    private static InstanceState MakeInstance(InstanceStatus status)
+    {
+        return new InstanceState
+        {
+            InstanceId = "inst-001",
+            WorkflowAlias = "test-wf",
+            Status = status,
+            Steps = [new StepState { Id = "step-0", Status = StepStatus.Pending }]
+        };
+    }
+
+    // Story 10.8 Task 9.3 + AC6: OCE with persisted Cancelled skips the Failed overwrite
+    // and returns cleanly (does NOT rethrow — rethrowing produces an unhandled-exception log).
+    [Test]
+    public async Task Start_OceWithCancelledStatus_ReturnsEmptyResultAndSkipsFailedOverwrite()
+    {
+        AttachHttpContext();
+
+        var pending = MakeInstance(InstanceStatus.Pending);
+        // First call (pre-start) → Pending. Second call (inside OCE handler) → Cancelled.
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>())
+            .Returns(pending, MakeInstance(InstanceStatus.Cancelled));
+
+        _instanceManager.SetInstanceStatusAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<InstanceStatus>(), Arg.Any<CancellationToken>())
+            .Returns(pending);
+
+        _profileResolver.HasConfiguredProviderAsync(Arg.Any<WorkflowDefinition?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        _orchestrator
+            .ExecuteNextStepAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<ISseEventEmitter>(), Arg.Any<CancellationToken>())
+            .Returns(_ => throw new OperationCanceledException());
+
+        var result = await _endpoints.StartInstance("inst-001", CancellationToken.None);
+
+        // Cancelled path completes cleanly with EmptyResult (no rethrow, no unhandled-exception log).
+        Assert.That(result, Is.InstanceOf<EmptyResult>());
+
+        // The initial Pending → Running transition was persisted on entry. Guards against
+        // a regression where the initial transition is accidentally skipped.
+        await _instanceManager.Received(1).SetInstanceStatusAsync(
+            Arg.Any<string>(), Arg.Any<string>(), InstanceStatus.Running, Arg.Any<CancellationToken>());
+
+        // No Failed overwrite was attempted (AC6 — Cancelled path preserves the persisted status).
+        await _instanceManager.DidNotReceive().SetInstanceStatusAsync(
+            Arg.Any<string>(), Arg.Any<string>(), InstanceStatus.Failed, Arg.Any<CancellationToken>());
+
+        // Story 10.9 AC3 regression guard: Cancelled branch must NOT fall through to
+        // the disconnect branch. Interrupted write would indicate branch ordering drift.
+        await _instanceManager.DidNotReceive().SetInstanceStatusAsync(
+            Arg.Any<string>(), Arg.Any<string>(), InstanceStatus.Interrupted, Arg.Any<CancellationToken>());
+    }
+
+    // Story 10.8 Task 9.4 + 9.5 + F3: OCE with status Running and NO controller-token
+    // cancellation (provider-internal OCE) writes Failed and rethrows.
+    // Story 10.9 AC2: this exercises the internal-OCE discrimination — the controller
+    // `cancellationToken` parameter is `CancellationToken.None` (never cancelled), so
+    // the disconnect branch evaluates false and the Failed fallback runs.
+    [Test]
+    public async Task Start_OceWithRunningStatus_WritesFailedAndRethrows()
+    {
+        AttachHttpContext();
+
+        var pending = MakeInstance(InstanceStatus.Pending);
+        // First call → Pending. Second call (inside OCE handler) → Running.
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>())
+            .Returns(pending, MakeInstance(InstanceStatus.Running));
+
+        _instanceManager.SetInstanceStatusAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<InstanceStatus>(), Arg.Any<CancellationToken>())
+            .Returns(pending);
+
+        _profileResolver.HasConfiguredProviderAsync(Arg.Any<WorkflowDefinition?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        _orchestrator
+            .ExecuteNextStepAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<ISseEventEmitter>(), Arg.Any<CancellationToken>())
+            .Returns(_ => throw new OperationCanceledException());
+
+        Assert.CatchAsync<OperationCanceledException>(async () =>
+            await _endpoints.StartInstance("inst-001", CancellationToken.None));
+
+        await _instanceManager.Received(1).SetInstanceStatusAsync(
+            "test-wf", "inst-001", InstanceStatus.Failed, Arg.Any<CancellationToken>());
+
+        // Story 10.9 AC2: no Interrupted write — the controller token was never cancelled
+        // so the disconnect branch must not fire.
+        await _instanceManager.DidNotReceive().SetInstanceStatusAsync(
+            Arg.Any<string>(), Arg.Any<string>(), InstanceStatus.Interrupted, Arg.Any<CancellationToken>());
+    }
+
+    // Story 10.13 AC5: catch-all in ExecuteSseAsync emits a fixed sanitised SSE
+    // execution_error message; the raw exception text MUST NOT reach the wire,
+    // and the full exception MUST land in the structured server log.
+    [Test]
+    public async Task Start_ExecutionFailure_EmitsSanitisedSseErrorAndLogsFullException()
+    {
+        AttachHttpContext();
+
+        var pending = MakeInstance(InstanceStatus.Pending);
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>())
+            .Returns(pending, MakeInstance(InstanceStatus.Running));
+        _instanceManager.SetInstanceStatusAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<InstanceStatus>(), Arg.Any<CancellationToken>())
+            .Returns(pending);
+        _profileResolver.HasConfiguredProviderAsync(Arg.Any<WorkflowDefinition?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        // Sentinel string mimics what an unsanitised ex.Message could leak —
+        // a filesystem path. The pre-fix code interpolated this directly into
+        // the SSE payload. Post-fix it must only appear in the log.
+        const string sentinelLeak = "/private/var/folders/secret-path/conversation.jsonl";
+        _orchestrator
+            .ExecuteNextStepAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<ISseEventEmitter>(), Arg.Any<CancellationToken>())
+            .Returns(_ => throw new InvalidOperationException(sentinelLeak));
+
+        await _endpoints.StartInstance("inst-001", CancellationToken.None);
+
+        // Pin that the catch block actually fired — without this, throw-stub silently
+        // not invoking would let the sanitisation assertions pass vacuously.
+        await _orchestrator.Received(1).ExecuteNextStepAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<ISseEventEmitter>(), Arg.Any<CancellationToken>());
+
+        // Read back what the SSE emitter wrote into Response.Body.
+        var body = (MemoryStream)_endpoints.ControllerContext.HttpContext.Response.Body;
+        body.Position = 0;
+        var responseText = new StreamReader(body).ReadToEnd();
+
+        Assert.That(responseText, Does.Contain("Workflow execution failed. Check server logs for details."));
+        Assert.That(responseText, Does.Not.Contain(sentinelLeak));
+        Assert.That(responseText, Does.Contain("execution_error"));
+
+        // Logger received the full exception with structured fields.
+        _logger.Received(1).Log(
+            LogLevel.Error,
+            Arg.Any<EventId>(),
+            Arg.Is<object>(o =>
+                o.ToString()!.Contains("inst-001")
+                && o.ToString()!.Contains("test-wf")),
+            Arg.Is<Exception>(e => e is InvalidOperationException
+                && e.Message == sentinelLeak),
+            Arg.Any<Func<object, Exception?, string>>());
+    }
+
+    // ---------------- Story 10.9: SSE disconnect resilience ---------------- //
+
+    // Story 10.9 AC1: OCE fires AND the controller cancellationToken is cancelled
+    // (client disconnect — tab close / network drop / F5). Handler must persist
+    // Interrupted (not Failed) and return EmptyResult without rethrowing.
+    [Test]
+    public async Task Start_OceWithRunningStatus_ClientDisconnect_WritesInterruptedAndReturnsEmpty()
+    {
+        AttachHttpContext();
+
+        var pending = MakeInstance(InstanceStatus.Pending);
+        // First call → Pending (pre-start). Second call (inside OCE handler) → Running
+        // (the run was progressing normally when the SSE connection dropped).
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>())
+            .Returns(pending, MakeInstance(InstanceStatus.Running));
+
+        _instanceManager.SetInstanceStatusAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<InstanceStatus>(), Arg.Any<CancellationToken>())
+            .Returns(pending);
+
+        _profileResolver.HasConfiguredProviderAsync(Arg.Any<WorkflowDefinition?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        _orchestrator
+            .ExecuteNextStepAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<ISseEventEmitter>(), Arg.Any<CancellationToken>())
+            .Returns(_ => throw new OperationCanceledException());
+
+        // Pre-cancel the controller token to simulate HttpContext.RequestAborted firing
+        // (the model-binder-provided CancellationToken derives from RequestAborted).
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var result = await _endpoints.StartInstance("inst-001", cts.Token);
+
+        // Disconnect path returns EmptyResult cleanly — NO rethrow (same pattern as
+        // 10.8 Cancelled branch; avoids the 100-line unhandled-exception log).
+        Assert.That(result, Is.InstanceOf<EmptyResult>());
+
+        // Interrupted was persisted.
+        await _instanceManager.Received(1).SetInstanceStatusAsync(
+            "test-wf", "inst-001", InstanceStatus.Interrupted, Arg.Any<CancellationToken>());
+
+        // Failed was NOT persisted — the disconnect branch intercepted before the fallback.
+        await _instanceManager.DidNotReceive().SetInstanceStatusAsync(
+            Arg.Any<string>(), Arg.Any<string>(), InstanceStatus.Failed, Arg.Any<CancellationToken>());
+    }
+
+    // Story 10.9 AC5: Retry on an Interrupted instance resets the StepStatus.Active
+    // step to Pending and transitions instance to Running. Does NOT truncate JSONL
+    // (no failed assistant message was committed — the stream was torn down mid-response).
+    [Test]
+    public async Task Retry_OnInterrupted_ResetsActiveStepAndStreams()
+    {
+        var instance = new InstanceState
+        {
+            InstanceId = "inst-001",
+            WorkflowAlias = "test-wf",
+            Status = InstanceStatus.Interrupted,
+            Steps =
+            [
+                new StepState { Id = "step-0", Status = StepStatus.Complete },
+                new StepState { Id = "step-1", Status = StepStatus.Active }
+            ],
+            CurrentStepIndex = 1
+        };
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>()).Returns(instance);
+        _instanceManager.UpdateStepStatusAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<StepStatus>(), Arg.Any<CancellationToken>())
+            .Returns(instance);
+        _instanceManager.SetInstanceStatusAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<InstanceStatus>(), Arg.Any<CancellationToken>())
+            .Returns(instance);
+
+        // No HTTP context → ExecuteSseAsync will throw NRE on Response access. That's
+        // fine — we only need to assert the state mutations that happen before.
+        try
+        {
+            await _endpoints.RetryInstance("inst-001", CancellationToken.None);
+        }
+        catch (NullReferenceException)
+        {
+            // Expected — no real HttpResponse in test context.
+        }
+
+        // Step-discovery found the Active step and reset it to Pending.
+        await _instanceManager.Received(1).UpdateStepStatusAsync(
+            "test-wf", "inst-001", 1, StepStatus.Pending, Arg.Any<CancellationToken>());
+
+        // Instance transitioned Interrupted → Running.
+        await _instanceManager.Received(1).SetInstanceStatusAsync(
+            "test-wf", "inst-001", InstanceStatus.Running, Arg.Any<CancellationToken>());
+
+        // AC5 + AC6 + Task 4: JSONL truncation is SKIPPED for the Interrupted path.
+        await _conversationStore.DidNotReceive().TruncateLastAssistantEntryAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    // Story 10.9 AC6: Retry on Interrupted with no Active step returns 409
+    // (pathological: Interrupted persisted after all steps finished, or before any started).
+    [Test]
+    public async Task Retry_OnInterrupted_NoActiveStep_Returns409()
+    {
+        var instance = new InstanceState
+        {
+            InstanceId = "inst-001",
+            WorkflowAlias = "test-wf",
+            Status = InstanceStatus.Interrupted,
+            Steps =
+            [
+                new StepState { Id = "step-0", Status = StepStatus.Complete },
+                new StepState { Id = "step-1", Status = StepStatus.Pending }
+            ]
+        };
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>()).Returns(instance);
+
+        var result = await _endpoints.RetryInstance("inst-001", CancellationToken.None);
+
+        Assert.That(result, Is.InstanceOf<ConflictObjectResult>());
+        var conflict = (ConflictObjectResult)result;
+        var error = conflict.Value as ErrorResponse;
+        Assert.That(error?.Error, Is.EqualTo("invalid_state"));
+        Assert.That(error?.Message, Does.Contain("active step"));
+
+        // No mutation happened — neither step reset nor status change.
+        await _instanceManager.DidNotReceive().UpdateStepStatusAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<StepStatus>(), Arg.Any<CancellationToken>());
+        await _instanceManager.DidNotReceive().SetInstanceStatusAsync(
+            Arg.Any<string>(), Arg.Any<string>(), InstanceStatus.Running, Arg.Any<CancellationToken>());
+    }
+
+    // Story 10.9 code-review P1: Disconnect branch must only fire when the persisted
+    // status is Running. If the orchestrator has already written a terminal status
+    // (Completed/Failed/Cancelled) before the OCE propagates, the handler must NOT
+    // attempt an Interrupted write — the log would lie and the manager's terminal
+    // guard would refuse silently.
+    [Test]
+    public async Task Start_OceWithCompletedStatus_DoesNotWriteInterruptedEvenOnDisconnect()
+    {
+        AttachHttpContext();
+
+        var pending = MakeInstance(InstanceStatus.Pending);
+        // First call (pre-start) → Pending. Second call (inside OCE handler) → Completed.
+        // The orchestrator persisted Completed just before the OCE propagated.
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>())
+            .Returns(pending, MakeInstance(InstanceStatus.Completed));
+
+        _instanceManager.SetInstanceStatusAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<InstanceStatus>(), Arg.Any<CancellationToken>())
+            .Returns(pending);
+
+        _profileResolver.HasConfiguredProviderAsync(Arg.Any<WorkflowDefinition?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        _orchestrator
+            .ExecuteNextStepAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<ISseEventEmitter>(), Arg.Any<CancellationToken>())
+            .Returns(_ => throw new OperationCanceledException());
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        // Falls through all three branches: Cancelled (no), Disconnect (no — status
+        // is Completed), Failed fallback runs. The Failed-write is a no-op in the
+        // real manager (terminal guard) but the test asserts the handler's INTENT
+        // — no spurious Interrupted write.
+        Assert.ThrowsAsync<OperationCanceledException>(async () =>
+            await _endpoints.StartInstance("inst-001", cts.Token));
+
+        await _instanceManager.DidNotReceive().SetInstanceStatusAsync(
+            Arg.Any<string>(), Arg.Any<string>(), InstanceStatus.Interrupted, Arg.Any<CancellationToken>());
+    }
+
+    // Story 10.9 code-review P4 / Task 8.7 (amended for Story 10.6): Failed-path
+    // Retry now WIPES the JSONL (Option 3) instead of truncating. The branching
+    // change in 10.9 Task 4 must not accidentally skip the recovery primitive
+    // for Failed, and the 10.6 change must not accidentally regress Interrupted.
+    [Test]
+    public async Task Retry_OnFailed_StillWipesConversation()
+    {
+        var instance = new InstanceState
+        {
+            InstanceId = "inst-001",
+            WorkflowAlias = "test-wf",
+            Status = InstanceStatus.Failed,
+            Steps =
+            [
+                new StepState { Id = "step-0", Status = StepStatus.Complete },
+                new StepState { Id = "step-1", Status = StepStatus.Error }
+            ],
+            CurrentStepIndex = 1
+        };
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>()).Returns(instance);
+        _instanceManager.UpdateStepStatusAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<StepStatus>(), Arg.Any<CancellationToken>())
+            .Returns(instance);
+        _instanceManager.SetInstanceStatusAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<InstanceStatus>(), Arg.Any<CancellationToken>())
+            .Returns(instance);
+
+        try
+        {
+            await _endpoints.RetryInstance("inst-001", CancellationToken.None);
+        }
+        catch (NullReferenceException)
+        {
+            // Expected — no real HttpResponse in test context.
+        }
+
+        // Story 10.6 AC1: Failed path must call the wipe-and-restart primitive.
+        await _conversationStore.Received(1).WipeHistoryAsync(
+            "test-wf", "inst-001", "step-1", Arg.Any<CancellationToken>());
+    }
+
+    // Story 10.6 Task 2.6: after FindIndex locates the step to resume, if the
+    // discovered index differs from CurrentStepIndex, reconciliation writes
+    // back the discovered index before dispatching execution.
+    [Test]
+    public async Task Retry_OnFailed_CurrentStepIndexDrift_IsReconciledToFindIndexResult()
+    {
+        // CurrentStepIndex persisted as 0 (drift); the Error step is at index 2.
+        var instance = new InstanceState
+        {
+            InstanceId = "inst-001",
+            WorkflowAlias = "test-wf",
+            Status = InstanceStatus.Failed,
+            Steps =
+            [
+                new StepState { Id = "step-0", Status = StepStatus.Complete },
+                new StepState { Id = "step-1", Status = StepStatus.Complete },
+                new StepState { Id = "step-2", Status = StepStatus.Error }
+            ],
+            CurrentStepIndex = 0
+        };
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>()).Returns(instance);
+        _instanceManager.SetCurrentStepIndexAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(instance);
+        _instanceManager.UpdateStepStatusAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<StepStatus>(), Arg.Any<CancellationToken>())
+            .Returns(instance);
+        _instanceManager.SetInstanceStatusAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<InstanceStatus>(), Arg.Any<CancellationToken>())
+            .Returns(instance);
+
+        try
+        {
+            await _endpoints.RetryInstance("inst-001", CancellationToken.None);
+        }
+        catch (NullReferenceException)
+        {
+            // Expected — no real HttpResponse in test context.
+        }
+
+        // Reconciliation fired with the discovered index (2), not the persisted 0.
+        await _instanceManager.Received(1).SetCurrentStepIndexAsync(
+            "test-wf", "inst-001", 2, Arg.Any<CancellationToken>());
+
+        // And the subsequent pipeline ran against the same discovered step.
+        await _conversationStore.Received(1).WipeHistoryAsync(
+            "test-wf", "inst-001", "step-2", Arg.Any<CancellationToken>());
+        await _instanceManager.Received(1).UpdateStepStatusAsync(
+            "test-wf", "inst-001", 2, StepStatus.Pending, Arg.Any<CancellationToken>());
+    }
+
+    // Story 10.6 Task 2.6: reconciliation is a no-op when CurrentStepIndex
+    // already matches the discovered index — avoids a spurious disk write.
+    [Test]
+    public async Task Retry_OnFailed_CurrentStepIndexAlreadyInSync_DoesNotReconcile()
+    {
+        var instance = new InstanceState
+        {
+            InstanceId = "inst-001",
+            WorkflowAlias = "test-wf",
+            Status = InstanceStatus.Failed,
+            Steps =
+            [
+                new StepState { Id = "step-0", Status = StepStatus.Complete },
+                new StepState { Id = "step-1", Status = StepStatus.Error }
+            ],
+            CurrentStepIndex = 1
+        };
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>()).Returns(instance);
+        _instanceManager.UpdateStepStatusAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<StepStatus>(), Arg.Any<CancellationToken>())
+            .Returns(instance);
+        _instanceManager.SetInstanceStatusAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<InstanceStatus>(), Arg.Any<CancellationToken>())
+            .Returns(instance);
+
+        try
+        {
+            await _endpoints.RetryInstance("inst-001", CancellationToken.None);
+        }
+        catch (NullReferenceException) { }
+
+        await _instanceManager.DidNotReceive().SetCurrentStepIndexAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+
+    // Story 10.6 Task 1.4 — wipe failure must surface to the caller as a 409
+    // with a clear error. The retry MUST NOT proceed against a stale
+    // conversation, and the claim must be released so the user can retry.
+    [Test]
+    public async Task Retry_OnFailed_WipeFails_Returns409AndReleasesClaim()
+    {
+        var instance = new InstanceState
+        {
+            InstanceId = "inst-001",
+            WorkflowAlias = "test-wf",
+            Status = InstanceStatus.Failed,
+            Steps =
+            [
+                new StepState { Id = "step-0", Status = StepStatus.Error }
+            ],
+            CurrentStepIndex = 0
+        };
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>()).Returns(instance);
+
+        _conversationStore
+            .When(s => s.WipeHistoryAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()))
+            .Do(_ => throw new InvalidOperationException("archive conversation file collision"));
+
+        var result = await _endpoints.RetryInstance("inst-001", CancellationToken.None);
+
+        Assert.That(result, Is.InstanceOf<ConflictObjectResult>());
+        var conflict = (ConflictObjectResult)result;
+        var error = conflict.Value as ErrorResponse;
+        Assert.That(error?.Error, Is.EqualTo("retry_recovery_failed"));
+        // Story 10.13 AC5: client message is the fixed sanitised prose. The
+        // raw exception text ("archive conversation file collision") MUST NOT
+        // leak to the response — admins read this in the UI.
+        Assert.That(error?.Message, Is.EqualTo("Failed to prepare conversation for retry. Check server logs for details."));
+        Assert.That(error!.Message, Does.Not.Contain("archive conversation file collision"));
+
+        // Logger MUST have received the full exception (Message, stack, inner) so
+        // diagnostic detail isn't lost just because we sanitised the wire.
+        _logger.Received(1).Log(
+            LogLevel.Error,
+            Arg.Any<EventId>(),
+            Arg.Any<object>(),
+            Arg.Is<Exception>(e => e is InvalidOperationException
+                && e.Message.Contains("archive conversation file collision")),
+            Arg.Any<Func<object, Exception?, string>>());
+
+        // MUST NOT have proceeded to step reset or status transition after a failed wipe.
+        await _instanceManager.DidNotReceive().UpdateStepStatusAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<StepStatus>(), Arg.Any<CancellationToken>());
+        await _instanceManager.DidNotReceive().SetInstanceStatusAsync(
+            Arg.Any<string>(), Arg.Any<string>(), InstanceStatus.Running, Arg.Any<CancellationToken>());
+
+        // Claim released so the user can retry without the slot leaking.
+        _activeInstanceRegistry.Received(1).UnregisterInstance("inst-001");
+    }
+
+    // Story 10.6 AC #2: Interrupted path must still work — Option 3's wipe-
+    // and-restart is a Failed-only surgery; Interrupted remains a truncate-skip
+    // no-op. Regression guard against the 10.6 change touching the wrong branch.
+    [Test]
+    public async Task Retry_OnInterrupted_DoesNotWipe()
+    {
+        var instance = new InstanceState
+        {
+            InstanceId = "inst-001",
+            WorkflowAlias = "test-wf",
+            Status = InstanceStatus.Interrupted,
+            Steps = [new StepState { Id = "step-0", Status = StepStatus.Active }],
+            CurrentStepIndex = 0
+        };
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>()).Returns(instance);
+        _instanceManager.UpdateStepStatusAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<StepStatus>(), Arg.Any<CancellationToken>())
+            .Returns(instance);
+        _instanceManager.SetInstanceStatusAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<InstanceStatus>(), Arg.Any<CancellationToken>())
+            .Returns(instance);
+
+        try
+        {
+            await _endpoints.RetryInstance("inst-001", CancellationToken.None);
+        }
+        catch (NullReferenceException) { }
+
+        await _conversationStore.DidNotReceive().WipeHistoryAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _conversationStore.DidNotReceive().TruncateLastAssistantEntryAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    // Story 10.9 code-review P2: concurrent Retry must not surface as 500.
+    // The second request races past the status gate (still reads Interrupted),
+    // but SetInstanceStatusAsync throws "already running" because the first
+    // request already transitioned to Running. Handler must map to 409.
+    [Test]
+    public async Task Retry_OnInterrupted_ConcurrentRetry_Returns409NotUnhandled()
+    {
+        var instance = new InstanceState
+        {
+            InstanceId = "inst-001",
+            WorkflowAlias = "test-wf",
+            Status = InstanceStatus.Interrupted,
+            Steps =
+            [
+                new StepState { Id = "step-0", Status = StepStatus.Active }
+            ]
+        };
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>()).Returns(instance);
+        _instanceManager.UpdateStepStatusAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<StepStatus>(), Arg.Any<CancellationToken>())
+            .Returns(instance);
+        _instanceManager.SetInstanceStatusAsync(Arg.Any<string>(), Arg.Any<string>(), InstanceStatus.Running, Arg.Any<CancellationToken>())
+            .Returns<InstanceState>(_ => throw new InstanceAlreadyRunningException("inst-001"));
+
+        var result = await _endpoints.RetryInstance("inst-001", CancellationToken.None);
+
+        Assert.That(result, Is.InstanceOf<ConflictObjectResult>());
+        var conflict = (ConflictObjectResult)result;
+        var error = conflict.Value as ErrorResponse;
+        Assert.That(error?.Error, Is.EqualTo("already_running"));
+
+        // Story 10.1 regression guard: the claim was acquired at TryClaim (default true)
+        // and must be released when the in-manager "already running" exception fires —
+        // otherwise the slot leaks (nothing else will release it because no orchestrator
+        // ran).
+        _activeInstanceRegistry.Received(1).UnregisterInstance("inst-001");
+    }
+
+    // Story 10.1 (was Story 10.9 code-review P3): parallel-orchestrator guard.
+    // If a prior orchestrator holds the atomic claim, Retry must 409 without
+    // mutating state — mirrors StartInstance's already_running guard. The
+    // prior GetMessageWriter-based check was replaced by TryClaim as the
+    // source-of-truth race gate.
+    [Test]
+    public async Task Retry_OnInterrupted_WithActiveClaim_Returns409()
+    {
+        var instance = new InstanceState
+        {
+            InstanceId = "inst-001",
+            WorkflowAlias = "test-wf",
+            Status = InstanceStatus.Interrupted,
+            Steps =
+            [
+                new StepState { Id = "step-0", Status = StepStatus.Active }
+            ]
+        };
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>()).Returns(instance);
+
+        // Simulate a prior orchestrator that holds the claim.
+        _activeInstanceRegistry.TryClaim("inst-001").Returns(false);
+
+        var result = await _endpoints.RetryInstance("inst-001", CancellationToken.None);
+
+        Assert.That(result, Is.InstanceOf<ConflictObjectResult>());
+        var conflict = (ConflictObjectResult)result;
+        var error = conflict.Value as ErrorResponse;
+        Assert.That(error?.Error, Is.EqualTo("already_running"));
+
+        // No state mutation happened.
+        await _instanceManager.DidNotReceive().UpdateStepStatusAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<StepStatus>(), Arg.Any<CancellationToken>());
+        await _instanceManager.DidNotReceive().SetInstanceStatusAsync(
+            Arg.Any<string>(), Arg.Any<string>(), InstanceStatus.Running, Arg.Any<CancellationToken>());
+
+        // Claim must NOT be released: TryClaim returned false, so this endpoint
+        // never acquired it and must not call UnregisterInstance (which would
+        // release the prior orchestrator's active claim).
+        _activeInstanceRegistry.DidNotReceive().UnregisterInstance("inst-001");
+    }
+
+    // -------------- Story 10.1: TryClaim race-gate coverage -------------- //
+
+    // AC9: StartInstance returns 409 when TryClaim returns false (concurrent
+    // orchestrator already holds the claim).
+    [Test]
+    public async Task Start_TryClaimReturnsFalse_Returns409()
+    {
+        AttachHttpContext();
+
+        var pending = MakeInstance(InstanceStatus.Pending);
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>()).Returns(pending);
+        _profileResolver.HasConfiguredProviderAsync(Arg.Any<WorkflowDefinition?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        // Override the SetUp default to simulate a losing TryClaim.
+        _activeInstanceRegistry.TryClaim("inst-001").Returns(false);
+
+        var result = await _endpoints.StartInstance("inst-001", CancellationToken.None);
+
+        Assert.That(result, Is.InstanceOf<ConflictObjectResult>());
+        var conflict = (ConflictObjectResult)result;
+        var error = conflict.Value as ErrorResponse;
+        Assert.That(error?.Error, Is.EqualTo("already_running"));
+
+        // No state mutation happened — the claim loser short-circuits before
+        // SetInstanceStatusAsync.
+        await _instanceManager.DidNotReceive().SetInstanceStatusAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<InstanceStatus>(), Arg.Any<CancellationToken>());
+
+        // The claim itself must NOT be released — this endpoint never held it.
+        _activeInstanceRegistry.DidNotReceive().UnregisterInstance("inst-001");
+    }
+
+    // AC11: StartInstance maps the in-manager "already running" exception to 409
+    // AND releases the claim (so the slot doesn't leak for the future retry).
+    [Test]
+    public async Task Start_SetStatusThrowsAlreadyRunning_Returns409AndReleasesClaim()
+    {
+        AttachHttpContext();
+
+        var pending = MakeInstance(InstanceStatus.Pending);
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>()).Returns(pending);
+        _profileResolver.HasConfiguredProviderAsync(Arg.Any<WorkflowDefinition?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        _instanceManager.SetInstanceStatusAsync(Arg.Any<string>(), Arg.Any<string>(), InstanceStatus.Running, Arg.Any<CancellationToken>())
+            .Returns<InstanceState>(_ => throw new InstanceAlreadyRunningException("inst-001"));
+
+        var result = await _endpoints.StartInstance("inst-001", CancellationToken.None);
+
+        Assert.That(result, Is.InstanceOf<ConflictObjectResult>());
+        var conflict = (ConflictObjectResult)result;
+        var error = conflict.Value as ErrorResponse;
+        Assert.That(error?.Error, Is.EqualTo("already_running"));
+
+        // Claim must be released — otherwise the slot leaks for the orchestrator's
+        // UnregisterInstance finally (which will never run because the orchestrator
+        // never started).
+        _activeInstanceRegistry.Received(1).UnregisterInstance("inst-001");
+    }
+
+    // AC10: RetryInstance returns 409 when TryClaim returns false.
+    [Test]
+    public async Task Retry_TryClaimReturnsFalse_Returns409()
+    {
+        var instance = new InstanceState
+        {
+            InstanceId = "inst-001",
+            WorkflowAlias = "test-wf",
+            Status = InstanceStatus.Failed,
+            Steps = [new StepState { Id = "step-0", Status = StepStatus.Error }]
+        };
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>()).Returns(instance);
+
+        _activeInstanceRegistry.TryClaim("inst-001").Returns(false);
+
+        var result = await _endpoints.RetryInstance("inst-001", CancellationToken.None);
+
+        Assert.That(result, Is.InstanceOf<ConflictObjectResult>());
+        var conflict = (ConflictObjectResult)result;
+        var error = conflict.Value as ErrorResponse;
+        Assert.That(error?.Error, Is.EqualTo("already_running"));
+
+        await _instanceManager.DidNotReceive().UpdateStepStatusAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<StepStatus>(), Arg.Any<CancellationToken>());
+        _activeInstanceRegistry.DidNotReceive().UnregisterInstance("inst-001");
+    }
+
+    // Story 10.9 AC9: Start on an Interrupted instance returns 409 — user must Retry, not Start.
+    [Test]
+    public async Task Start_OnInterrupted_Returns409()
+    {
+        var instance = MakeInstance(InstanceStatus.Interrupted);
+        _instanceManager.FindInstanceAsync("inst-001", Arg.Any<CancellationToken>()).Returns(instance);
+
+        var result = await _endpoints.StartInstance("inst-001", CancellationToken.None);
+
+        Assert.That(result, Is.InstanceOf<ConflictObjectResult>());
+        var conflict = (ConflictObjectResult)result;
+        var error = conflict.Value as ErrorResponse;
+        Assert.That(error?.Error, Is.EqualTo("invalid_status"));
+
+        // No status mutation attempted — the guard short-circuits before SetInstanceStatusAsync.
+        await _instanceManager.DidNotReceive().SetInstanceStatusAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<InstanceStatus>(), Arg.Any<CancellationToken>());
+    }
+
+    // --- Story 10.11 Track A: KeepaliveInterval clamp ---
+
+    [Test]
+    public void ClampInterval_BelowMin_ClampsTo5Seconds()
+    {
+        // AC7
+        var result = ExecutionEndpoints.ClampInterval(TimeSpan.FromSeconds(1));
+
+        Assert.That(result, Is.EqualTo(TimeSpan.FromSeconds(5)));
+    }
+
+    [Test]
+    public void ClampInterval_Zero_ClampsTo5Seconds()
+    {
+        // F3: TimeSpan.Zero clamps to floor
+        var result = ExecutionEndpoints.ClampInterval(TimeSpan.Zero);
+
+        Assert.That(result, Is.EqualTo(TimeSpan.FromSeconds(5)));
+    }
+
+    [Test]
+    public void ClampInterval_AboveMax_ClampsTo5Minutes()
+    {
+        // AC7
+        var result = ExecutionEndpoints.ClampInterval(TimeSpan.FromMinutes(10));
+
+        Assert.That(result, Is.EqualTo(TimeSpan.FromMinutes(5)));
+    }
+
+    [Test]
+    public void ClampInterval_MaxValue_ClampsTo5Minutes()
+    {
+        // F4
+        var result = ExecutionEndpoints.ClampInterval(TimeSpan.MaxValue);
+
+        Assert.That(result, Is.EqualTo(TimeSpan.FromMinutes(5)));
+    }
+
+    [Test]
+    public void ClampInterval_InRange_ReturnsVerbatim()
+    {
+        // AC7: 15s default — in range, returned unchanged
+        var result = ExecutionEndpoints.ClampInterval(TimeSpan.FromSeconds(15));
+
+        Assert.That(result, Is.EqualTo(TimeSpan.FromSeconds(15)));
+    }
+
+    [Test]
+    public void ClampInterval_AtMinBoundary_ReturnsMin()
+    {
+        var result = ExecutionEndpoints.ClampInterval(TimeSpan.FromSeconds(5));
+
+        Assert.That(result, Is.EqualTo(TimeSpan.FromSeconds(5)));
+    }
+
+    [Test]
+    public void ClampInterval_AtMaxBoundary_ReturnsMax()
+    {
+        var result = ExecutionEndpoints.ClampInterval(TimeSpan.FromMinutes(5));
+
+        Assert.That(result, Is.EqualTo(TimeSpan.FromMinutes(5)));
+    }
+}

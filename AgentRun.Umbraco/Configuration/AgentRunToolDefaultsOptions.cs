@@ -1,0 +1,57 @@
+namespace AgentRun.Umbraco.Configuration;
+
+/// <summary>
+/// Site-level default tool tuning values bound from <c>AgentRun:ToolDefaults</c>
+/// in <c>appsettings.json</c>. All values are nullable: <c>null</c> means
+/// "no site default — fall through to the engine default".
+/// </summary>
+public sealed class AgentRunToolDefaultsOptions
+{
+    public FetchUrlDefaults? FetchUrl { get; set; }
+
+    public ReadFileDefaults? ReadFile { get; set; }
+
+    public ToolLoopDefaults? ToolLoop { get; set; }
+
+    public ListContentDefaults? ListContent { get; set; }
+
+    public GetContentDefaults? GetContent { get; set; }
+
+    public ListContentTypesDefaults? ListContentTypes { get; set; }
+
+    /// <summary>
+    /// Site-level default for compaction turn threshold. Story 10.2.
+    /// </summary>
+    public int? CompactionTurns { get; set; }
+
+    public sealed class FetchUrlDefaults
+    {
+        public int? MaxResponseBytes { get; set; }
+        public int? TimeoutSeconds { get; set; }
+    }
+
+    public sealed class ReadFileDefaults
+    {
+        public int? MaxResponseBytes { get; set; }
+    }
+
+    public sealed class ToolLoopDefaults
+    {
+        public int? UserMessageTimeoutSeconds { get; set; }
+    }
+
+    public sealed class ListContentDefaults
+    {
+        public int? MaxResponseBytes { get; set; }
+    }
+
+    public sealed class GetContentDefaults
+    {
+        public int? MaxResponseBytes { get; set; }
+    }
+
+    public sealed class ListContentTypesDefaults
+    {
+        public int? MaxResponseBytes { get; set; }
+    }
+}

@@ -1,0 +1,47 @@
+# yaml-language-server: $schema=../../Schemas/workflow-schema.json
+name: Umbraco Content Audit
+description: Audits content in this Umbraco instance for quality, completeness, and structural issues
+mode: interactive
+steps:
+  - id: scanner
+    name: Content Scanner
+    agent: agents/scanner.md
+    tools:
+      - list_content
+      - list_content_types
+      - get_content
+      - write_file
+    writes_to:
+      - artifacts/content-inventory.md
+      - artifacts/scan-results.md
+    completion_check:
+      files_exist:
+        - artifacts/content-inventory.md
+        - artifacts/scan-results.md
+  - id: analyser
+    name: Quality Analyser
+    agent: agents/analyser.md
+    tools:
+      - read_file
+      - write_file
+    reads_from:
+      - artifacts/scan-results.md
+    writes_to:
+      - artifacts/quality-scores.md
+    completion_check:
+      files_exist:
+        - artifacts/quality-scores.md
+  - id: reporter
+    name: Report Generator
+    agent: agents/reporter.md
+    tools:
+      - read_file
+      - write_file
+    reads_from:
+      - artifacts/scan-results.md
+      - artifacts/quality-scores.md
+    writes_to:
+      - artifacts/audit-report.md
+    completion_check:
+      files_exist:
+        - artifacts/audit-report.md

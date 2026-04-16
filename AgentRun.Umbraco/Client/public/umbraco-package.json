@@ -1,0 +1,14 @@
+{
+  "id": "AgentRun.Umbraco",
+  "name": "AgentRun.Umbraco",
+  "version": "1.0.0-rc.2",
+  "allowTelemetry": true,
+  "extensions": [
+    {
+      "name": "AgentRun Umbraco Bundle",
+      "alias": "AgentRun.Umbraco.Bundle",
+      "type": "bundle",
+      "js": "/App_Plugins/AgentRunUmbraco/agentrun-umbraco.js"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://marketplace.umbraco.com/umbraco-marketplace-schema.json",
+  "Title": "AgentRun for Umbraco",
+  "Description": "AI-powered workflow engine for Umbraco. Define multi-step agent workflows in YAML and run them from the backoffice. Ships with three ready-to-run examples: Umbraco Content Audit (analyses your site's content tree), Content Quality Audit (scores any public URL), and Accessibility Quick-Scan (WCAG 2.1 AA findings). Extensible tool system — add custom tools for your editorial workflows. Apache 2.0 licensed, built on Umbraco.AI.",
+  "Categories": "Artificial Intelligence",
+  "AlternateCategory": "Developer Tools",
+  "PackageType": "Package",
+  "LicenseTypes": ["Free"],
+  "Tags": [
+    "ai",
+    "workflow",
+    "agent",
+    "content audit",
+    "accessibility",
+    "automation",
+    "llm"
+  ],
+  "DocumentationUrl": "https://github.com/ashallcross/AgentRun#readme",
+  "IssueTrackerUrl": "https://github.com/ashallcross/AgentRun/issues",
+  "AuthorDetails": {
+    "Name": "Adam Shallcross",
+    "Description": "CEO & Founder at Cogworks. Umbraco advocate, interested in how humans and AI can work together in harmony.",
+    "Url": "https://www.wearecogworks.com",
+    "ImageUrl": "https://github.com/ashallcross.png",
+    "SyncContributorsFromRepository": true
+  },
+  "Screenshots": []
+}

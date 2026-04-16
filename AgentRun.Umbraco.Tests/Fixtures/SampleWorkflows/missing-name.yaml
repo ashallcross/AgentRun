@@ -1,0 +1,6 @@
+description: Missing name field
+mode: autonomous
+steps:
+  - id: step_one
+    name: Step One
+    agent: agents/worker.md

@@ -1,0 +1,11 @@
+name: Unknown Properties Workflow
+description: Has undeclared properties
+mode: autonomous
+author: someone
+version: 1.0
+steps:
+  - id: step_one
+    name: Step One
+    agent: agents/worker.md
+    priority: high
+    timeout: 300

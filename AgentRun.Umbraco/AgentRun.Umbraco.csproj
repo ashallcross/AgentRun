@@ -1,0 +1,77 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <StaticWebAssetBasePath>/</StaticWebAssetBasePath>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackageId>AgentRun.Umbraco</PackageId>
+    <Product>AgentRun.Umbraco</Product>
+    <Title>AgentRun.Umbraco</Title>
+    <Version>1.0.0-rc.2</Version>
+    <Description>AI-powered workflow engine for Umbraco CMS — define multi-step agent workflows in YAML</Description>
+    <Authors>Adam Shallcross</Authors>
+    <PackageTags>umbraco-marketplace;umbraco;ai;workflow;agent;content-quality;accessibility</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/ashallcross/AgentRun</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/ashallcross/AgentRun.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
+
+  <ItemGroup>
+    <PackageReference Include="AngleSharp" Version="1.4.0" />
+    <PackageReference Include="Umbraco.Cms.Web.Website" Version="17.3.2" />
+    <PackageReference Include="Umbraco.Cms.Web.Common" Version="17.3.2" />
+    <PackageReference Include="Umbraco.Cms.Api.Common" Version="17.3.2" />
+    <PackageReference Include="Umbraco.Cms.Api.Management" Version="17.3.2" />
+    <PackageReference Include="Umbraco.AI" Version="1.8.0" />
+    <PackageReference Include="YamlDotNet" Version="16.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="AgentRun.Umbraco.Tests" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Dont include the client folder as part of packaging nuget build -->
+    <Content Remove="Client\**" />
+
+    <!-- However make the Umbraco-package.json included for dotnet pack or nuget package and visible to the solution -->
+    <None Include="Client\public\umbraco-package.json" Pack="false" />
+
+    <!-- Exclude example workflows from build — they are pack-only content for consumers -->
+    <Content Remove="Workflows\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="wwwroot\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Schemas\workflow-schema.json" />
+  </ItemGroup>
+
+  <!-- Example workflows: embedded resources read by CopyExampleWorkflowsToDisk migration at startup.
+       Migration copies to App_Data/AgentRun.Umbraco/workflows/ on first run, skipping existing folders. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Workflows\content-quality-audit\**\*" />
+    <EmbeddedResource Include="Workflows\accessibility-quick-scan\**\*" />
+    <EmbeddedResource Include="Workflows\umbraco-content-audit\**\*" />
+  </ItemGroup>
+
+  <!-- README: include in nupkg root for NuGet gallery rendering -->
+  <ItemGroup>
+    <None Include="..\README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <!-- JSON Schema: ship as contentFiles so consumers get the schema on disk for IDE autocomplete -->
+  <ItemGroup>
+    <None Include="Schemas\workflow-schema.json" Pack="true" PackagePath="contentFiles\any\any\App_Data\AgentRun.Umbraco\workflow-schema.json" />
+  </ItemGroup>
+
+</Project>

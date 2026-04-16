@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "429",
+    "message": "Quota exceeded for quota with name 'model_token' for the deployment 'gpt-4o'. Please retry after 5 seconds. Please go here: https://aka.ms/oai/quotaincrease if you would like to further increase the default rate limit."
+  }
+}

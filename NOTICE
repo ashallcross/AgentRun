@@ -1,0 +1,15 @@
+AgentRun.Umbraco
+Copyright 2026 Adam Shallcross
+
+This product includes software developed as part of the following third-party
+open-source projects, all used under permissive licences compatible with the
+Apache License 2.0 under which AgentRun.Umbraco is distributed:
+
+- Umbraco CMS (MIT) — https://github.com/umbraco/Umbraco-CMS
+- Umbraco.AI (MIT) — https://www.nuget.org/packages/Umbraco.AI
+- AngleSharp (MIT) — https://github.com/AngleSharp/AngleSharp
+- YamlDotNet (MIT) — https://github.com/aaubry/YamlDotNet
+
+This NOTICE file is provided in accordance with section 4(d) of the Apache
+License 2.0 and is not intended to modify the licence applicable to
+AgentRun.Umbraco or any included third-party component.
