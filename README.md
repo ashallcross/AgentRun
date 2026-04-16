@@ -152,3 +152,14 @@ rm -rf App_Data/AgentRun.Umbraco/
 ```
 
 No other cleanup is needed.
+
+## Licence
+
+AgentRun.Umbraco is licensed under the [Apache License 2.0](./LICENSE)
+(SPDX: `Apache-2.0`).
+
+Copyright 2026 Adam Shallcross.
+
+Third-party components included or referenced by this package are acknowledged
+in [`NOTICE`](./NOTICE), all used under permissive licences compatible with
+Apache 2.0.

@@ -15,7 +15,7 @@
     <Authors>Adam Shallcross</Authors>
     <PackageTags>umbraco;ai;workflow;agent;content-quality;accessibility</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <!-- PackageLicenseExpression — deferred to Story 10.4 (licensing decision) -->
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <!-- PackageProjectUrl / RepositoryUrl — deferred until repo is public -->
   </PropertyGroup>
 
