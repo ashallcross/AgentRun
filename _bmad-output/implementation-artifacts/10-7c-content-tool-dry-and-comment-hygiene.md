@@ -1,25 +1,25 @@
-# Story 10.7c: Content-Tool DRY + Comment Hygiene
+# Story 10.7c: Content-Tool DRY + Comment Hygiene + CSS Re-Format
 
-Status: backlog (transitions to `ready-for-dev` when [Story 10.7b](./10-7b-frontend-instance-detail-and-chat-cursor.md) is done)
+Status: in-progress
 
 **Depends on:** Story 10.7a (backend hotspot refactors — must land first) AND Story 10.7b (frontend instance-detail + chat cursor — must land first). Track G (comment hygiene) explicitly requires 10.7a + 10.7b to have landed so the grep runs over the **final shape** of every edited backend + frontend file — stripping story archaeology from files that are about to be heavily modified is wasted work.
 **Followed by:** Story 10.4 (open-source licence) → Story 10.5 (marketplace listing & community launch). Split from the original [Story 10.7 parent spec](./10-7-code-shape-cleanup-hotspot-refactoring.md) on 2026-04-15 per Adam's quality-risk concern on single-PR delivery.
 **Branch:** `feature/epic-10-continued`
 **Priority:** 10th in Epic 10 (10.2 → 10.12 → 10.8 → 10.9 → 10.10 → 10.1 → 10.6 → 10.11 → 10.7a → 10.7b → **10.7c** → 10.4 → 10.5).
 
-> **Two tracks shipped as one cross-cutting polish story.** Covers Track E (content-tool DRY + O(n²) truncation fix) from the Epic 9 retrospective technical-debt list and Track G (comment hygiene polish pass) from Winston's architect triage. Track E is self-contained code; Track G is a repo-wide polish pass that must run LAST so it operates on the final post-refactor shape.
+> **Three tracks shipped as one cross-cutting polish story.** Covers Track E (content-tool DRY + O(n²) truncation fix) from the Epic 9 retrospective technical-debt list, Track G (comment hygiene polish pass) from Winston's architect triage, and Track H (CSS re-format closure) from the 10.7b review-defer entry. Track E is self-contained code; Track H is a narrow `.ts` style-format polish; Track G is a repo-wide `.cs` polish pass that must run LAST so it operates on the final post-refactor shape.
 >
-> **The goal is clearer responsibility boundaries with the fewest necessary moves — NOT maximum decomposition.** Every change must reduce reasoning load; thin one-method wrappers are explicitly rejected. Comment stripping preserves technical rationale — archaeology only.
+> **The goal is clearer responsibility boundaries with the fewest necessary moves — NOT maximum decomposition.** Every change must reduce reasoning load; thin one-method wrappers are explicitly rejected. Comment stripping preserves technical rationale — archaeology only. CSS re-format expands where expansion genuinely aids scanning, leaves cohesive state-matrix one-liner groups alone.
 
 ## Story
 
 As a maintainer of AgentRun.Umbraco,
-I want the content-tool parameter-parsing duplication eliminated, the O(n²) truncation loop fixed, and story archaeology stripped from production code,
-So that the content tools share one implementation of a load-bearing pattern, large result sets don't burn CPU on quadratic serialisation, and the codebase ships to public launch without the shape of how it was built across 9 epics showing through.
+I want the content-tool parameter-parsing duplication eliminated, the O(n²) truncation loop fixed, story archaeology stripped from production code, and the 10.7b-minified CSS block in `agentrun-instance-detail.element.ts` reviewed and re-formatted where readability genuinely improves,
+So that the content tools share one implementation of a load-bearing pattern, large result sets don't burn CPU on quadratic serialisation, the codebase ships to public launch without the shape of how it was built across 9 epics showing through, and the 10.7 trilogy closes with no open style-format debt carried into 10.4/10.5.
 
 ## Context
 
-**UX Mode: N/A.** Pure-shape refactor + performance fix + comment polish. No observable behaviour changes. No new features, no new endpoints, no new config surface.
+**UX Mode: N/A.** Pure-shape refactor + performance fix + comment polish + CSS whitespace polish. No observable behaviour changes. No new features, no new endpoints, no new config surface.
 
 ### Why this story was split from the parent
 
@@ -29,11 +29,12 @@ See [Story 10.7a §Why this story was split from the parent](./10-7a-backend-hot
 - Track G's commit-body bookkeeping ("ToolLoop.cs: -9 story refs, kept 5 technical") is the review point that Adam uses to sanity-check the strip wasn't over-aggressive — that signal is clearer when every file has reached its steady-state shape.
 - 10.7c can land before 10.4 / 10.5 without blocking public launch; if it slips, launch can proceed with the polish delivered in a post-launch increment.
 
-### The two tracks in this story
+### The three tracks in this story
 
 | Track | Target | Disposition | Why | Est. effort |
 |---|---|---|---|---|
 | **E** | [`Tools/ListContentTool.cs`](../../AgentRun.Umbraco/Tools/ListContentTool.cs), [`GetContentTool.cs`](../../AgentRun.Umbraco/Tools/GetContentTool.cs), [`ListContentTypesTool.cs`](../../AgentRun.Umbraco/Tools/ListContentTypesTool.cs) | DRY extract + O(n²) fix | 4 duplicated helpers; truncation loop re-serialises full JSON per iteration on responses > 256 KB | 0.5 day |
+| **H** | [`Client/src/components/agentrun-instance-detail.element.ts`](../../AgentRun.Umbraco/Client/src/components/agentrun-instance-detail.element.ts) CSS block (lines 58–173) | Review + re-format where it aids readability; close the deferred entry | 10.7b Track D minified rules to fit the ≤ 700 line budget; budget is not a persistent invariant; reformat multi-rule clusters where expansion helps, leave cohesive state-matrix one-liner groups alone | 0.2 day |
 | **G** | Repo-wide `.cs` files | Strip story archaeology | ~69 story/epic refs across ~17 files; strip where the comment is pure archaeology, keep where it explains non-obvious technical rationale | 0.4 day |
 
 ### Tracks explicitly deferred to sibling stories (do not touch)
@@ -63,15 +64,23 @@ These decisions were locked in the parent story on 2026-04-15 and are preserved 
 
 6. **Track G strips comments matching narrow patterns — keeps everything else.** Strip: `// Story X.Y: did Z` where Z is archaeology (a hand-wave at a past fix), `// Per code review ...`, `// Post-review ...`, `// Added in Story X.Y` when the rest of the comment is empty. Preserve: any comment explaining WHY a specific constant is chosen (e.g. the `MaxOutputTokens=32768` rationale at [StepExecutor.cs:160-174](../../AgentRun.Umbraco/Engine/StepExecutor.cs#L160) after 10.7a), any comment citing an RFC / spec / Umbraco docs link, any comment describing a concurrency or ordering constraint, any comment warning about a Umbraco/Umbraco.AI quirk. The test: if removing the comment would confuse a reader reading the code cold, the comment stays. If the comment is pure archaeology ("this was added in 9.6 — needed for tool limits"), strip it (the git log already knows).
 
+**Track H (CSS re-format):**
+
+7. **Track H is a narrow, judgement-led CSS-format polish — not a bulk reformatter.** The CSS block at [`agentrun-instance-detail.element.ts:58-173`](../../AgentRun.Umbraco/Client/src/components/agentrun-instance-detail.element.ts#L58) was partly minified during 10.7b Track D to fit the AC1 ≤ 700 line budget. Review every one-line and multi-selector rule cluster; expand to conventional multi-line CSS format **only where expansion demonstrably aids scanning** (e.g. a multi-property rule flattened onto one line). **Leave cohesive state-matrix one-liner groups alone** — e.g. the four `.step-item.{pending,active,complete,error} .step-icon-wrapper` rules (lines 134–137) read better as a column of parallel one-liners than as 20 lines of expanded blocks; the same applies to `.step-icon` state-colour triples, `.step-text` family, and `@keyframes spin`. Single-property utility rules (`.step-item.clickable { cursor: pointer; }`) stay one-line.
+
+8. **Track H explicitly does NOT re-introduce a persistent line-count budget.** The ≤ 700 line budget from 10.7b AC1 was a 10.7b-specific constraint to validate the refactor shape. After Track H re-formats, the file will likely land between 700 and 720 lines — that is expected and acceptable. Reasoning load is the goal, not line count.
+
+9. **Track H is Track-G-orthogonal.** Track G operates on `.cs` only; Track H operates on one `.ts` file. Order between H and G does not matter functionally. Track H can land before or after Track G.
+
 **Cross-cutting:**
 
-7. **No new NuGet or npm dependencies.** Track E adds zero deps. Track G is a comment strip only.
+10. **No new NuGet or npm dependencies.** Track E adds zero deps. Track G is a comment strip only. Track H is CSS whitespace only.
 
-8. **Test budget target: ~5 new tests.** Breakdown: Track E (~5: 4 helper tests + 1 truncation binary-search characterisation test), Track G (0 — comment hygiene). Full backend + frontend suites must stay green. Preserve ALL existing tests — any test deletion must be justified in the Dev Notes as either duplicate coverage or no-longer-applicable setup.
+11. **Test budget target: ~5 new tests.** Breakdown: Track E (~5: 4 helper tests + 1 truncation binary-search characterisation test), Track G (0 — comment hygiene), Track H (0 — CSS whitespace only; existing frontend tests must stay green to confirm no behavioural drift). Full backend + frontend suites must stay green. Preserve ALL existing tests — any test deletion must be justified in the Dev Notes as either duplicate coverage or no-longer-applicable setup.
 
-9. **Test counts are guidelines, not ceilings.** From Epic 8+ retro. Write what the change needs; don't pad.
+12. **Test counts are guidelines, not ceilings.** From Epic 8+ retro. Write what the change needs; don't pad.
 
-10. **Priority ordering inside the story: E → G.** Track E first (code change + tests), Track G last (repo-wide polish over the final shape). Track G must run with 10.7a + 10.7b + 10.7c Track E all landed first — the grep operates on the post-refactor shape.
+13. **Priority ordering inside the story: E → H → G.** Track E first (code change + tests), Track H second (narrow `.ts` CSS polish — runs inside the same PR train but before Track G so the final grep pass in G is unambiguously the last thing Adam reviews), Track G last (repo-wide `.cs` polish over the final shape). Track G must run with 10.7a + 10.7b + 10.7c Track E + Track H all landed first — the grep operates on the post-refactor shape.
 
 ## Acceptance Criteria (BDD)
 
@@ -106,55 +115,82 @@ These decisions were locked in the parent story on 2026-04-15 and are preserved 
 
 **Given** the story is complete
 **When** `dotnet test AgentRun.Umbraco.slnx` runs
-**Then** backend tests pass (baseline whatever 10.7a + 10.7b left it → expect +5 with ~5 new tests per locked decision 8; delta TBD by dev agent)
-**And** `npm test` in `AgentRun.Umbraco/Client/` passes (no frontend changes in this story; count unchanged)
+**Then** backend tests pass (baseline whatever 10.7a + 10.7b left it → expect +5 with ~5 new tests per locked decision 11; delta TBD by dev agent)
+**And** `npm test` in `AgentRun.Umbraco/Client/` passes (no frontend-logic changes in this story; count unchanged — baseline 235/235 post-10.7b per sprint-status; Track H is whitespace-only CSS so no new frontend tests expected)
 **And** `dotnet build AgentRun.Umbraco.slnx` is clean — zero new warnings introduced
 **And** `grep -rn "using Umbraco\." AgentRun.Umbraco/Engine/ --include="*.cs"` returns **0** matches (Story 10.11 invariant preserved)
+
+### AC5: Track H — CSS re-format closure on `agentrun-instance-detail.element.ts`
+
+**Given** the CSS block at [`agentrun-instance-detail.element.ts:58-173`](../../AgentRun.Umbraco/Client/src/components/agentrun-instance-detail.element.ts#L58) flagged by [deferred-work.md:374](./deferred-work.md) + [10-7b Review-Defer](./10-7b-frontend-instance-detail-and-chat-cursor.md) as a 10.7c candidate
+**When** the Track H commit lands
+**Then** every multi-property / multi-rule one-liner in the CSS block that a reader cannot scan at a glance is expanded to conventional multi-line CSS
+**And** cohesive state-matrix groups (the `.step-item.{pending,active,complete,error} .step-icon-wrapper` four-liner, the `.step-icon` state-colour triple, the `.step-text` / `.step-name` / `.step-subtitle` family, `@keyframes spin`, single-property utility rules like `.step-item.clickable { cursor: pointer; }`) are preserved in their current compact form — expansion there hurts scanability, not helps
+**And** manual browser verification confirms the rendered instance-detail view is visually identical pre- and post-reformat (side-by-side screenshot check is sufficient; no new frontend automated test required per locked decision 11)
+**And** the Track H commit body includes a 1-line note summarising the judgement call for each cluster group touched vs. preserved (e.g. "Expanded: .completion-banner, .step-sidebar ul. Preserved: step-item state matrix, @keyframes, single-prop utilities.")
+**And** the file's final line count is allowed to exceed the 10.7b AC1 ≤ 700 budget — that budget does not persist past 10.7b (locked decision 8); realistic landing is ~700–720 lines
+**And** the deferred-work entry at line 374 is struck through and marked **RESOLVED in Story 10.7c Track H** with the date, mirroring the pattern used for other resolved deferred entries
 
 ## Tasks / Subtasks
 
 ### Task 1: Track E — Extract `ContentToolHelpers` + fix O(n²) truncation (AC1, AC2)
 
-- [ ] 1.1 Read the four duplicated helpers in [`ListContentTool.cs:250-299`](../../AgentRun.Umbraco/Tools/ListContentTool.cs#L250), compare against the copies in [`GetContentTool.cs:250-299`](../../AgentRun.Umbraco/Tools/GetContentTool.cs#L250) and [`ListContentTypesTool.cs:123-144`](../../AgentRun.Umbraco/Tools/ListContentTypesTool.cs#L123). Pick the most-capable variant of each method (range checks present, edge cases handled) as the version that lives in the shared helper.
-- [ ] 1.2 Create [`AgentRun.Umbraco/Tools/ContentToolHelpers.cs`](../../AgentRun.Umbraco/Tools/ContentToolHelpers.cs) as `public static class ContentToolHelpers`. Add the four methods: `RejectUnknownParameters`, `ExtractOptionalStringArgument`, `ExtractOptionalIntArgument`, `ExtractRequiredIntArgument`.
-- [ ] 1.3 Delete the local copies in the three tool files and update the call sites to `ContentToolHelpers.XXX(...)`.
-- [ ] 1.4 Add a `public static string TruncateToByteLimit<T>(IList<T> items, int limitBytes, Func<int, string> markerFor, JsonSerializerOptions? options = null)` method to `ContentToolHelpers`. Implement via binary search:
+- [x] 1.1 Read the four duplicated helpers in [`ListContentTool.cs:250-299`](../../AgentRun.Umbraco/Tools/ListContentTool.cs#L250), compare against the copies in [`GetContentTool.cs:250-299`](../../AgentRun.Umbraco/Tools/GetContentTool.cs#L250) and [`ListContentTypesTool.cs:123-144`](../../AgentRun.Umbraco/Tools/ListContentTypesTool.cs#L123). Pick the most-capable variant of each method (range checks present, edge cases handled) as the version that lives in the shared helper.
+- [x] 1.2 Create [`AgentRun.Umbraco/Tools/ContentToolHelpers.cs`](../../AgentRun.Umbraco/Tools/ContentToolHelpers.cs) as `public static class ContentToolHelpers`. Add the four methods: `RejectUnknownParameters`, `ExtractOptionalStringArgument`, `ExtractOptionalIntArgument`, `ExtractRequiredIntArgument`.
+- [x] 1.3 Delete the local copies in the three tool files and update the call sites to `ContentToolHelpers.XXX(...)`.
+- [x] 1.4 Add a `public static string TruncateToByteLimit<T>(IList<T> items, int limitBytes, Func<int, string> markerFor, JsonSerializerOptions? options = null)` method to `ContentToolHelpers`. Implement via binary search:
   1. `lo = 0, hi = items.Count`
   2. Serialise full list + marker — if ≤ limit, return.
   3. Binary-search: at each step, serialise `items.Take(mid).ToList()` + `markerFor(mid)`, compare vs limit, move `lo` or `hi`.
   4. Return the largest prefix that fits.
-- [ ] 1.5 Replace the O(n²) loops at [`ListContentTool.cs:125-137`](../../AgentRun.Umbraco/Tools/ListContentTool.cs#L125), [`ListContentTypesTool.cs:104-115`](../../AgentRun.Umbraco/Tools/ListContentTypesTool.cs#L104), [`GetContentTool.cs:137-151`](../../AgentRun.Umbraco/Tools/GetContentTool.cs#L137) with calls to `ContentToolHelpers.TruncateToByteLimit(...)`.
-- [ ] 1.6 Create [`AgentRun.Umbraco.Tests/Tools/ContentToolHelpersTests.cs`](../../AgentRun.Umbraco.Tests/Tools/ContentToolHelpersTests.cs) with at least 5 tests: happy path for each of the 4 argument helpers + binary-search characterisation test (same final count as the old linear variant for representative input).
-- [ ] 1.7 Run content-tool tests — all existing tests still pass (no behavioural change; only performance).
 
-### Task 2: Track G — Comment hygiene pass (AC3)
+  **Signature deviation from spec, applied during implementation:** the method returns `(string Json, int IncludedCount)` (tuple) and takes an extra `Func<IList<T>, string> serialise` delegate. `GetContentTool` wraps its property-subset inside a larger result object, so the caller — not the helper — owns the outer JSON shape. Returning the included count lets `GetContentTool` populate its handle's `propertyCount` field and compute the `truncated` flag without a second pass. `List*` tools discard the count with `var (json, _) = ...`. The binary-search algorithm itself is unchanged.
+- [x] 1.5 Replace the O(n²) loops at [`ListContentTool.cs:125-137`](../../AgentRun.Umbraco/Tools/ListContentTool.cs#L125), [`ListContentTypesTool.cs:104-115`](../../AgentRun.Umbraco/Tools/ListContentTypesTool.cs#L104), [`GetContentTool.cs:137-151`](../../AgentRun.Umbraco/Tools/GetContentTool.cs#L137) with calls to `ContentToolHelpers.TruncateToByteLimit(...)`.
+- [x] 1.6 Create [`AgentRun.Umbraco.Tests/Tools/ContentToolHelpersTests.cs`](../../AgentRun.Umbraco.Tests/Tools/ContentToolHelpersTests.cs) with at least 5 tests: happy path for each of the 4 argument helpers + binary-search characterisation test (same final count as the old linear variant for representative input). Landed 8 tests (5 arg-helper coverage + 3 truncation: full-fits, binary-vs-linear characterisation, limit-smaller-than-empty-marker fallback).
+- [x] 1.7 Run content-tool tests — all existing tests still pass (no behavioural change; only performance). Backend 713/713 (baseline 705 + 8 new).
 
-- [ ] 2.1 Run the baseline grep: `grep -rnE "^\s*//\s*(Story\s+[0-9]+\.[0-9]+[^:]*:|Per (code )?review|Post-review|Added in Story)" AgentRun.Umbraco/ --include="*.cs" | wc -l`. Record the baseline count (expected ~69 pre-10.7a/b; may differ post-refactor).
-- [ ] 2.2 For each file with ≥ 3 hits, review each comment. Apply locked decision 6:
+### Task 2: Track H — CSS re-format closure on `agentrun-instance-detail.element.ts` (AC5)
+
+- [ ] 2.1 Read the CSS block at [`agentrun-instance-detail.element.ts:58-173`](../../AgentRun.Umbraco/Client/src/components/agentrun-instance-detail.element.ts#L58) in full.
+- [ ] 2.2 For each rule / rule cluster, apply locked decision 7:
+  - **Expand** to conventional multi-line CSS format if the current form is a multi-property one-liner that a reader cannot scan at a glance (e.g. a 5-property rule jammed onto one line).
+  - **Preserve** if the current compact form is more readable than the expanded form (single-property utility rules, state-matrix one-liner groups where the column of parallel lines communicates the state→style mapping at a glance, `@keyframes spin`, the `.step-icon` state-colour triple).
+  - **Judgement call threshold:** if you are unsure whether expanding helps, leave it. The file is shipping to public launch — over-expansion adds churn without adding clarity. Under-expansion leaves behind exactly the debt we are closing.
+- [ ] 2.3 Save the file. Run `npm run build` inside `AgentRun.Umbraco/Client/` — verify the `wwwroot/App_Plugins/AgentRunUmbraco/` bundle rebuilds clean.
+- [ ] 2.4 Manual visual check: start TestSite (`dotnet run` from `AgentRun.Umbraco.TestSite/`), load a running instance, verify the instance-detail view renders visually identically to the pre-reformat version. Hard-refresh the browser (Cmd+Shift+R) to bypass the 10-second Umbraco manifest cache.
+- [ ] 2.5 Run `npm test` in `AgentRun.Umbraco/Client/` — all green (no frontend-logic changes; count unchanged from 10.7b baseline of 235).
+- [ ] 2.6 Strike through the deferred-work entry at [deferred-work.md:374](./deferred-work.md) with the pattern `~~...~~ **RESOLVED in Story 10.7c Track H** (2026-04-16)`. Also strike through the 10-7b review-defer entry at [10-7b:321](./10-7b-frontend-instance-detail-and-chat-cursor.md#L321) with the same mark.
+
+### Task 3: Track G — Comment hygiene pass (AC3)
+
+- [ ] 3.1 Run the baseline grep: `grep -rnE "^\s*//\s*(Story\s+[0-9]+\.[0-9]+[^:]*:|Per (code )?review|Post-review|Added in Story)" AgentRun.Umbraco/ --include="*.cs" | wc -l`. Record the baseline count (expected ~69 pre-10.7a/b; may differ post-refactor).
+- [ ] 3.2 For each file with ≥ 3 hits, review each comment. Apply locked decision 6:
   - **Strip** if the comment is pure archaeology ("// Story 9.6: added tool limit resolution" on a method that's already named `ResolveToolLimit`).
   - **Keep** if the comment explains WHY a specific choice was made and a reader would be lost without it (RFC references, concurrency constraints, Umbraco.AI quirks, MaxOutputTokens=32768 rationale, AgentRunException bypassing LlmErrorClassifier).
   - **Rewrite** if the comment mixes archaeology with technical rationale — keep the rationale, drop the story ref.
-- [ ] 2.3 Re-run the grep — target ≤ 35 hits (50% reduction minimum per AC3).
-- [ ] 2.4 In the Track G commit body, include a terse per-file note: file name + count removed + what kind (e.g. "ToolLoop.cs: -9 story refs, kept 5 technical"). This is dev-record bookkeeping, not shipped documentation.
-- [ ] 2.5 Run `dotnet test AgentRun.Umbraco.slnx` one final time — green. Run `npm test` in `Client/` — green.
+- [ ] 3.3 Re-run the grep — target ≤ 35 hits (50% reduction minimum per AC3).
+- [ ] 3.4 In the Track G commit body, include a terse per-file note: file name + count removed + what kind (e.g. "ToolLoop.cs: -9 story refs, kept 5 technical"). This is dev-record bookkeeping, not shipped documentation.
+- [ ] 3.5 Run `dotnet test AgentRun.Umbraco.slnx` one final time — green. Run `npm test` in `Client/` — green.
 
-### Task 3: DoD verification + commit train
+### Task 4: DoD verification + commit train
 
-- [ ] 3.1 Full backend test: `dotnet test AgentRun.Umbraco.slnx` → all green (AC4).
-- [ ] 3.2 Full frontend test: `cd AgentRun.Umbraco/Client && npm test` → all green (count unchanged — no frontend changes).
-- [ ] 3.3 Build clean: `dotnet build AgentRun.Umbraco.slnx` → 0 new warnings.
-- [ ] 3.4 Engine boundary check: `grep -rn "using Umbraco\." AgentRun.Umbraco/Engine/ --include="*.cs"` → 0 matches (Story 10.11 invariant).
-- [ ] 3.5 Commit train:
+- [ ] 4.1 Full backend test: `dotnet test AgentRun.Umbraco.slnx` → all green (AC4).
+- [ ] 4.2 Full frontend test: `cd AgentRun.Umbraco/Client && npm test` → all green (count unchanged from 10.7b baseline 235).
+- [ ] 4.3 Build clean: `dotnet build AgentRun.Umbraco.slnx` → 0 new warnings.
+- [ ] 4.4 Engine boundary check: `grep -rn "using Umbraco\." AgentRun.Umbraco/Engine/ --include="*.cs"` → 0 matches (Story 10.11 invariant).
+- [ ] 4.5 Commit train:
   - Commit 1: Track E (`ContentToolHelpers` + binary-search truncation) + tests + content-tool call-site updates
-  - Commit 2: Track G (comment hygiene polish) — per-file note in commit body
+  - Commit 2: Track H (CSS re-format on `agentrun-instance-detail.element.ts`) — per-cluster note in commit body
+  - Commit 3: Track G (comment hygiene polish) — per-file note in commit body
 
   Each commit leaves the full test suite green. Each commit body ends with the standard Co-Authored-By trailer per CLAUDE.md.
-- [ ] 3.6 Manual E2E — Adam walks the content-tool scenarios against TestSite:
+- [ ] 4.6 Manual E2E — Adam walks the content-tool scenarios against TestSite:
   1. Start TestSite: `dotnet run` from `AgentRun.Umbraco.TestSite/`.
   2. Run the **Content Audit** workflow (Umbraco-native) end-to-end on Sonnet 4.6 against a realistic content tree (26+ nodes; use the Clean Starter Kit baseline from 9.13 + add content as needed to exceed the 256 KB truncation threshold on `list_content` or `list_content_types`).
   3. Verify: `list_content` / `get_content` / `list_content_types` tools all succeed, truncation marker appears when result exceeds 256 KB, final `run.finished: Completed`, audit-report references real content.
   4. Verify from logs that the content-tool calls completed in comparable or better time than baseline (the binary-search fix reduces CPU; it should never be slower).
-- [ ] 3.7 Set story status to `done` in this file + `sprint-status.yaml` once 3.1–3.6 all pass. This completes the 10.7 split trilogy; next story in Epic 10 is 10.4 (open-source licence decision).
+  5. **Track H visual gate:** load an instance-detail view in the browser; verify step sidebar, completion banner, step icons, and main panel layout render identically to the pre-10.7c form (side-by-side screenshot comparison against a pre-story screenshot is sufficient).
+- [ ] 4.7 Set story status to `done` in this file + `sprint-status.yaml` once 4.1–4.6 all pass. This completes the 10.7 split trilogy; next story in Epic 10 is 10.4 (open-source licence decision).
 
 ## Failure & Edge Cases
 
@@ -177,6 +213,13 @@ These decisions were locked in the parent story on 2026-04-15 and are preserved 
 **When** mid-refactor the dev is tempted to simplify `PromptAssembler.cs` or `WorkflowOrchestrator.cs` or `agentrun-chat-message.element.ts` (Codex suggested simplifications)
 **Then** the dev STOPS and logs the temptation as a deferred-work candidate — does NOT refactor those files in this story
 **Net effect:** scope discipline. Winston's triage was deliberate; overriding it requires a conversation, not a commit. If the dev spots a Real Issue in one of these files, file it as deferred-work and move on. This F-case applies to all three 10.7 child stories; listed here because 10.7c is the last of the trilogy — the temptation to "also clean up X while I'm in here" peaks when the story scope feels polish-shaped.
+
+### F4: Track H over-expands a state-matrix group and loses at-a-glance scanability
+
+**When** the dev blindly expands every one-line CSS rule in the block — including the `.step-item.{pending,active,complete,error} .step-icon-wrapper` four-liner, the `.step-icon` state-colour triple, or single-property utility rules
+**Then** the file grows by 40–60 lines without adding clarity; worse, the state→style mapping that the compact form communicates at a glance becomes harder to scan because the reader has to parse 4 full rule blocks to see the pattern
+**Mitigation:** locked decision 7 is explicit on what gets preserved. The Task 2.2 commit-body note per cluster gives Adam a review point — if a state-matrix group was expanded, that's a flag to revert that cluster. The rule of thumb: **a column of parallel one-line rules with the same shape is a table; reading across a table is faster than reading down a list of blocks. Don't break the table.**
+**Net effect:** Track H is the lowest-code-risk track but has the highest "over-zealous reformat" risk. The per-cluster commit note is the mitigation.
 
 ## Dev Notes
 
@@ -211,6 +254,9 @@ Two commits per the Task 3.5 plan — each commit leaves the full test suite gre
 - Do NOT touch any backend files from 10.7a scope structurally — only comment-strip them.
 - Do NOT touch any frontend files from 10.7b scope structurally — only comment-strip them if any frontend `.cs` file exists (there are none; frontend is `.ts` + tests).
 - Do NOT strip comments from `.ts` files in Track G — the grep pattern is `.cs` only. Frontend comment cleanup is a separate effort if needed.
+- Do NOT bulk-expand every one-line CSS rule in Track H — locked decision 7 is explicit about preserving state-matrix groups and single-property utility rules. Over-expansion is the F4 failure mode.
+- Do NOT introduce a persistent CSS-block line budget in Track H. The ≤ 700 line budget from 10.7b AC1 was a 10.7b-specific refactor-validation gate; it does not carry forward past that story. Post-Track H, the file landing between 700 and 720 lines is expected and acceptable (locked decision 8).
+- Do NOT add new frontend tests in Track H — CSS whitespace-only changes do not warrant new automated coverage. The manual visual check at Task 2.4 is the verification gate.
 - Do NOT rename existing test methods; preserve BDD intent across setup changes.
 
 ### Test patterns
@@ -229,10 +275,13 @@ Two commits per the Task 3.5 plan — each commit leaves the full test suite gre
   - `AgentRun.Umbraco/Tools/GetContentTool.cs` (helpers deleted; binary-search truncation)
   - `AgentRun.Umbraco/Tools/ListContentTypesTool.cs` (helpers deleted; binary-search truncation)
   - ~17 additional `.cs` files for Track G (comment hygiene) — each with story refs removed
+- **Frontend modified files:**
+  - `AgentRun.Umbraco/Client/src/components/agentrun-instance-detail.element.ts` (Track H: CSS re-format in the static-styles block, lines 58–173; whitespace-only change)
+  - `AgentRun.Umbraco/wwwroot/App_Plugins/AgentRunUmbraco/` bundle rebuild via `npm run build` in `Client/` — the bundled JS output must be committed alongside the `.ts` change (repo convention from Stories 6.4 / 10.7b)
 - **Engine boundary preserved:** `grep -rn "using Umbraco\." AgentRun.Umbraco/Engine/` must return 0 (locked decision 3).
 - **No new NuGet dependencies. No new npm dependencies.**
 - **No DI changes** — `ContentToolHelpers` is a static class.
-- **No frontend changes.**
+- **No frontend logic changes** — Track H is CSS whitespace only; no `@state`, no `@property`, no handler, no template changes.
 
 ### Research & Integration Checklist (per Epic 9 retro Process Improvement #1)
 
@@ -282,3 +331,4 @@ _To be filled by dev agent._
 | Date | Change | Author |
 |---|---|---|
 | 2026-04-15 | Story spec created by splitting parent Story 10.7 into 10.7a / 10.7b / 10.7c per Adam's quality-risk concern on 4-day single-PR delivery. This story (10.7c) covers Track E (ContentToolHelpers + binary-search truncation) + Track G (comment hygiene polish) — cross-cutting cleanup only. Depends on 10.7a + 10.7b landing first so Track G grep runs over the final shape. | Bob (SM) |
+| 2026-04-16 | Added **Track H — CSS re-format closure** on `agentrun-instance-detail.element.ts` to pick up the deferred-work entry explicitly marked as a 10.7c candidate ([deferred-work.md:374](./deferred-work.md), [10-7b:321](./10-7b-frontend-instance-detail-and-chat-cursor.md#L321)). Title + Story + Context + track table + locked decisions 7-13 + AC5 + Task 2 + F4 + What-NOT-to-do + Project Structure Notes + Change Log all updated. Three locked decisions added for Track H specifically: (7) judgement-led not bulk-reformat, (8) no persistent line budget past 10.7b, (9) Track-G-orthogonal. Priority ordering updated to E → H → G. Commit train updated from 2 commits to 3. No impact on Track E or Track G scope; test budget unchanged (~5 new backend tests, 0 frontend). | Bob (SM) |

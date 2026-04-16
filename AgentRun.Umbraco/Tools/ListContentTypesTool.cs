@@ -53,9 +53,9 @@ public class ListContentTypesTool : IWorkflowTool
                 "This is an engine wiring bug, not a workflow configuration issue.");
         }
 
-        RejectUnknownParameters(arguments);
+        ContentToolHelpers.RejectUnknownParameters(arguments, KnownParameters);
 
-        var aliasFilter = ExtractOptionalStringArgument(arguments, "alias");
+        var aliasFilter = ContentToolHelpers.ExtractOptionalStringArgument(arguments, "alias");
 
         IEnumerable<IContentType> contentTypes;
 
@@ -92,54 +92,15 @@ public class ListContentTypesTool : IWorkflowTool
         }).ToList();
 
         var limit = _limitResolver.ResolveListContentTypesMaxResponseBytes(context.Step, context.Workflow);
-        var json = JsonSerializer.Serialize(items);
-
-        if (System.Text.Encoding.UTF8.GetByteCount(json) <= limit)
-        {
-            return Task.FromResult<object>(json);
-        }
-
-        // Truncate: remove items from the end until under limit
         var totalCount = items.Count;
-        while (items.Count > 0)
-        {
-            items.RemoveAt(items.Count - 1);
-            var truncatedJson = JsonSerializer.Serialize(items);
-            var marker = $"[Response truncated — returned {items.Count} of {totalCount} document types. " +
-                         "Use alias filter to narrow results.]";
-            var candidate = truncatedJson + marker;
 
-            if (System.Text.Encoding.UTF8.GetByteCount(candidate) <= limit)
-            {
-                return Task.FromResult<object>(candidate);
-            }
-        }
+        var (json, _) = ContentToolHelpers.TruncateToByteLimit(
+            items,
+            limit,
+            sub => JsonSerializer.Serialize(sub),
+            count => $"[Response truncated — returned {count} of {totalCount} document types. " +
+                     "Use alias filter to narrow results.]");
 
-        var emptyMarker = $"[Response truncated — returned 0 of {totalCount} document types. " +
-                          "Use alias filter to narrow results.]";
-        return Task.FromResult<object>("[]" + emptyMarker);
-    }
-
-    private static void RejectUnknownParameters(IDictionary<string, object?> arguments)
-    {
-        var unknown = arguments.Keys.Where(k => !KnownParameters.Contains(k)).ToList();
-        if (unknown.Count > 0)
-        {
-            throw new ToolExecutionException(
-                $"Unrecognised parameter(s): {string.Join(", ", unknown)}");
-        }
-    }
-
-    private static string? ExtractOptionalStringArgument(IDictionary<string, object?> arguments, string name)
-    {
-        if (!arguments.TryGetValue(name, out var value) || value is null)
-            return null;
-
-        return value switch
-        {
-            string s => string.IsNullOrWhiteSpace(s) ? null : s,
-            JsonElement { ValueKind: JsonValueKind.String } je => je.GetString(),
-            _ => throw new ToolExecutionException($"Argument '{name}' must be a string")
-        };
+        return Task.FromResult<object>(json);
     }
 }

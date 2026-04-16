@@ -84,9 +84,9 @@ public class GetContentTool : IWorkflowTool
                 "so the tool can offload content to the instance scratch path.");
         }
 
-        RejectUnknownParameters(arguments);
+        ContentToolHelpers.RejectUnknownParameters(arguments, KnownParameters);
 
-        var id = ExtractRequiredIntArgument(arguments, "id");
+        var id = ContentToolHelpers.ExtractRequiredIntArgument(arguments, "id");
 
         using var contextReference = _umbracoContextFactory.EnsureUmbracoContext();
         var contentCache = contextReference.UmbracoContext.Content;
@@ -124,41 +124,38 @@ public class GetContentTool : IWorkflowTool
         };
 
         var limit = _limitResolver.ResolveGetContentMaxResponseBytes(context.Step, context.Workflow);
-        var json = JsonSerializer.Serialize(result);
-        var truncated = false;
+        var propertyList = properties.ToList();
+        var totalPropertyCount = propertyList.Count;
 
-        if (System.Text.Encoding.UTF8.GetByteCount(json) > limit)
-        {
-            truncated = true;
-
-            // Truncate by removing properties from the end until under limit (preserves valid JSON)
-            var propertyKeys = properties.Keys.ToList();
-            var totalPropertyCount = propertyKeys.Count;
-            while (propertyKeys.Count > 0)
+        var (json, includedCount) = ContentToolHelpers.TruncateToByteLimit(
+            propertyList,
+            limit,
+            sub =>
             {
-                properties.Remove(propertyKeys[^1]);
-                propertyKeys.RemoveAt(propertyKeys.Count - 1);
-
-                json = JsonSerializer.Serialize(result);
-                var marker = $"[Response truncated — returned {propertyKeys.Count} of {totalPropertyCount} properties. " +
-                             "Override get_content.max_response_bytes in your workflow configuration to increase the limit.]";
-                var candidate = json + marker;
-
-                if (System.Text.Encoding.UTF8.GetByteCount(candidate) <= limit)
+                var subset = new Dictionary<string, object?>(StringComparer.Ordinal);
+                foreach (var kvp in sub)
                 {
-                    json = candidate;
-                    break;
+                    subset[kvp.Key] = kvp.Value;
                 }
-            }
+                var subsetResult = new
+                {
+                    id = result.id,
+                    name = result.name,
+                    contentType = result.contentType,
+                    url = result.url,
+                    level = result.level,
+                    createDate = result.createDate,
+                    updateDate = result.updateDate,
+                    creatorName = result.creatorName,
+                    templateAlias = result.templateAlias,
+                    properties = subset
+                };
+                return JsonSerializer.Serialize(subsetResult);
+            },
+            count => $"[Response truncated — returned {count} of {totalPropertyCount} properties. " +
+                     "Override get_content.max_response_bytes in your workflow configuration to increase the limit.]");
 
-            // Even zero properties exceeds the limit — use what we have
-            if (propertyKeys.Count == 0 && System.Text.Encoding.UTF8.GetByteCount(json) > limit)
-            {
-                var emptyMarker = $"[Response truncated — returned 0 of {totalPropertyCount} properties. " +
-                                  "Override get_content.max_response_bytes in your workflow configuration to increase the limit.]";
-                json = JsonSerializer.Serialize(result) + emptyMarker;
-            }
-        }
+        var truncated = includedCount < totalPropertyCount;
 
         // Offload: write full result to .content-cache/{contentId}.json, return handle
         var relPath = $".content-cache/{id}.json";
@@ -199,7 +196,7 @@ public class GetContentTool : IWorkflowTool
             nodeName,
             node.ContentType.Alias,
             _urlProvider.GetUrl(node) ?? string.Empty,
-            properties.Count,
+            includedCount,
             sizeBytes,
             relPath,
             truncated);
@@ -496,43 +493,4 @@ public class GetContentTool : IWorkflowTool
         }
     }
 
-    private static void RejectUnknownParameters(IDictionary<string, object?> arguments)
-    {
-        var unknown = arguments.Keys.Where(k => !KnownParameters.Contains(k)).ToList();
-        if (unknown.Count > 0)
-        {
-            throw new ToolExecutionException(
-                $"Unrecognised parameter(s): {string.Join(", ", unknown)}");
-        }
-    }
-
-    private static int ExtractRequiredIntArgument(IDictionary<string, object?> arguments, string name)
-    {
-        if (!arguments.TryGetValue(name, out var value) || value is null)
-        {
-            throw new ToolExecutionException($"Missing required argument: '{name}'");
-        }
-
-        var intValue = value switch
-        {
-            int i => i,
-            long l when l is > int.MaxValue or < int.MinValue
-                => throw new ToolExecutionException($"Argument '{name}' is out of range"),
-            long l => (int)l,
-            double d when double.IsNaN(d) || double.IsInfinity(d) || d > int.MaxValue || d < int.MinValue
-                => throw new ToolExecutionException($"Argument '{name}' is out of range"),
-            double d => (int)d,
-            JsonElement { ValueKind: JsonValueKind.Number } je => je.GetInt32(),
-            JsonElement { ValueKind: JsonValueKind.String } je when int.TryParse(je.GetString(), out var parsed)
-                => parsed,
-            _ => throw new ToolExecutionException($"Argument '{name}' must be an integer")
-        };
-
-        if (intValue <= 0)
-        {
-            throw new ToolExecutionException($"Argument '{name}' must be a positive integer");
-        }
-
-        return intValue;
-    }
 }

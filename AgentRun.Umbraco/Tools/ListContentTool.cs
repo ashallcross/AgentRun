@@ -80,10 +80,10 @@ public class ListContentTool : IWorkflowTool
                 "This is an engine wiring bug, not a workflow configuration issue.");
         }
 
-        RejectUnknownParameters(arguments);
+        ContentToolHelpers.RejectUnknownParameters(arguments, KnownParameters);
 
-        var contentTypeFilter = ExtractOptionalStringArgument(arguments, "contentType");
-        var parentId = ExtractOptionalIntArgument(arguments, "parentId");
+        var contentTypeFilter = ContentToolHelpers.ExtractOptionalStringArgument(arguments, "contentType");
+        var parentId = ContentToolHelpers.ExtractOptionalIntArgument(arguments, "parentId");
 
         using var contextReference = _umbracoContextFactory.EnsureUmbracoContext();
         var contentCache = contextReference.UmbracoContext.Content;
@@ -113,33 +113,16 @@ public class ListContentTool : IWorkflowTool
         }).ToList();
 
         var limit = _limitResolver.ResolveListContentMaxResponseBytes(context.Step, context.Workflow);
-        var json = JsonSerializer.Serialize(items);
-
-        if (System.Text.Encoding.UTF8.GetByteCount(json) <= limit)
-        {
-            return Task.FromResult<object>(json);
-        }
-
-        // Truncate: remove items from the end until under limit
         var totalCount = items.Count;
-        while (items.Count > 0)
-        {
-            items.RemoveAt(items.Count - 1);
-            var truncatedJson = JsonSerializer.Serialize(items);
-            var marker = $"[Response truncated — returned {items.Count} of {totalCount} content nodes. " +
-                         "Use contentType or parentId filters to narrow results.]";
-            var candidate = truncatedJson + marker;
 
-            if (System.Text.Encoding.UTF8.GetByteCount(candidate) <= limit)
-            {
-                return Task.FromResult<object>(candidate);
-            }
-        }
+        var (json, _) = ContentToolHelpers.TruncateToByteLimit(
+            items,
+            limit,
+            sub => JsonSerializer.Serialize(sub),
+            count => $"[Response truncated — returned {count} of {totalCount} content nodes. " +
+                     "Use contentType or parentId filters to narrow results.]");
 
-        // Even zero items exceeds the limit (very small limit configured)
-        var emptyMarker = $"[Response truncated — returned 0 of {totalCount} content nodes. " +
-                          "Use contentType or parentId filters to narrow results.]";
-        return Task.FromResult<object>("[]" + emptyMarker);
+        return Task.FromResult<object>(json);
     }
 
     private List<IPublishedContent> CollectNodes(
@@ -247,54 +230,4 @@ public class ListContentTool : IWorkflowTool
         return result;
     }
 
-    private static void RejectUnknownParameters(IDictionary<string, object?> arguments)
-    {
-        var unknown = arguments.Keys.Where(k => !KnownParameters.Contains(k)).ToList();
-        if (unknown.Count > 0)
-        {
-            throw new ToolExecutionException(
-                $"Unrecognised parameter(s): {string.Join(", ", unknown)}");
-        }
-    }
-
-    private static string? ExtractOptionalStringArgument(IDictionary<string, object?> arguments, string name)
-    {
-        if (!arguments.TryGetValue(name, out var value) || value is null)
-            return null;
-
-        return value switch
-        {
-            string s => string.IsNullOrWhiteSpace(s) ? null : s,
-            JsonElement { ValueKind: JsonValueKind.String } je => je.GetString(),
-            _ => throw new ToolExecutionException($"Argument '{name}' must be a string")
-        };
-    }
-
-    private static int? ExtractOptionalIntArgument(IDictionary<string, object?> arguments, string name)
-    {
-        if (!arguments.TryGetValue(name, out var value) || value is null)
-            return null;
-
-        var intValue = value switch
-        {
-            int i => i,
-            long l when l is > int.MaxValue or < int.MinValue
-                => throw new ToolExecutionException($"Argument '{name}' is out of range"),
-            long l => (int)l,
-            double d when double.IsNaN(d) || double.IsInfinity(d) || d > int.MaxValue || d < int.MinValue
-                => throw new ToolExecutionException($"Argument '{name}' is out of range"),
-            double d => (int)d,
-            JsonElement { ValueKind: JsonValueKind.Number } je => je.GetInt32(),
-            JsonElement { ValueKind: JsonValueKind.String } je when int.TryParse(je.GetString(), out var parsed)
-                => parsed,
-            _ => throw new ToolExecutionException($"Argument '{name}' must be an integer")
-        };
-
-        if (intValue <= 0)
-        {
-            throw new ToolExecutionException($"Argument '{name}' must be a positive integer");
-        }
-
-        return intValue;
-    }
 }
