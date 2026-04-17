@@ -220,6 +220,44 @@ Most workflows work fine with a single profile. Use step-level overrides when:
 - A step needs a cheaper/faster model for high-volume work
 - You want to test the same workflow against different providers
 
+### Canonical Example: Content Audit Routing
+
+The Content Audit workflow is a good illustration of where step-level
+routing pays for itself. Scanner and analyser do high-volume, rubric-driven
+work where a fast mid-tier model (Sonnet-class) is the price/quality sweet
+spot. The reporter produces the single visible audit output -- paying for
+a flagship model (Opus-class) here buys the most visible quality delta
+for a small number of tokens, since the reporter's output is capped.
+
+```yaml
+name: Umbraco Content Audit
+description: Audits content for quality, completeness, and structural issues
+default_profile: anthropic-sonnet                 # fast tier for scanner + analyser
+steps:
+  - id: scanner
+    name: Content Scanner
+    agent: agents/scanner.md
+    # no profile -- inherits default_profile (Sonnet)
+  - id: analyser
+    name: Quality Analyser
+    agent: agents/analyser.md
+    # no profile -- inherits default_profile (Sonnet)
+  - id: reporter
+    name: Report Generator
+    agent: agents/reporter.md
+    profile: anthropic-opus                       # flagship tier for the visible writeup
+```
+
+Profile aliases (`anthropic-sonnet`, `anthropic-opus`) are **placeholders**
+-- replace them with your own aliases configured under **Settings > AI**.
+An alias referenced here but not configured in Umbraco.AI causes the step
+to fail with `ProfileNotFoundException` when it runs.
+
+Because the reporter has a small token budget (typically 200 lines or
+fewer per the shipped prompt), the cost delta across a full audit is
+usually pennies rather than pounds -- most requests still flow through
+the cheaper Sonnet tier.
+
 ## Available Tools
 
 Workflows declare which tools each step can use. Only declared tools are available -- the

@@ -2,6 +2,20 @@
 name: Umbraco Content Audit
 description: Audits content in this Umbraco instance for quality, completeness, and structural issues
 mode: interactive
+
+# ─── Optional: per-step profile routing ───
+# Route cheap/mechanical steps (scanner, analyser) to a fast model and the
+# reporter to a flagship model — paying for quality only where it shows.
+# Replace the aliases with your own Umbraco.AI profile aliases
+# (Settings > AI). An alias referenced here but not configured in Umbraco.AI
+# will fail at step execution with ProfileNotFoundException.
+#
+# To enable: uncomment the `default_profile:` line below AND add a
+# `profile: your-quality-profile` line to the existing `reporter` step
+# further down in this file (do NOT uncomment a second `steps:` block).
+#
+# default_profile: your-fast-profile            # e.g. Sonnet — used by scanner + analyser
+
 steps:
   - id: scanner
     name: Content Scanner

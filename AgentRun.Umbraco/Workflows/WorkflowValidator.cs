@@ -84,10 +84,30 @@ public sealed class WorkflowValidator : IWorkflowValidator
         ValidateRequiredString(rootDict, "name", "Workflow", errors);
         ValidateRequiredString(rootDict, "description", "Workflow", errors);
         ValidateMode(rootDict, errors);
+        ValidateOptionalString(rootDict, "default_profile", "default_profile", errors);
         ValidateSteps(rootDict, errors);
         ValidateToolTuningBlock(rootDict, "tool_defaults", "tool_defaults", errors);
 
         return new WorkflowValidationResult(errors);
+    }
+
+    private static void ValidateOptionalString(
+        Dictionary<object, object> dict,
+        string key,
+        string fieldPath,
+        List<WorkflowValidationError> errors)
+    {
+        if (!dict.TryGetValue(key, out var value) || value is null)
+        {
+            return;
+        }
+
+        if (value is not string)
+        {
+            errors.Add(new WorkflowValidationError(
+                fieldPath,
+                $"'{fieldPath}' must be a string, got '{value.GetType().Name}'"));
+        }
     }
 
     private static void ValidateToolTuningBlock(
@@ -331,6 +351,8 @@ public sealed class WorkflowValidator : IWorkflowValidator
         }
 
         ValidateToolTuningBlock(stepDict, "tool_overrides", $"steps[{stepLabel}].tool_overrides", errors);
+
+        ValidateOptionalString(stepDict, "profile", $"steps[{index}].profile", errors);
 
         if (stepDict.TryGetValue("completion_check", out var ccValue) && ccValue is not null)
         {

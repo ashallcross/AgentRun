@@ -566,4 +566,92 @@ public class WorkflowValidatorTests
         Assert.That(result.IsValid, Is.True,
             $"compaction_turns in step overrides should be accepted: {string.Join("; ", result.Errors.Select(e => e.Message))}");
     }
+
+    // --- Profile Type Validation (Story 11.6) ---
+
+    [Test]
+    public void Validate_StepProfile_NonString_ReturnsValidationError()
+    {
+        // Story 11.6 AC3: profile must be a string — mapping value rejected at load
+        var yaml = """
+            name: Bad Profile Type
+            description: step profile as a mapping
+            steps:
+              - id: step_one
+                name: Step One
+                agent: agents/worker.md
+                profile:
+                  nested: true
+            """;
+
+        var result = _validator.Validate(yaml);
+
+        Assert.That(result.IsValid, Is.False);
+        Assert.That(result.Errors, Has.Some.Matches<WorkflowValidationError>(
+            e => e.FieldPath == "steps[0].profile" && e.Message.Contains("must be a string")));
+    }
+
+    [Test]
+    public void Validate_DefaultProfile_NonString_ReturnsValidationError()
+    {
+        // Story 11.6 AC3: default_profile must be a string — list value rejected at load
+        var yaml = """
+            name: Bad Default Profile Type
+            description: default_profile as a list
+            default_profile:
+              - a
+              - b
+            steps:
+              - id: step_one
+                name: Step One
+                agent: agents/worker.md
+            """;
+
+        var result = _validator.Validate(yaml);
+
+        Assert.That(result.IsValid, Is.False);
+        Assert.That(result.Errors, Has.Some.Matches<WorkflowValidationError>(
+            e => e.FieldPath == "default_profile" && e.Message.Contains("must be a string")));
+    }
+
+    [Test]
+    public void Validate_StepProfile_ValidString_Passes()
+    {
+        // Story 11.6 AC1/AC3: a plain-string profile passes validation
+        var yaml = """
+            name: Profile Override
+            description: step profile as a valid alias
+            default_profile: anthropic-sonnet
+            steps:
+              - id: reporter
+                name: Reporter
+                agent: agents/reporter.md
+                profile: anthropic-opus
+            """;
+
+        var result = _validator.Validate(yaml);
+
+        Assert.That(result.IsValid, Is.True,
+            $"valid string profile should pass: {string.Join("; ", result.Errors.Select(e => e.Message))}");
+    }
+
+    [Test]
+    public void Validate_StepProfile_Absent_Passes()
+    {
+        // Story 11.6: profile is optional — absence must not produce a validation error
+        var yaml = """
+            name: No Step Profile
+            description: step omits profile, workflow default present
+            default_profile: anthropic-sonnet
+            steps:
+              - id: step_one
+                name: Step One
+                agent: agents/worker.md
+            """;
+
+        var result = _validator.Validate(yaml);
+
+        Assert.That(result.IsValid, Is.True,
+            $"absent step profile should pass: {string.Join("; ", result.Errors.Select(e => e.Message))}");
+    }
 }
