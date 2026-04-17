@@ -37,6 +37,12 @@ public class StreamingResponseAccumulator : IStreamingResponseAccumulator
         // is off.
         var emitCount = 0;
         var emitChars = 0;
+        // Story 11.5 — accumulate UsageDetails from any UsageContent fragments
+        // in the stream. Providers surface usage via UsageContent in the Contents
+        // list (per-turn cumulative or per-chunk delta depending on adapter);
+        // UsageDetails.Add handles merge semantics so the caller sees a single
+        // totalled UsageDetails per accumulated response.
+        UsageDetails? accumulatedUsage = null;
 
         try
         {
@@ -57,6 +63,17 @@ public class StreamingResponseAccumulator : IStreamingResponseAccumulator
                             "engine.streaming.text_delta_emitted: seq={Seq}, chars={Chars}, cumulative={Cumulative}",
                             emitCount, update.Text.Length, emitChars);
                     }
+                }
+
+                foreach (var usageContent in update.Contents.OfType<UsageContent>())
+                {
+                    // UsageContent.Details has a public setter and the parameterless
+                    // ctor creates an empty UsageDetails — a malformed provider chunk
+                    // with Details=null would otherwise throw ArgumentNullException
+                    // out of UsageDetails.Add and tear down the whole stream. Skip.
+                    if (usageContent.Details is null) continue;
+                    accumulatedUsage ??= new UsageDetails();
+                    accumulatedUsage.Add(usageContent.Details);
                 }
             }
         }
@@ -86,6 +103,6 @@ public class StreamingResponseAccumulator : IStreamingResponseAccumulator
             await (recorder?.RecordAssistantTextAsync(accumulatedText, cancellationToken) ?? Task.CompletedTask);
         }
 
-        return new AccumulatedResponse(accumulatedText, updates);
+        return new AccumulatedResponse(accumulatedText, updates, accumulatedUsage);
     }
 }

@@ -121,6 +121,11 @@ substitutes before the LLM sees the prompt -- see
 [Prompt Variables](#prompt-variables) below for the available tokens and
 the workflow-level `config:` block.
 
+The way you order content in an agent prompt also affects provider-side
+prompt caching — see [Prompt Caching](#prompt-caching) below for the
+stable-first discipline that unlocks cache hits without any code or
+configuration change.
+
 ### Tips from the Shipped Examples
 
 The Content Quality Audit and Accessibility Quick-Scan workflows demonstrate patterns that
@@ -290,6 +295,137 @@ Note the split convention: `{token}` is a **runner-substituted** value
 slot** that the agent fills in from tool results (here, `[number]`). Use
 `{token}` only for values the runner can provide deterministically; use
 `[bracket]` for anything the agent must reason about.
+
+## Prompt Caching
+
+Long workflows that iterate through many items (e.g. the Content Audit
+scanner calling `get_content` across hundreds of nodes, one node per turn)
+re-send the same system prompt + tool schemas on every LLM call. Provider-
+side prompt caching lets the model read that stable preamble from cache at
+a 90% discount on Anthropic, or benefit from automatic threshold-based
+caching on OpenAI and Azure OpenAI — without any code or configuration
+change on your side, as long as your prompts follow the stable-first
+discipline below.
+
+### What's Cached Automatically
+
+The runner annotates every System message with a provider-neutral
+`Cacheable` hint on the way out. Each provider adapter decides what to do
+with it:
+
+| Provider | Behaviour |
+|---|---|
+| OpenAI / Azure OpenAI | Ignores the hint. Automatic caching engages once the prompt crosses the provider's minimum-size threshold (currently ~1024 tokens). No action required. |
+| GitHub Copilot / Google Gemini / Ollama / local | Ignores the hint. Caching (if any) depends on the specific provider and is out of scope here. |
+| Anthropic (Claude) | **Today:** ignores the hint — the current Umbraco.AI.Anthropic + Microsoft.Extensions.AI chain does not translate the neutral hint into Anthropic's native `cache_control` marker. Tracked as a planned follow-up (see AgentRun's `deferred-work.md`). **Once that follow-up ships:** the System message will carry `cache_control: { type: "ephemeral" }` and subsequent turns within a step will read from cache. |
+
+You don't need to do anything provider-specific in your workflow. Your job
+is to write cache-friendly prompts (below); the runner and the adapter
+handle the rest.
+
+### Prompt-Author Discipline: Stable First
+
+For caching to work — on any provider, automatic or marker-driven — the
+stable parts of your prompt must come **first**, before anything that
+varies from run to run. Caching covers the longest stable prefix, so even
+one variable byte near the top invalidates everything after it.
+
+**Put this at the top (stable):**
+
+- Identity, principles, role description
+- Hard invariants and locked rules
+- Scoring rubrics, severity bands, evaluation criteria
+- Tool-calling procedure and failure handling
+- Output templates (the *structure*, with `[bracket]` slots)
+
+**Put this near the bottom (variable):**
+
+- References to prior-step artifacts by name
+- `{token}` substitutions that vary per run (especially `{today}`)
+- Any user-supplied scope that's woven into the prompt text
+
+The shipped `umbraco-content-audit` scanner follows this pattern — the
+entire agent markdown is stable across a single run, and the only
+per-run variation is the Runtime Context section that the engine appends
+after your prompt. If you follow the same layout, your workflow is
+cache-ready by construction.
+
+**Do:**
+
+```markdown
+# My Scanner Agent
+
+## Identity
+You are a measurement instrument...
+
+## Invariants
+1. Always call tools before narrating...
+
+## Output Template
+# Results for [node name]
+...
+```
+
+**Don't:**
+
+```markdown
+# My Scanner Agent
+
+Today is {today}. The user asked to audit [something specific].
+
+## Identity
+You are a measurement instrument...
+```
+
+The "don't" example leaks two variable bytes (`{today}` plus the
+user-supplied scope) above the stable identity section — every run writes
+a new cache entry instead of reading an existing one.
+
+### Observability
+
+Every step emits a structured `cache.usage` log line at Information level
+with these fields:
+
+- `step`, `workflow`, `instance` — correlation identifiers
+- `input`, `output` — total input / output token counts for the step
+- `cached_input` — Microsoft.Extensions.AI `UsageDetails.CachedInputTokenCount`
+  (tokens the provider read from cache)
+- `cache_read`, `cache_write` — provider-specific extras (Anthropic
+  surfaces these as `CacheReadInputTokens` / `CacheCreationInputTokens`;
+  OpenAI and Azure don't split the counts today)
+
+Zeros are signal, not absence. If your Anthropic workflow is supposed to
+be caching but `cached_input` is 0 turn after turn, the hint isn't being
+translated to `cache_control` yet (see the follow-up note above) or your
+stable preamble is under Anthropic's 1024-token minimum.
+
+**Filtering in Serilog** (other sinks follow the same pattern):
+
+```csharp
+Log.Logger = new LoggerConfiguration()
+    .Filter.ByIncludingOnly(e => e.MessageTemplate.Text.StartsWith("cache.usage"))
+    .WriteTo.File("logs/cache-usage.log")
+    .CreateLogger();
+```
+
+Umbraco.AI's backoffice Analytics dashboard covers general token usage
+(requests, input / output tokens, success rate, provider / model / profile
+breakdowns) — the `cache.usage` log line is AgentRun's contribution for
+the cache read / write split that Analytics doesn't yet show.
+
+### Out of Scope
+
+- **Tool-schema caching.** Tool declarations pass through
+  `ChatOptions.Tools`, a separate transport channel. A future pass may
+  extend caching to tool schemas once Anthropic's 4-breakpoint budget is
+  understood empirically.
+- **Cross-step cache reuse.** Caching is optimised for within-step tool
+  loops (the dominant use case). Cross-step hits depend on whether the
+  assembled prompt between steps is byte-identical; usually it isn't
+  because the Runtime Context section's Prior Artifacts list changes.
+- **Manual cache control in workflow YAML.** No `cache:` root key, no
+  per-step `cacheable:` toggle — the runner decides. If adopters need a
+  flag to disable caching, that's a future story.
 
 ## Completion Checking
 

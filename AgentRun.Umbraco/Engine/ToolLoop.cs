@@ -72,6 +72,11 @@ public static class ToolLoop
         // tool result was added. Populated when tool results are appended.
         var toolResultTurnMap = new Dictionary<string, int>(StringComparer.Ordinal);
 
+        // Story 11.5 — per-step UsageDetails total aggregated across every
+        // LLM call in the loop. StepExecutor reads this off the returned
+        // ChatResponse.Usage and emits the cache.usage log line once per step.
+        UsageDetails? totalUsage = null;
+
         var iteration = 0;
         while (true)
         {
@@ -88,7 +93,10 @@ public static class ToolLoop
                     "Tool loop exceeded {MaxIterations} iterations for step {StepId} in workflow {WorkflowAlias} instance {InstanceId}",
                     MaxIterations, context.StepId, context.WorkflowAlias, context.InstanceId);
                 throw new AgentRunException(
-                    $"Tool loop exceeded maximum of {MaxIterations} iterations for step '{context.StepId}'");
+                    $"Tool loop exceeded maximum of {MaxIterations} iterations for step '{context.StepId}'")
+                {
+                    PartialUsage = totalUsage
+                };
             }
 
             // Drain any user messages queued from the message endpoint
@@ -108,6 +116,13 @@ public static class ToolLoop
             var accumulatedText = accumulated.Text;
             var updates = accumulated.Updates;
 
+            // Story 11.5 — merge this turn's usage into the per-step total.
+            if (accumulated.Usage is not null)
+            {
+                totalUsage ??= new UsageDetails();
+                totalUsage.Add(accumulated.Usage);
+            }
+
             // Assemble streaming updates into messages for conversation context
             messages.AddMessages(updates);
 
@@ -123,16 +138,33 @@ public static class ToolLoop
                 // Empty-turn decision tree delegated to IStallRecoveryPolicy.
                 // The nudgeAttempted flag lives here (not in the policy) because
                 // it persists across loop iterations; the policy is stateless.
-                var stallDecision = await stallPolicy.EvaluateAsync(
-                    messages, accumulatedText, functionCalls, updates,
-                    assistantTurnCount, nudgeAttempted,
-                    isInteractive: userMessageReader is not null,
-                    completionCheck, context, cancellationToken);
+                //
+                // Story 11.5 — if the policy throws StallDetected or
+                // ProviderEmptyResponse, attach the partial totalUsage before
+                // rethrowing so StepExecutor's cache.usage log reflects tokens
+                // actually spent up to the stall instead of silent zeros.
+                StallRecoveryDecision stallDecision;
+                try
+                {
+                    stallDecision = await stallPolicy.EvaluateAsync(
+                        messages, accumulatedText, functionCalls, updates,
+                        assistantTurnCount, nudgeAttempted,
+                        isInteractive: userMessageReader is not null,
+                        completionCheck, context, cancellationToken);
+                }
+                catch (AgentRunException ex) when (ex.PartialUsage is null)
+                {
+                    ex.PartialUsage = totalUsage;
+                    throw;
+                }
 
                 if (stallDecision.Action == StallRecoveryAction.Terminate)
                 {
                     return new ChatResponse(messages.Where(m => m.Role == ChatRole.Assistant).LastOrDefault()
-                        ?? new ChatMessage(ChatRole.Assistant, accumulatedText));
+                        ?? new ChatMessage(ChatRole.Assistant, accumulatedText))
+                    {
+                        Usage = totalUsage
+                    };
                 }
 
                 if (stallDecision.Action == StallRecoveryAction.Nudge)
@@ -169,7 +201,10 @@ public static class ToolLoop
                         "Completion check passed during input wait for step {StepId} in workflow {WorkflowAlias} instance {InstanceId}",
                         context.StepId, context.WorkflowAlias, context.InstanceId);
                     return new ChatResponse(messages.Where(m => m.Role == ChatRole.Assistant).LastOrDefault()
-                        ?? new ChatMessage(ChatRole.Assistant, accumulatedText));
+                        ?? new ChatMessage(ChatRole.Assistant, accumulatedText))
+                    {
+                        Usage = totalUsage
+                    };
                 }
 
                 // Signal frontend that we're waiting for user input
@@ -213,7 +248,10 @@ public static class ToolLoop
                 }
 
                 return new ChatResponse(messages.Where(m => m.Role == ChatRole.Assistant).LastOrDefault()
-                    ?? new ChatMessage(ChatRole.Assistant, accumulatedText));
+                    ?? new ChatMessage(ChatRole.Assistant, accumulatedText))
+                {
+                    Usage = totalUsage
+                };
             }
 
             // Process each tool call and collect results

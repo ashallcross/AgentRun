@@ -1,6 +1,7 @@
 using Microsoft.Extensions.AI;
 using AgentRun.Umbraco.Instances;
 using AgentRun.Umbraco.Tools;
+using AgentRun.Umbraco.Workflows;
 
 namespace AgentRun.Umbraco.Engine;
 
@@ -78,6 +79,13 @@ public class StepExecutor : IStepExecutor
                     step.Id, instance.WorkflowAlias, instance.InstanceId,
                     string.Join(", ", validationResult.MissingFiles));
 
+                // Story 11.5 — emit cache.usage even for pre-LLM validation
+                // failures so the "every step attempt emits one log line"
+                // contract documented in workflow-authoring-guide.md holds for
+                // dashboard authors. No LLM call was made, so zeros across
+                // every field are the correct signal.
+                LogCacheUsage(usage: null, instance, step);
+
                 try
                 {
                     await _instanceManager.UpdateStepStatusAsync(
@@ -147,11 +155,20 @@ public class StepExecutor : IStepExecutor
                 aiTools.Add(new ToolDeclaration(tool.Name, tool.Description, tool.ParameterSchema));
             }
 
-            // Build initial messages — start with fresh system prompt
-            var messages = new List<ChatMessage>
-            {
-                new(ChatRole.System, prompt)
-            };
+            // Build initial messages — start with fresh system prompt.
+            // Story 11.5 — annotate the System message with a neutral
+            // Cacheable hint. Standard M.E.AI AdditionalProperties is the
+            // documented extension point — conforming adapters ignore unknown
+            // keys, so this is harmless on every provider (OpenAI, Azure
+            // OpenAI, Gemini, Copilot, Ollama, custom). A future provider
+            // adapter in Services/ (e.g. an Anthropic cache_control wrapper)
+            // can translate the hint into provider-native caching markers
+            // without any change to Engine/ code. See D8 of 11.5 spec.
+            var systemMessage = new ChatMessage(ChatRole.System, prompt);
+            systemMessage.AdditionalProperties ??= new AdditionalPropertiesDictionary();
+            systemMessage.AdditionalProperties[EngineDefaults.CacheableHintKey] = true;
+
+            var messages = new List<ChatMessage> { systemMessage };
 
             // Load existing conversation history (retry scenario — prior tool calls and messages)
             var history = await _conversationStore.GetHistoryAsync(
@@ -192,8 +209,11 @@ public class StepExecutor : IStepExecutor
 
             var compactionThreshold = _toolLimitResolver.ResolveCompactionTurnThreshold(step, workflow);
 
-            // Run the tool loop
-            await ToolLoop.RunAsync(
+            // Run the tool loop. Story 11.5 — capture the returned
+            // ChatResponse so we can read the per-step UsageDetails total
+            // (aggregated inside ToolLoop across every LLM call) and emit the
+            // cache.usage log line at each terminal exit path.
+            var toolLoopResponse = await ToolLoop.RunAsync(
                 client, messages, chatOptions, toolDict, toolExecutionContext, _logger, cancellationToken,
                 context.UserMessageReader, context.EventEmitter, context.ConversationRecorder,
                 completionCheck, _toolLimitResolver, compactionTurnThreshold: compactionThreshold);
@@ -213,6 +233,8 @@ public class StepExecutor : IStepExecutor
                     step.Id, instance.WorkflowAlias, instance.InstanceId,
                     string.Join(", ", completionResult.MissingFiles));
 
+                LogCacheUsage(toolLoopResponse.Usage, instance, step);
+
                 try
                 {
                     await _instanceManager.UpdateStepStatusAsync(
@@ -227,6 +249,8 @@ public class StepExecutor : IStepExecutor
 
                 return;
             }
+
+            LogCacheUsage(toolLoopResponse.Usage, instance, step);
 
             // Update step status to Complete
             await _instanceManager.UpdateStepStatusAsync(
@@ -253,6 +277,16 @@ public class StepExecutor : IStepExecutor
             // provider failures); see StepExecutionFailureHandlerTests.
             context.LlmError = _failureHandler.Classify(ex);
 
+            // Story 11.5 — emit the cache.usage log even on the error path so
+            // adopters see partial usage (stall / max-iterations / provider-
+            // empty-response paths carry the UsageDetails accumulated across
+            // prior turns via AgentRunException.PartialUsage) or zeros (for
+            // exceptions originating outside the engine-domain throw sites —
+            // e.g. raw provider exceptions mid-stream — where no partial total
+            // is available). Zeros remain signal, not absence.
+            var partialUsage = (ex as AgentRunException)?.PartialUsage;
+            LogCacheUsage(partialUsage, instance, step);
+
             try
             {
                 await _instanceManager.UpdateStepStatusAsync(
@@ -265,6 +299,39 @@ public class StepExecutor : IStepExecutor
                     step.Id, instance.WorkflowAlias, instance.InstanceId);
             }
         }
+    }
+
+    // Story 11.5 AC2 — emit the per-step cache.usage structured log line.
+    // Fires at Information level (D4) with M.E.AI UsageDetails fields plus
+    // provider-specific AdditionalCounts extras (Anthropic surfaces these as
+    // CacheReadInputTokens / CacheCreationInputTokens; OpenAI / Azure don't
+    // split the counts today). Zeros are signal, not absence — the log fires
+    // unconditionally so adopters can validate cache behaviour via standard
+    // log sinks (Serilog, App Insights, Seq).
+    private void LogCacheUsage(UsageDetails? usage, InstanceState instance, StepDefinition step)
+    {
+        var inputTokens = usage?.InputTokenCount ?? 0;
+        var outputTokens = usage?.OutputTokenCount ?? 0;
+        var cachedInputTokens = usage?.CachedInputTokenCount ?? 0;
+        var cacheReadExtra = TryGetLong(usage?.AdditionalCounts, "CacheReadInputTokens");
+        var cacheWriteExtra = TryGetLong(usage?.AdditionalCounts, "CacheCreationInputTokens");
+
+        _logger.LogInformation(
+            "cache.usage: step={StepId}, workflow={WorkflowAlias}, instance={InstanceId}, input={InputTokens}, output={OutputTokens}, cached_input={CachedInputTokens}, cache_read={CacheReadExtra}, cache_write={CacheWriteExtra}",
+            step.Id,
+            instance.WorkflowAlias,
+            instance.InstanceId,
+            inputTokens,
+            outputTokens,
+            cachedInputTokens,
+            cacheReadExtra,
+            cacheWriteExtra);
+    }
+
+    private static long TryGetLong(AdditionalPropertiesDictionary<long>? dict, string key)
+    {
+        if (dict is null) return 0;
+        return dict.TryGetValue(key, out var value) ? value : 0;
     }
 
     internal static IEnumerable<ChatMessage> ConvertHistoryToMessages(IReadOnlyList<ConversationEntry> history)

@@ -24,6 +24,11 @@ public interface IStreamingResponseAccumulator
         CancellationToken cancellationToken);
 }
 
+// Story 11.5 — Usage is aggregated from any UsageContent fragments that
+// appear in the stream via UsageDetails.Add. Null when no UsageContent
+// was observed (text-only streams or providers that don't report usage
+// on the streaming path).
 public sealed record AccumulatedResponse(
     string Text,
-    IReadOnlyList<ChatResponseUpdate> Updates);
+    IReadOnlyList<ChatResponseUpdate> Updates,
+    UsageDetails? Usage = null);

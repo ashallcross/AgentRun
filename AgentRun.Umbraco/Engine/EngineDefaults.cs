@@ -64,4 +64,15 @@ public static class EngineDefaults
     /// context savings. Story 10.2 bug fix.
     /// </summary>
     public const int CompactionMinSizeBytes = 1024;
+
+    /// <summary>
+    /// Key used in <see cref="Microsoft.Extensions.AI.ChatMessage.AdditionalProperties"/>
+    /// to flag a message as cacheable by provider adapters that support prompt
+    /// caching. Provider-neutral: conforming adapters that don't recognise the
+    /// key ignore it by contract. Adapters that do (e.g. a future Anthropic
+    /// adapter in <c>Services/</c>) translate this into their native cache
+    /// marker — for Anthropic, <c>cache_control: { type: "ephemeral" }</c>.
+    /// Story 11.5.
+    /// </summary>
+    public const string CacheableHintKey = "Cacheable";
 }
