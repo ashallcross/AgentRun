@@ -32,6 +32,14 @@
       "additionalProperties": true,
       "description": "Reserved for future workflow variant support. The runtime validator permits this key with free-form contents today — do not rely on a stable inner shape yet."
     },
+    "config": {
+      "type": ["object", "null"],
+      "description": "Optional flat map of workflow-level variable values exposed to agent prompts as {key} tokens at prompt-assembly time. Keys must match [a-z0-9_]+; values must be strings. Runtime-provided variables ({today}, {instance_id}, {step_index}, {previous_artifacts}) take precedence on key collision. An explicit null (config:) is equivalent to omitting the key. See Story 11.7.",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[a-z0-9_]+$": { "type": "string" }
+      }
+    },
     "tool_defaults": {
       "$ref": "#/$defs/toolTuning",
       "description": "Workflow-level tool tuning. Values declared here apply to every step unless a step-level 'tool_overrides' block overrides them. Resolution chain: step tool_overrides → workflow tool_defaults → site AgentRun:ToolLimits defaults → engine default, all capped by the site-level ceiling. See Story 9.6 (fetch_url / tool_loop) and Story 9.9 (read_file)."

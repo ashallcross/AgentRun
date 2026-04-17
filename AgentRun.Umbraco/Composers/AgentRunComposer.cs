@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using AgentRun.Umbraco.Engine;
 using AgentRun.Umbraco.Instances;
 using AgentRun.Umbraco.Security;
@@ -34,6 +35,11 @@ public class AgentRunComposer : IComposer
         builder.Services.AddSingleton<IToolLimitResolver, ToolLimitResolver>();
 
         // Engine services
+        // Story 11.7 — TimeProvider is the clock seam for `{today}` resolution
+        // in PromptAssembler. TryAddSingleton so Umbraco or another composer
+        // can provide a custom TimeProvider if needed (e.g. a fixed-date clock
+        // for integration testing).
+        builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<IPromptAssembler, PromptAssembler>();
         // Engine-boundary adapter — holds Umbraco.AI.* deps so ProfileResolver
         // (Engine/) can stay Umbraco-free. Registered BEFORE IProfileResolver

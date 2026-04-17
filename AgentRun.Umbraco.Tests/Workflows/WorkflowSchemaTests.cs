@@ -168,6 +168,114 @@ public class WorkflowSchemaTests
         }
     }
 
+    // --- Workflow Config Block (Story 11.7) ---
+
+    [Test]
+    public void Schema_Accepts_Config_Block_With_Valid_Flat_String_Map()
+    {
+        // AC4 — snake_case keys + string values pass the JSON schema
+        const string yaml = """
+            name: Config Workflow
+            description: uses config block
+            config:
+              language: en-GB
+              severity_threshold: medium
+            steps:
+              - id: step_one
+                name: Step One
+                agent: agents/step-one.md
+            """;
+
+        AssertSchemaValid(yaml);
+    }
+
+    [Test]
+    public void Schema_Rejects_Config_Block_With_Uppercase_Key()
+    {
+        // AC4 — patternProperties only accepts [a-z0-9_]+; additionalProperties:false
+        // means keys not matching the pattern are rejected.
+        const string yaml = """
+            name: Bad Config Key
+            description: uppercase key
+            config:
+              Language: en-GB
+            steps:
+              - id: step_one
+                name: Step One
+                agent: agents/step-one.md
+            """;
+
+        AssertSchemaInvalid(yaml);
+    }
+
+    [Test]
+    public void Schema_Rejects_Config_Block_With_NonString_Value()
+    {
+        // AC4 / D5 — value must be a string; an integer is rejected
+        const string yaml = """
+            name: Bad Config Value
+            description: integer value
+            config:
+              max_nodes: 50
+            steps:
+              - id: step_one
+                name: Step One
+                agent: agents/step-one.md
+            """;
+
+        AssertSchemaInvalid(yaml);
+    }
+
+    [Test]
+    public void Schema_Accepts_Explicit_Null_Config_Block()
+    {
+        // Failure & Edge Cases — `config: null` / `config:` (empty scalar) is
+        // legal and equivalent to omitting the key. Schema mirrors the runtime
+        // validator which treats null as absent.
+        const string yaml = """
+            name: Null Config
+            description: explicit null
+            config:
+            steps:
+              - id: step_one
+                name: Step One
+                agent: agents/step-one.md
+            """;
+
+        AssertSchemaValid(yaml);
+    }
+
+    private static void AssertSchemaValid(string yaml)
+    {
+        var schema = JsonSchema.FromText(LoadEmbeddedSchemaJson());
+        var deserializer = new DeserializerBuilder().Build();
+        var yamlObject = deserializer.Deserialize<object?>(yaml);
+        var jsonString = JsonSerializer.Serialize(NormalizeForJson(yamlObject));
+        using var doc = JsonDocument.Parse(jsonString);
+
+        var result = schema.Evaluate(doc.RootElement, new EvaluationOptions { OutputFormat = OutputFormat.List });
+
+        if (!result.IsValid)
+        {
+            var details = new List<string>();
+            CollectErrors(result, details);
+            Assert.Fail("Expected valid but got:\n - " + string.Join("\n - ", details));
+        }
+    }
+
+    private static void AssertSchemaInvalid(string yaml)
+    {
+        var schema = JsonSchema.FromText(LoadEmbeddedSchemaJson());
+        var deserializer = new DeserializerBuilder().Build();
+        var yamlObject = deserializer.Deserialize<object?>(yaml);
+        var jsonString = JsonSerializer.Serialize(NormalizeForJson(yamlObject));
+        using var doc = JsonDocument.Parse(jsonString);
+
+        var result = schema.Evaluate(doc.RootElement, new EvaluationOptions { OutputFormat = OutputFormat.List });
+
+        Assert.That(result.IsValid, Is.False, "Expected schema to reject this YAML");
+    }
+
     private static void CollectErrors(EvaluationResults result, List<string> details)
     {
         if (result.Errors is { Count: > 0 })

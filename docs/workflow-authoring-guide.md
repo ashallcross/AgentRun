@@ -116,6 +116,11 @@ provides that context. Focus your prompt on:
 - **How it should behave** -- interaction style, constraints, invariants
 - **What output to produce** -- file format, structure, naming
 
+Agent prompts can also include `{token}` placeholders that the runner
+substitutes before the LLM sees the prompt -- see
+[Prompt Variables](#prompt-variables) below for the available tokens and
+the workflow-level `config:` block.
+
 ### Tips from the Shipped Examples
 
 The Content Quality Audit and Accessibility Quick-Scan workflows demonstrate patterns that
@@ -168,6 +173,123 @@ Steps communicate through artifacts -- files written to the instance's working d
 - **Prior step artifacts are visible.** The prompt context lists artifacts from all completed
   steps with existence flags, so later steps can see what earlier steps produced even without
   explicit `reads_from`.
+
+## Prompt Variables
+
+Agent prompts can include `{token}` placeholders that the runner resolves to
+concrete values before the LLM ever sees the prompt. This is the right tool
+for values the runner knows deterministically -- today's date, the running
+instance id, or workflow-level config -- rather than relying on the LLM to
+guess or on the user to supply them in conversation.
+
+The canonical use case is stamping output artifacts with the real run date:
+the `umbraco-content-audit` workflow's prompts write `Date: {today}` into
+their artifacts and the runner substitutes `{today}` for the current UTC
+date in ISO-8601 format, killing the common "the agent hallucinated a date"
+bug. Note that the date is always UTC regardless of server locale — a
+server in Sydney at 02:00 local on the 18th still sees `{today}` resolve
+to the 17th until UTC midnight passes.
+
+### Available Tokens
+
+| Token | Value | Notes |
+|---|---|---|
+| `{today}` | Current UTC date in `YYYY-MM-DD` format | Date only — no time component. Always UTC regardless of server locale; changes on the UTC day boundary. |
+| `{instance_id}` | Full GUID string identifying the running instance | Useful for correlating artifacts, logs, and external references. |
+| `{step_index}` | Zero-based index of the current step within the workflow | The first step is `0`, not `1`. |
+| `{previous_artifacts}` | Markdown bullet list of artifacts from completed prior steps | Each line: `- {path} (from step "{stepName}"): exists\|missing`. Empty workflows render `- No prior artifacts`. |
+| `{<config_key>}` | Value from the workflow's `config:` block (see below) | Resolves only when the key exists in the workflow's declared config. |
+
+Token matching is **case-sensitive** and limited to the ASCII set
+`[a-z0-9_]+`. `{Today}`, `{INSTANCE_ID}`, and `{instanceId}` are all left as
+literal text -- they do not resolve to anything.
+
+### Workflow Config Block
+
+Declare a workflow-level `config:` block with flat key/value pairs to expose
+author-defined values to every step:
+
+```yaml
+name: Localised Audit
+description: Demonstrates config-driven variable injection
+config:
+  language: en-GB
+  severity_threshold: medium
+steps:
+  - id: analyser
+    name: Analyser
+    agent: agents/analyser.md
+```
+
+The analyser's prompt (e.g. `agents/analyser.md`) can then reference
+`{language}` and `{severity_threshold}`, and the runner substitutes them
+before the LLM call.
+
+**Rules:**
+
+- **Keys** must match `^[a-z0-9_]+$` (snake_case, lowercase). `config.Language`
+  and `config.severity-threshold` are rejected at workflow load.
+- **Values** must be strings. Nested maps and lists are rejected at load
+  time. If you need structure, flatten it (e.g. `severity_threshold: medium`
+  rather than `severity: { threshold: medium }`).
+- **Absent/empty** `config:` is legal. Workflows that don't declare a config
+  block still receive the four built-in runtime variables above.
+
+**Precedence.** Runtime-provided variables (`{today}`, `{instance_id}`,
+`{step_index}`, `{previous_artifacts}`) always win over workflow config. If
+a workflow declares `config: { today: "2000-01-01" }`, the real server date
+still resolves in prompts -- the config value is silently ignored.
+
+**No recursive expansion.** Config values are inserted literally. If a
+config value itself contains `{other_token}`, the inner token is not
+re-substituted. Keep values simple strings; put placeholder composition in
+the agent prompt itself.
+
+### Unknown Tokens
+
+A token the runner doesn't recognise (a typo, an illustrative example, or a
+future variable the prompt anticipates) is **left as literal text** in the
+assembled prompt. The runner emits a single `Warning` log line per distinct
+unknown token per step -- look for `Unresolved prompt variable in step
+{StepId}: {Token}` in the engine logs if you're debugging why a token isn't
+substituting.
+
+This design intentionally avoids throwing on unknown tokens so that
+prompts can freely include literal braces in comments, code fences, and
+meta-examples without breaking.
+
+### Escaping Braces
+
+Need a literal `{today}` in your prompt without substitution (for example,
+documenting the feature inside a prompt)? Use double braces:
+
+```text
+Write the author-literal text {{today}} without the runner replacing it.
+```
+
+At assembly time this renders as `{today}` in the final prompt. The escape
+pass runs before token substitution, so no `Warning` log fires for escaped
+tokens.
+
+### Canonical Example: Dated Artifact Output
+
+The shipped `umbraco-content-audit` workflow uses `{today}` in every
+artifact template to stamp run dates authoritatively:
+
+```markdown
+# Umbraco Content Audit Report
+
+Date: {today} | Content nodes audited: [number]
+
+## Executive Summary
+...
+```
+
+Note the split convention: `{token}` is a **runner-substituted** value
+(supplied by the engine), whereas `[bracket]` syntax is an **LLM template
+slot** that the agent fills in from tool results (here, `[number]`). Use
+`{token}` only for values the runner can provide deterministically; use
+`[bracket]` for anything the agent must reason about.
 
 ## Completion Checking
 

@@ -13,6 +13,14 @@ public sealed class WorkflowDefinition
     public List<StepDefinition> Steps { get; set; } = [];
 
     /// <summary>
+    /// Flat map of workflow-level variable values exposed to agent prompts as
+    /// <c>{key}</c> tokens via <see cref="Engine.PromptAssembler"/>. Story 11.7.
+    /// Keys must match <c>^[a-z0-9_]+$</c>; values are strings. Null/absent
+    /// when the workflow declares no <c>config:</c> block.
+    /// </summary>
+    public Dictionary<string, string>? Config { get; set; }
+
+    /// <summary>
     /// Workflow-level tool tuning defaults. Maps to YAML <c>tool_defaults</c>.
     /// </summary>
     public ToolDefaultsConfig? ToolDefaults { get; set; }

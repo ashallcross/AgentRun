@@ -654,4 +654,207 @@ public class WorkflowValidatorTests
         Assert.That(result.IsValid, Is.True,
             $"absent step profile should pass: {string.Join("; ", result.Errors.Select(e => e.Message))}");
     }
+
+    // --- Workflow Config Block (Story 11.7) ---
+
+    [Test]
+    public void Validate_Config_ValidFlatStringMap_Passes()
+    {
+        // AC4 — snake_case keys + string values = legal
+        var yaml = """
+            name: Config Workflow
+            description: uses config block
+            config:
+              language: en-GB
+              severity_threshold: medium
+            steps:
+              - id: step_one
+                name: Step One
+                agent: agents/worker.md
+            """;
+
+        var result = _validator.Validate(yaml);
+
+        Assert.That(result.IsValid, Is.True,
+            $"valid flat string config should pass: {string.Join("; ", result.Errors.Select(e => e.Message))}");
+    }
+
+    [Test]
+    public void Validate_Config_UpperCaseKey_ReturnsError()
+    {
+        // AC4 — keys must match [a-z0-9_]+; uppercase rejected
+        var yaml = """
+            name: Bad Config Key
+            description: key has uppercase
+            config:
+              Language: en-GB
+            steps:
+              - id: step_one
+                name: Step One
+                agent: agents/worker.md
+            """;
+
+        var result = _validator.Validate(yaml);
+
+        Assert.That(result.IsValid, Is.False);
+        Assert.That(result.Errors, Has.Some.Matches<WorkflowValidationError>(
+            e => e.FieldPath == "config.Language" && e.Message.Contains("[a-z0-9_]+")));
+    }
+
+    [Test]
+    public void Validate_Config_HyphenInKey_ReturnsError()
+    {
+        // AC4 — hyphens are not snake_case; rejected
+        var yaml = """
+            name: Hyphen Config Key
+            description: key uses kebab-case
+            config:
+              severity-threshold: medium
+            steps:
+              - id: step_one
+                name: Step One
+                agent: agents/worker.md
+            """;
+
+        var result = _validator.Validate(yaml);
+
+        Assert.That(result.IsValid, Is.False);
+        Assert.That(result.Errors, Has.Some.Matches<WorkflowValidationError>(
+            e => e.FieldPath == "config.severity-threshold" && e.Message.Contains("[a-z0-9_]+")));
+    }
+
+    [Test]
+    public void Validate_Config_NestedMap_ReturnsError()
+    {
+        // AC4 / D5 — flat shape only; nested map rejected
+        var yaml = """
+            name: Nested Config
+            description: config value is a mapping
+            config:
+              limits:
+                max: 10
+            steps:
+              - id: step_one
+                name: Step One
+                agent: agents/worker.md
+            """;
+
+        var result = _validator.Validate(yaml);
+
+        Assert.That(result.IsValid, Is.False);
+        Assert.That(result.Errors, Has.Some.Matches<WorkflowValidationError>(
+            e => e.FieldPath == "config.limits" && e.Message.Contains("must be a string")));
+    }
+
+    [Test]
+    public void Validate_Config_ListValue_ReturnsError()
+    {
+        // AC4 / D5 — list values rejected
+        var yaml = """
+            name: List Config Value
+            description: config value is a list
+            config:
+              pillars:
+                - seo
+                - freshness
+            steps:
+              - id: step_one
+                name: Step One
+                agent: agents/worker.md
+            """;
+
+        var result = _validator.Validate(yaml);
+
+        Assert.That(result.IsValid, Is.False);
+        Assert.That(result.Errors, Has.Some.Matches<WorkflowValidationError>(
+            e => e.FieldPath == "config.pillars" && e.Message.Contains("must be a string")));
+    }
+
+    [Test]
+    public void Validate_Config_NonMapping_ReturnsError()
+    {
+        // AC4 — `config:` must be a mapping; scalar value rejected
+        var yaml = """
+            name: Scalar Config
+            description: config is a string, not a map
+            config: bogus
+            steps:
+              - id: step_one
+                name: Step One
+                agent: agents/worker.md
+            """;
+
+        var result = _validator.Validate(yaml);
+
+        Assert.That(result.IsValid, Is.False);
+        Assert.That(result.Errors, Has.Some.Matches<WorkflowValidationError>(
+            e => e.FieldPath == "config" && e.Message.Contains("must be a mapping")));
+    }
+
+    [Test]
+    public void Validate_Config_Absent_Passes()
+    {
+        // AC4 — `config:` is optional; absence must not produce a validation error
+        var yaml = """
+            name: No Config
+            description: no config block at all
+            steps:
+              - id: step_one
+                name: Step One
+                agent: agents/worker.md
+            """;
+
+        var result = _validator.Validate(yaml);
+
+        Assert.That(result.IsValid, Is.True,
+            $"absent config block should pass: {string.Join("; ", result.Errors.Select(e => e.Message))}");
+    }
+
+    [Test]
+    public void Validate_Config_EmptyMap_Passes()
+    {
+        // AC4 — empty config mapping is legal
+        var yaml = """
+            name: Empty Config
+            description: empty config block
+            config: {}
+            steps:
+              - id: step_one
+                name: Step One
+                agent: agents/worker.md
+            """;
+
+        var result = _validator.Validate(yaml);
+
+        Assert.That(result.IsValid, Is.True,
+            $"empty config block should pass: {string.Join("; ", result.Errors.Select(e => e.Message))}");
+    }
+
+    [Test]
+    public void Validate_Config_NonStringValue_WithExplicitYamlTag_ReturnsError()
+    {
+        // AC4 — when YamlDotNet is forced to emit a non-string via an explicit
+        // tag (`!!int`, `!!bool`), the validator's `value is not string` branch
+        // fires. Without an explicit tag, plain YAML scalars are normalised to
+        // strings at the Dictionary<object, object> layer — see Discovery #2.
+        var yaml = """
+            name: Tagged Non-String Config
+            description: forces int via !!int tag
+            config:
+              max_nodes: !!int 50
+            steps:
+              - id: step_one
+                name: Step One
+                agent: agents/worker.md
+            """;
+
+        var result = _validator.Validate(yaml);
+
+        Assert.That(result.IsValid, Is.False);
+        Assert.That(result.Errors,
+            Has.Some.Matches<WorkflowValidationError>(e =>
+                e.FieldPath == "config.max_nodes" &&
+                e.Message.Contains("must be a string")),
+            "Expected a 'config.max_nodes must be a string' error");
+    }
 }

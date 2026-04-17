@@ -19,8 +19,14 @@ public sealed class WorkflowValidator : IWorkflowValidator
 
     private static readonly HashSet<string> AllowedRootKeys = new(StringComparer.Ordinal)
     {
-        "name", "description", "mode", "default_profile", "steps", "icon", "variants", "tool_defaults"
+        "name", "description", "mode", "default_profile", "steps", "icon", "variants", "tool_defaults", "config"
     };
+
+    // Story 11.7 — workflow config keys must be snake_case token-compatible so
+    // they can appear as `{key}` in agent prompts. Mirrors PromptAssembler's
+    // TokenRegex. Validated at workflow load time.
+    private static readonly System.Text.RegularExpressions.Regex ConfigKeyRegex =
+        new(@"^[a-z0-9_]+$", System.Text.RegularExpressions.RegexOptions.Compiled);
 
     private static readonly HashSet<string> AllowedStepKeys = new(StringComparer.Ordinal)
     {
@@ -85,6 +91,7 @@ public sealed class WorkflowValidator : IWorkflowValidator
         ValidateRequiredString(rootDict, "description", "Workflow", errors);
         ValidateMode(rootDict, errors);
         ValidateOptionalString(rootDict, "default_profile", "default_profile", errors);
+        ValidateConfigBlock(rootDict, errors);
         ValidateSteps(rootDict, errors);
         ValidateToolTuningBlock(rootDict, "tool_defaults", "tool_defaults", errors);
 
@@ -107,6 +114,53 @@ public sealed class WorkflowValidator : IWorkflowValidator
             errors.Add(new WorkflowValidationError(
                 fieldPath,
                 $"'{fieldPath}' must be a string, got '{value.GetType().Name}'"));
+        }
+    }
+
+    // Story 11.7 — validates the optional root-level `config:` block:
+    //   1. Must be a mapping (or absent/null).
+    //   2. Keys must be strings matching `^[a-z0-9_]+$` (token-compatible).
+    //   3. Values must be strings (flat shape — no nested maps, lists, bools, ints).
+    // Empty map is legal. See Story 11.7 AC4 + D5.
+    private static void ValidateConfigBlock(
+        Dictionary<object, object> rootDict,
+        List<WorkflowValidationError> errors)
+    {
+        if (!rootDict.TryGetValue("config", out var configValue) || configValue is null)
+        {
+            return; // optional
+        }
+
+        if (configValue is not Dictionary<object, object> configDict)
+        {
+            errors.Add(new WorkflowValidationError("config", "'config' must be a mapping"));
+            return;
+        }
+
+        foreach (var (keyObj, value) in configDict)
+        {
+            if (keyObj is not string key)
+            {
+                errors.Add(new WorkflowValidationError(
+                    "config",
+                    $"'config' keys must be strings, got '{keyObj?.GetType().Name ?? "null"}'"));
+                continue;
+            }
+
+            if (!ConfigKeyRegex.IsMatch(key))
+            {
+                errors.Add(new WorkflowValidationError(
+                    $"config.{key}",
+                    $"'config.{key}' must match [a-z0-9_]+"));
+                continue;
+            }
+
+            if (value is not string)
+            {
+                errors.Add(new WorkflowValidationError(
+                    $"config.{key}",
+                    $"'config.{key}' must be a string, got '{value?.GetType().Name ?? "null"}'"));
+            }
         }
     }
 

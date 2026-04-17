@@ -110,14 +110,20 @@ public class StepExecutor : IStepExecutor
                 .Select(t => new ToolDescription(t.Name, t.Description))
                 .ToList();
 
-            // Assemble prompt
+            // Assemble prompt.
+            // Story 11.7 — InstanceId flows through so `{instance_id}` resolves;
+            // WorkflowConfig is taken from the loaded WorkflowDefinition so
+            // `{config_key}` tokens resolve from the workflow's root `config:`
+            // block. Both fields default to no-op values when absent.
             var promptContext = new PromptAssemblyContext(
                 WorkflowFolderPath: context.WorkflowFolderPath,
                 Step: step,
                 AllSteps: instance.Steps,
                 AllStepDefinitions: workflow.Steps,
                 InstanceFolderPath: context.InstanceFolderPath,
-                DeclaredTools: toolDescriptions);
+                DeclaredTools: toolDescriptions,
+                InstanceId: instance.InstanceId,
+                WorkflowConfig: workflow.Config);
 
             var prompt = await _promptAssembler.AssemblePromptAsync(promptContext, cancellationToken);
             _logger.LogInformation(

@@ -22,7 +22,7 @@ public class PromptAssemblerTests
         Directory.CreateDirectory(_workflowDir);
         Directory.CreateDirectory(_instanceDir);
 
-        _assembler = new PromptAssembler(NullLogger<PromptAssembler>.Instance);
+        _assembler = new PromptAssembler(NullLogger<PromptAssembler>.Instance, TimeProvider.System);
     }
 
     [TearDown]
