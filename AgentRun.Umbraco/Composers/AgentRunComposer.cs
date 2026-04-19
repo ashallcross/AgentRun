@@ -98,5 +98,29 @@ public class AgentRunComposer : IComposer
         builder.Services.AddSingleton<IWorkflowTool, ListContentTool>();
         builder.Services.AddSingleton<IWorkflowTool, GetContentTool>();
         builder.Services.AddSingleton<IWorkflowTool, ListContentTypesTool>();
+
+        // Web search (Story 11.8). Platform tool: any workflow step can opt in
+        // via `tools: [web_search]`. Provider adapters live in Services/ and
+        // hold their own HttpClient + API keys; factory mirrors
+        // IAIChatClientFactory. Cache is in-memory IMemoryCache wrapper.
+        builder.Services.AddHttpClient("WebSearch", client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(30);
+            // 2 MB — well above any plausible JSON search response. Caps
+            // unbounded-body DoS from a rogue or compromised provider; the
+            // tool is LLM-invokable so the blast radius of an unbounded read
+            // is amplified by retries.
+            client.MaxResponseContentBufferSize = 2_000_000;
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("AgentRun/1.0");
+        });
+        builder.Services.AddMemoryCache();
+        builder.Services.AddSingleton<IWebSearchCache, WebSearchCache>();
+        // Registration order is load-bearing (Story 11.8 D2): the first
+        // registered provider with a configured key wins the fallback when
+        // AgentRun:WebSearch:DefaultProvider is unset.
+        builder.Services.AddSingleton<IWebSearchProvider, BraveWebSearchProvider>();
+        builder.Services.AddSingleton<IWebSearchProvider, TavilyWebSearchProvider>();
+        builder.Services.AddSingleton<IWebSearchProviderFactory, WebSearchProviderFactory>();
+        builder.Services.AddSingleton<IWorkflowTool, WebSearchTool>();
     }
 }

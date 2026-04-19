@@ -651,6 +651,97 @@ of `{alias, name, editorAlias, mandatory}`), `compositions` (array of aliases),
 
 **Access:** reads from `IContentTypeService`. No published content cache needed.
 
+### `web_search`
+
+Searches the web via a configured provider (Brave by default, Tavily as a second
+registered provider) and returns URL + title + snippet results. URLs are **not** fetched —
+call `fetch_url` on any result URL that needs to be read in full.
+
+**Parameters:**
+
+| Name | Required | Description |
+|------|----------|-------------|
+| `query` | Yes | The search query |
+| `count` | No | 1–25, default 10. Each adapter clamps to its provider's ceiling (Brave 20, Tavily 20) |
+| `freshness` | No | `last_day` / `last_week` / `last_month` / `last_year` / `all` (default `all`) |
+
+Returns a JSON object: `{ "provider": "Brave", "results": [ { title, url, snippet, publishedDate, sourceProvider, relevanceScore } ] }`. Fields absent in the provider response are `null`.
+
+#### Configuration
+
+Web search needs at least one provider API key in `appsettings.json`:
+
+```json
+{
+  "AgentRun": {
+    "WebSearch": {
+      "DefaultProvider": "Brave",
+      "CacheTtl": "01:00:00",
+      "Providers": {
+        "Brave":  { "ApiKey": "<your-brave-key>" },
+        "Tavily": { "ApiKey": "<your-tavily-key>" }
+      }
+    }
+  }
+}
+```
+
+- Get a Brave key (free tier, 2000 queries/month) at `api.search.brave.com`.
+- Get a Tavily key (free dev tier) at `tavily.com`.
+- Env-var overrides work the usual way: `AGENTRUN__WEBSEARCH__PROVIDERS__BRAVE__APIKEY=...`.
+- No backoffice UI for keys in v1 — a future dashboard epic may add one.
+
+#### Provider Selection
+
+The tool picks the provider via this chain:
+
+1. `AgentRun:WebSearch:DefaultProvider` (if set AND that provider has an API key).
+2. First registered provider with a configured API key (Brave before Tavily).
+3. Otherwise → structured `not_configured` error result.
+
+Switching providers is a config change + restart; no workflow YAML edits needed.
+
+#### Caching
+
+Responses are cached in memory for `CacheTtl` (default 1 hour) keyed on
+`(provider, normalisedQuery, count, freshness)`. Query normalisation lowercases + trims +
+collapses whitespace, so `"Umbraco 16"` and `"umbraco   16"` share a cache entry. The cache
+resets on app restart — no disk persistence.
+
+#### Error Shapes the Agent Sees
+
+Rather than throw, the tool returns structured JSON errors so the LLM can reason about them:
+
+| `error` | When | LLM should |
+|--------|------|-----------|
+| `not_configured` | Provider has no API key, OR the configured key was rejected (HTTP 401/403) | ask user, skip search, or proceed without web context — do NOT retry |
+| `rate_limited` | HTTP 429 from provider (carries `retryAfterSeconds`) | wait, try a different query, or move on |
+| `transport` | 5xx, DNS error, timeout, malformed JSON, body-read failure | try again or move on |
+| `invalid_argument` | Bad tool-call arguments (empty query, count out of range) | fix the tool call and retry |
+
+#### Security Notes
+
+- API keys are read from `appsettings.json` and never logged, echoed in tool results, or
+  surfaced to the LLM. Rotating a key = edit appsettings + restart.
+- Search-result URLs are **not** automatically fetched. If the agent wants content, it calls
+  `fetch_url`, which applies SSRF protection at that point.
+- There is no automatic provider fallback (e.g. Brave 429 → Tavily). The agent sees the
+  rate-limit error and decides.
+
+#### Workflow Example
+
+```yaml
+name: External Research
+alias: external-research
+
+steps:
+  - id: research
+    name: Research
+    agent: agents/researcher.md
+    tools: [web_search, fetch_url, write_file]
+    writes_to: [research-notes.md]
+```
+
 ## Configuring Tool Tuning Values
 
 Tool behaviour can be tuned at multiple levels. Values resolve through a four-tier chain,

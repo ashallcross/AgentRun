@@ -36,4 +36,10 @@ public class AgentRunOptions
     /// reduce network chatter.
     /// </summary>
     public TimeSpan KeepaliveInterval { get; set; } = TimeSpan.FromSeconds(15);
+
+    /// <summary>
+    /// Web search provider configuration (API keys, default provider, cache TTL).
+    /// Bound from <c>AgentRun:WebSearch</c>. Story 11.8.
+    /// </summary>
+    public AgentRunWebSearchOptions? WebSearch { get; set; }
 }
