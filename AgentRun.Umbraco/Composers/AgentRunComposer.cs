@@ -99,6 +99,11 @@ public class AgentRunComposer : IComposer
         builder.Services.AddSingleton<IWorkflowTool, GetContentTool>();
         builder.Services.AddSingleton<IWorkflowTool, ListContentTypesTool>();
 
+        // Umbraco.AI Context read-tool (Story 11.9). Platform tool: any workflow
+        // step can opt in via `tools: [get_ai_context]`. Reads Contexts by alias
+        // or by content-node tree-inheritance. No cache in v1.
+        builder.Services.AddSingleton<IWorkflowTool, GetAiContextTool>();
+
         // Web search (Story 11.8). Platform tool: any workflow step can opt in
         // via `tools: [web_search]`. Provider adapters live in Services/ and
         // hold their own HttpClient + API keys; factory mirrors

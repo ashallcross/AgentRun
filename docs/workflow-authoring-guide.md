@@ -742,6 +742,161 @@ steps:
     writes_to: [research-notes.md]
 ```
 
+### `get_ai_context`
+
+Reads an Umbraco.AI Context by alias or by content-node tree-inheritance. Returns the
+Context's resources (brand voice, tone-of-voice guidance, reference text) so agents can
+pull on-brand guidance into their work. Read-only — no write capability in v1.
+
+**Parameters:**
+
+| Name | Required | Description |
+|------|----------|-------------|
+| `alias` | No | The alias of the Context (e.g. `"corporate-brand-voice"`). Takes precedence if both are supplied. |
+| `content_node_id` | No | The ID of a published content node whose AI Context Picker property (or its nearest ancestor's) selects the Context. |
+
+At least one of `alias` or `content_node_id` must be supplied — the tool returns a
+structured `invalid_argument` result if both are omitted.
+
+Returns a JSON object: `{ alias, name, version, resolvedFrom?, resources: [...] }`. Each
+resource has `name`, `description`, `resourceTypeId` (e.g. `"brand-voice"`, `"text"`),
+`sortOrder`, `injectionMode` (`"always"` or `"on_demand"`), and `settings` (the raw
+Umbraco.AI settings object for that resource type — the LLM reads fields directly).
+For the `brand-voice` type shipped in Umbraco.AI 1.8, `settings` has `toneDescription`,
+`targetAudience`, `styleGuidelines`, and `avoidPatterns` — each a free-text string. For
+the `text` type, `settings` has a single `content` string.
+
+The `resolvedFrom` field is only populated in `content_node_id` mode and identifies which
+ancestor's picker value won the tree-walk: `{ contentNodeId, contentNodeName }`.
+
+#### Lookup modes
+
+**Alias mode** — workflow author knows exactly which Context to load:
+
+```yaml
+config:
+  brand_voice_alias: "corporate-brand-voice"
+
+steps:
+  - id: writer
+    agent: agents/writer.md
+    tools: [get_ai_context, write_file]
+```
+
+In the agent prompt, call `get_ai_context(alias: "{brand_voice_alias}")` — the
+`{brand_voice_alias}` token resolves via Story 11.7's prompt-variable injection.
+
+**Content-node-ID mode** — the Context is attached to a content node via the AI Context
+Picker property editor; tree inheritance lets subtrees override parent contexts. For a
+target content node `N`, the tool walks `N → parent → grandparent → …` and returns the
+first picker value that resolves to a live Context. A child node can override its
+parent's brand voice by picking a different Context on its own doc-type property.
+
+```yaml
+steps:
+  - id: writer
+    agent: agents/writer.md
+    tools: [get_ai_context, get_content, write_file]
+```
+
+The agent calls `get_ai_context(content_node_id: N)` where `N` is the content ID the
+workflow is authoring for.
+
+#### Result Shape
+
+```json
+{
+  "alias": "corporate-brand-voice",
+  "name": "Corporate Brand Voice",
+  "version": 3,
+  "resolvedFrom": { "contentNodeId": 2000, "contentNodeName": "Services" },
+  "resources": [
+    {
+      "name": "Tone of Voice",
+      "description": "Our house style guide",
+      "resourceTypeId": "brand-voice",
+      "sortOrder": 0,
+      "injectionMode": "always",
+      "settings": {
+        "toneDescription": "Warm, authoritative, never jargon-heavy.",
+        "targetAudience": "UK SMB decision-makers, age 30-55.",
+        "styleGuidelines": "Active voice. Short sentences. Pound signs for money.",
+        "avoidPatterns": "Exclamation marks. US spellings. Corporate buzzwords."
+      }
+    }
+  ]
+}
+```
+
+Resources are ordered by `sortOrder` ascending. `resources` is an empty array if the
+Context has no resources configured.
+
+#### Tree Inheritance (content_node_id mode)
+
+The walk is top-down (self first, then parent, grandparent, …) and stops at the first
+picker value that resolves to a live Context. A node whose picker is empty, malformed, or
+references a deleted Context is skipped, and the walk continues to the next ancestor.
+Multi-select pickers return the first resolvable Context and log an Info line.
+
+This matches Umbraco.AI's own `ContentContextResolver` semantics — a child subtree
+overrides the parent (e.g. `/services/divorce-law` can pick "Legal Voice" to override the
+"Services Voice" picked on `/services`).
+
+#### Error Shapes the Agent Sees
+
+Rather than throw, the tool returns structured JSON errors so the LLM can reason about them:
+
+| `error` | When | LLM should |
+|--------|------|-----------|
+| `not_found` | Alias lookup returned no Context | pick a different alias, ask the user, or proceed without context |
+| `no_context_for_node` | Tree-walk found no picker with a live Context | pick a different node, ask the user, or proceed without context |
+| `content_not_found` | `content_node_id` points to a non-existent or unpublished node | fix the node ID and retry |
+| `invalid_argument` | Neither parameter supplied, empty alias, non-positive `content_node_id`, or unknown parameter | fix the tool call and retry |
+| `context_service_failure` | Umbraco.AI's Context service threw (e.g. the known SQLite lock cascade) | try again in a moment, or proceed without context |
+
+#### Prerequisites
+
+- The Umbraco.AI Context must exist — create it via the Umbraco backoffice **Contexts**
+  section (part of Umbraco.AI 1.x). AgentRun does not ship UI for Context management.
+- For `content_node_id` mode: the doc type needs an `Uai.ContextPicker` property; pick a
+  Context value on the content node (or any ancestor). No code or config changes
+  required — the property editor ships with Umbraco.AI.
+
+#### Security Notes
+
+- `Settings` is user-curated reference material the site admin authored in the backoffice.
+  Treat it as equivalent-trust to the agent's own system prompt — it is **not** tagged as
+  untrusted data the way `fetch_url` and `web_search` results are.
+- No secrets exposed. Umbraco.AI Contexts hold text reference material, not credentials.
+- `OperationCanceledException` is the only exception that propagates to the step; all
+  other failures return structured error JSON so the workflow keeps running.
+
+#### Workflow Example
+
+```yaml
+name: On-Brand Page Draft
+alias: on-brand-draft
+
+config:
+  brand_voice_alias: "corporate-brand-voice"
+
+steps:
+  - id: writer
+    name: Writer
+    agent: agents/writer.md
+    tools: [get_ai_context, get_content, write_file]
+    writes_to: [draft.md]
+```
+
+```markdown
+<!-- agents/writer.md (excerpt) -->
+Before drafting, call `get_ai_context(alias: "{brand_voice_alias}")` to load the
+brand voice guidance. Read the returned `resources` — apply every `brand-voice` resource
+(injectionMode: `always`) to your writing style. Call `get_content(id: …)` to load the
+target page, then draft a rewrite to `draft.md` that keeps the requested changes while
+matching the brand voice.
+```
+
 ## Configuring Tool Tuning Values
 
 Tool behaviour can be tuned at multiple levels. Values resolve through a four-tier chain,
