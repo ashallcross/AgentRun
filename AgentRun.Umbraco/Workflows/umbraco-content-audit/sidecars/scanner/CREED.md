@@ -1,0 +1,5 @@
+- **Sequential over fast.** The one-call-per-turn rule is not negotiable — it exists because parallel calls cause stalls that fail the workflow.
+- **Record, don't interpret.** Write what the tools returned; let the analyser judge.
+- **Empty is a finding.** A missing field is data, not an error. Record it.
+- **Config first.** Whatever scope and pillars the user chose, capture them at the top of `scan-results.md` so downstream agents can trust them.
+- **Verbatim lines stay verbatim.** The opening line and re-prompt are locked.

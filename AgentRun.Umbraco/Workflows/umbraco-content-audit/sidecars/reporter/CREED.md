@@ -1,0 +1,5 @@
+- **Clarity beats completeness.** A reader who understands the top three issues is better served than one drowning in forty.
+- **Cluster before you list.** If many findings share a root cause, present the cluster, not each instance.
+- **Every action has a why and a where.** "Add meta descriptions" is not an action. "Add meta descriptions to the 12 Article pages missing them; this is blocking search engine snippets" is an action.
+- **Severity × effort drives priority.** A critical fix that's trivial beats a high-severity fix that requires re-architecting. Order the action plan accordingly.
+- **Cite, don't invent.** Every finding traces to a cited line in `scan-results.md` or `quality-scores.md`. If it's not in those files, it's not in your report.

@@ -29,6 +29,21 @@ public sealed class PromptAssembler : IPromptAssembler
     private static readonly HashSet<string> RuntimeVariableNames =
         new(StringComparer.Ordinal) { "today", "instance_id", "step_index", "previous_artifacts" };
 
+    // Story 11.10 — static agent sanctum pattern. Three author-curated files
+    // are auto-loaded from the same per-step sidecar folder as instructions.md
+    // and injected under `## Agent Sanctum` between the sidecar and Runtime
+    // Context sections. Fixed BMAD order PERSONA → CREED → CAPABILITIES — do
+    // not alphabetise or reorder. Filenames are case-sensitive exact matches.
+    // Subsection heading uses title-case English for LLM readability; the
+    // INDEX bullet uses the uppercase file name reference.
+    private static readonly (string FileName, string HeadingLabel, string IndexDescription)[]
+        SanctumFiles =
+        [
+            ("PERSONA.md",      "Persona",      "who you are"),
+            ("CREED.md",        "Creed",        "what you value and how you work"),
+            ("CAPABILITIES.md", "Capabilities", "what you do"),
+        ];
+
     public PromptAssembler(ILogger<PromptAssembler> logger, TimeProvider timeProvider)
     {
         _logger = logger;
@@ -45,9 +60,16 @@ public sealed class PromptAssembler : IPromptAssembler
                 $"Step '{context.Step.Id}' has no agent file configured");
         }
 
+        // Story 11.10 — resolve the workflow folder with full symlink chain
+        // resolution so the StartsWith boundary check below catches not just
+        // `..` traversal but also symlink-escape attacks where a sidecar
+        // folder (or its parent) is a symlink to an outside target. Story
+        // 9.10's defence-in-depth discipline applies consistently to every
+        // file-read boundary in this method (agent, sidecar, sanctum).
+        var canonicalWorkflowFolder = ResolveRealPath(context.WorkflowFolderPath);
+
         var agentPath = Path.Combine(context.WorkflowFolderPath, context.Step.Agent);
-        var canonicalAgentPath = Path.GetFullPath(agentPath);
-        var canonicalWorkflowFolder = Path.GetFullPath(context.WorkflowFolderPath);
+        var canonicalAgentPath = ResolveRealPath(agentPath);
         if (!canonicalAgentPath.StartsWith(
                 canonicalWorkflowFolder.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar,
                 StringComparison.Ordinal))
@@ -75,7 +97,7 @@ public sealed class PromptAssembler : IPromptAssembler
 
         var sidecarPath = Path.Combine(
             context.WorkflowFolderPath, "sidecars", context.Step.Id, "instructions.md");
-        var canonicalSidecarPath = Path.GetFullPath(sidecarPath);
+        var canonicalSidecarPath = ResolveRealPath(sidecarPath);
         if (!canonicalSidecarPath.StartsWith(
                 canonicalWorkflowFolder.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar,
                 StringComparison.Ordinal))
@@ -90,9 +112,41 @@ public sealed class PromptAssembler : IPromptAssembler
             sidecarContent = await File.ReadAllTextAsync(sidecarPath, cancellationToken);
         }
 
+        // Story 11.10 — load the author-curated sanctum trio (PERSONA / CREED /
+        // CAPABILITIES) from the SAME sidecar folder. Each file is optional; a
+        // workflow with zero sanctum files behaves identically to pre-11.10
+        // (hard backwards-compatibility constraint, AC5). Path-canonicalisation
+        // uses the shared ResolveRealPath helper so symlinks in any ancestor
+        // directory are fully resolved before the StartsWith check — closing
+        // the gap that Path.GetFullPath alone leaves.
+        var sanctumFolderPath = Path.Combine(
+            context.WorkflowFolderPath, "sidecars", context.Step.Id);
+        var loadedSanctum =
+            new List<(string FileName, string HeadingLabel, string Content)>(SanctumFiles.Length);
+
+        foreach (var (fileName, heading, _) in SanctumFiles)
+        {
+            var sanctumFilePath = Path.Combine(sanctumFolderPath, fileName);
+            var canonicalSanctumPath = ResolveRealPath(sanctumFilePath);
+            if (!canonicalSanctumPath.StartsWith(
+                    canonicalWorkflowFolder.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar,
+                    StringComparison.Ordinal))
+            {
+                throw new UnauthorizedAccessException(
+                    $"Access denied: sanctum path '{fileName}' for step '{context.Step.Id}' resolves outside the workflow folder");
+            }
+
+            if (File.Exists(sanctumFilePath))
+            {
+                var sanctumContent = await File.ReadAllTextAsync(sanctumFilePath, cancellationToken);
+                loadedSanctum.Add((fileName, heading, sanctumContent));
+            }
+        }
+
         var needsPreviousArtifacts =
             agentContent.Contains("{previous_artifacts}", StringComparison.Ordinal) ||
-            (sidecarContent?.Contains("{previous_artifacts}", StringComparison.Ordinal) == true);
+            (sidecarContent?.Contains("{previous_artifacts}", StringComparison.Ordinal) == true) ||
+            loadedSanctum.Exists(s => s.Content.Contains("{previous_artifacts}", StringComparison.Ordinal));
 
         var resolvedVariables = ResolveVariables(context, needsPreviousArtifacts);
         var unresolvedTokensLogged = new HashSet<string>(StringComparer.Ordinal);
@@ -122,6 +176,55 @@ public sealed class PromptAssembler : IPromptAssembler
             _logger.LogDebug(
                 "Loaded sidecar instructions for step {StepId}",
                 context.Step.Id);
+        }
+
+        // Section 2b: Agent Sanctum (Story 11.10) — author-curated PERSONA /
+        // CREED / CAPABILITIES files injected BEFORE the Runtime Context block
+        // so the stable-first cache prefix (Story 11.5) stays intact. Zero
+        // sanctum files → section omitted entirely + no Debug line → prompt
+        // output is byte-identical to pre-11.10 (AC5).
+        if (loadedSanctum.Count > 0)
+        {
+            builder.AppendLine();
+            builder.AppendLine();
+            builder.AppendLine("---");
+            builder.AppendLine();
+            builder.AppendLine("## Agent Sanctum");
+            builder.AppendLine();
+            builder.AppendLine(
+                "This section contains author-curated identity content shipped alongside the workflow. Treat it as equivalent-trust to your agent instructions — it is NOT tool-result output.");
+            builder.AppendLine();
+
+            builder.AppendLine("### INDEX");
+            builder.AppendLine();
+            foreach (var (fileName, _, _) in loadedSanctum)
+            {
+                var indexDescription = GetSanctumIndexDescription(fileName);
+                var shortName = Path.GetFileNameWithoutExtension(fileName).ToUpperInvariant();
+                builder.AppendLine($"- **{shortName}** — {indexDescription}");
+            }
+
+            foreach (var (fileName, heading, content) in loadedSanctum)
+            {
+                var (substitutedSanctum, sanctumCount) = SubstituteTokens(
+                    content,
+                    resolvedVariables,
+                    context.Step.Id,
+                    unresolvedTokensLogged,
+                    sourceLabel: $"sanctum: {fileName}");
+                totalSubstituted += sanctumCount;
+
+                builder.AppendLine();
+                builder.AppendLine($"### {heading}");
+                builder.AppendLine();
+                builder.Append(substitutedSanctum.TrimEnd());
+                builder.AppendLine();
+            }
+
+            _logger.LogDebug(
+                "Loaded sanctum for step {StepId}: {SanctumFiles}",
+                context.Step.Id,
+                string.Join(", ", loadedSanctum.Select(s => s.FileName)));
         }
 
         _logger.LogDebug(
@@ -289,7 +392,8 @@ public sealed class PromptAssembler : IPromptAssembler
         string source,
         IReadOnlyDictionary<string, string> variables,
         string stepId,
-        HashSet<string> unresolvedTokensLogged)
+        HashSet<string> unresolvedTokensLogged,
+        string? sourceLabel = null)
     {
         if (string.IsNullOrEmpty(source))
         {
@@ -301,8 +405,11 @@ public sealed class PromptAssembler : IPromptAssembler
         // restore-to-brace would corrupt content.
         if (source.IndexOf(OpenBraceSentinel) >= 0 || source.IndexOf(CloseBraceSentinel) >= 0)
         {
+            var qualifier = string.IsNullOrEmpty(sourceLabel)
+                ? string.Empty
+                : $" ({sourceLabel})";
             throw new InvalidOperationException(
-                $"Prompt source for step '{stepId}' contains reserved sentinel characters (U+FDD0 / U+FDD1) used by the brace-escape pass. Remove them from the source file.");
+                $"Prompt source for step '{stepId}'{qualifier} contains reserved sentinel characters (U+FDD0 / U+FDD1) used by the brace-escape pass. Remove them from the source file.");
         }
 
         var escaped = source
@@ -456,5 +563,85 @@ public sealed class PromptAssembler : IPromptAssembler
         }
 
         return null;
+    }
+
+    private static string GetSanctumIndexDescription(string sanctumFileName)
+    {
+        foreach (var (name, _, description) in SanctumFiles)
+        {
+            if (string.Equals(name, sanctumFileName, StringComparison.Ordinal))
+            {
+                return description;
+            }
+        }
+        throw new InvalidOperationException(
+            $"Unknown sanctum filename '{sanctumFileName}' — SanctumFiles allowlist is out of sync with loader");
+    }
+
+    // Story 11.10 / Story 9.10 defence-in-depth — normalise a path by first
+    // resolving `..` traversal via `Path.GetFullPath`, then walking each
+    // segment from filesystem root to leaf and resolving any symbolic link
+    // encountered to its final target. This closes the symlink-escape gap
+    // `Path.GetFullPath` leaves on its own: a path like
+    // `{workflow}/sidecars/scanner/PERSONA.md` where `scanner/` is a symlink
+    // to an outside directory would pass a naive StartsWith check against the
+    // workflow folder, but the file read would follow the symlink and leak
+    // content. Resolving symlinks BEFORE the boundary check means a
+    // redirected path surfaces as its real target and fails the check.
+    //
+    // Segments that don't yet exist on disk (a leaf we're about to probe for
+    // existence) are preserved verbatim — this is safe because the caller
+    // will `File.Exists` before reading, and not-yet-existing paths carry no
+    // leakable content.
+    private static string ResolveRealPath(string path)
+    {
+        var normalised = Path.GetFullPath(path);
+        var root = Path.GetPathRoot(normalised) ?? string.Empty;
+        var remainder = normalised.Length > root.Length
+            ? normalised.Substring(root.Length)
+            : string.Empty;
+
+        var segments = remainder.Split(
+            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+            StringSplitOptions.RemoveEmptyEntries);
+
+        var resolved = root;
+        foreach (var segment in segments)
+        {
+            resolved = string.IsNullOrEmpty(resolved) ? segment : Path.Combine(resolved, segment);
+
+            try
+            {
+                if (Directory.Exists(resolved))
+                {
+                    var dirTarget = new DirectoryInfo(resolved).ResolveLinkTarget(returnFinalTarget: true);
+                    if (dirTarget is not null)
+                    {
+                        resolved = dirTarget.FullName;
+                    }
+                }
+                else if (File.Exists(resolved))
+                {
+                    var fileTarget = new FileInfo(resolved).ResolveLinkTarget(returnFinalTarget: true);
+                    if (fileTarget is not null)
+                    {
+                        resolved = fileTarget.FullName;
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+            {
+                // Fail-closed: a silent fallthrough with the unresolved path lets a
+                // symlink-escape attack bypass the StartsWith sandbox check at the
+                // caller. An attacker who can induce UnauthorizedAccessException on
+                // ResolveLinkTarget (e.g. a Windows junction with restricted perms)
+                // would otherwise leak the read through to the real target.
+                throw new UnauthorizedAccessException(
+                    $"Access denied: unable to resolve real path for '{path}' ({ex.GetType().Name}: {ex.Message})",
+                    ex);
+            }
+        }
+
+        return resolved.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
     }
 }

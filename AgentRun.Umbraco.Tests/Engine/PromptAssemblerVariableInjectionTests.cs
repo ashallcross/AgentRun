@@ -485,6 +485,112 @@ public class PromptAssemblerVariableInjectionTests
         Assert.That(result, Does.Contain($"Sidecar today: {PinnedRunDate}"));
     }
 
+    // --- Story 11.10 AC6: sanctum content flows through the same substitution pipeline ---
+
+    private void WriteSanctumFile(string stepId, string fileName, string content)
+    {
+        var dir = Path.Combine(_workflowDir, "sidecars", stepId);
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, fileName), content);
+    }
+
+    [Test]
+    public async Task AssembleAsync_SanctumPersonaSubstitutesRuntimeTokens()
+    {
+        WriteAgentFile("agents/test.md", "# Agent");
+        WriteSanctumFile(
+            "reporter",
+            "PERSONA.md",
+            "You are agent on {today}, running as {instance_id}, step index {step_index}.");
+
+        var step = MakeStep("reporter", "Reporter");
+        var context = MakeContext(step, instanceId: "inst-abc");
+
+        var result = await _assembler.AssemblePromptAsync(context, CancellationToken.None);
+
+        Assert.That(result, Does.Contain($"You are agent on {PinnedRunDate}, running as inst-abc, step index 0."));
+        Assert.That(result, Does.Not.Contain("{today}"));
+        Assert.That(result, Does.Not.Contain("{instance_id}"));
+        Assert.That(result, Does.Not.Contain("{step_index}"));
+    }
+
+    [Test]
+    public async Task AssembleAsync_SanctumContentResolvesWorkflowConfigTokens()
+    {
+        WriteAgentFile("agents/test.md", "# Agent");
+        WriteSanctumFile("reporter", "CREED.md", "Our pillars are: {pillars}");
+        var step = MakeStep("reporter", "Reporter");
+        var context = MakeContext(
+            step,
+            workflowConfig: new Dictionary<string, string> { ["pillars"] = "Completeness, SEO, Freshness" });
+
+        var result = await _assembler.AssemblePromptAsync(context, CancellationToken.None);
+
+        Assert.That(result, Does.Contain("Our pillars are: Completeness, SEO, Freshness"));
+    }
+
+    [Test]
+    public async Task AssembleAsync_SanctumContentEscapesDoubleBraces()
+    {
+        WriteAgentFile("agents/test.md", "# Agent");
+        WriteSanctumFile(
+            "reporter",
+            "PERSONA.md",
+            "Literal braces: {{today}}. Substituted: {today}.");
+        var step = MakeStep("reporter", "Reporter");
+        var context = MakeContext(step);
+
+        var result = await _assembler.AssemblePromptAsync(context, CancellationToken.None);
+
+        Assert.That(result, Does.Contain("Literal braces: {today}."));
+        Assert.That(result, Does.Contain($"Substituted: {PinnedRunDate}."));
+    }
+
+    [Test]
+    public async Task AssembleAsync_SanctumUnresolvedToken_WarnsOncePerToken()
+    {
+        WriteAgentFile("agents/test.md", "# Agent");
+        WriteSanctumFile(
+            "reporter",
+            "PERSONA.md",
+            "Mystery: {unknown_sanctum_token}. Same again: {unknown_sanctum_token}.");
+        var step = MakeStep("reporter", "Reporter");
+        var context = MakeContext(step);
+
+        var result = await _assembler.AssemblePromptAsync(context, CancellationToken.None);
+
+        // Token remains literal (unchanged).
+        Assert.That(result, Does.Contain("Mystery: {unknown_sanctum_token}"));
+
+        var warnings = _logger.Entries
+            .Where(e => e.Level == LogLevel.Warning
+                && e.Message.Contains("Unresolved prompt variable")
+                && e.Message.Contains("unknown_sanctum_token"))
+            .ToList();
+        Assert.That(warnings, Has.Count.EqualTo(1),
+            "A single unresolved token must emit exactly one Warning per step, even with multiple occurrences or across agent/sidecar/sanctum sources");
+    }
+
+    [Test]
+    public void AssembleAsync_SanctumContentContainingSentinel_ThrowsInvalidOperation()
+    {
+        WriteAgentFile("agents/test.md", "# Agent");
+        // Reserved Unicode non-characters U+FDD0 / U+FDD1 are the brace-escape sentinels.
+        WriteSanctumFile(
+            "reporter",
+            "PERSONA.md",
+            $"Illegal: {'\uFDD0'} here.");
+        var step = MakeStep("reporter", "Reporter");
+        var context = MakeContext(step);
+
+        var ex = Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await _assembler.AssemblePromptAsync(context, CancellationToken.None));
+        Assert.That(ex!.Message, Does.Contain("reserved sentinel characters"));
+        Assert.That(ex.Message, Does.Contain("reporter"));
+        // Name the offending file so an author can locate it without bisecting.
+        Assert.That(ex.Message, Does.Contain("PERSONA.md"));
+    }
+
     // --- Regression guard: existing behaviour when no tokens ---
 
     [Test]

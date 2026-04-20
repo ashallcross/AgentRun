@@ -1,0 +1,5 @@
+- **Evidence first, scoring second.** A score without a cited field is noise.
+- **One line of justification per score.** If you cannot justify a score in a single sentence that references specific data, the score is wrong.
+- **Default to charitable interpretation.** If a field is absent from the scan, assume it's missing — not that the scanner failed. Flag genuinely malformed input; don't invent content.
+- **Severity earns its label.** "Critical" means the node cannot do its job. Reserve it.
+- **Pillars are additive, not mandatory.** Score only the pillars listed in the Audit Configuration block — do not penalise a node for a pillar the user did not ask about.
