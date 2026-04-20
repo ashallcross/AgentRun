@@ -1088,6 +1088,127 @@ target page, then draft a rewrite to `draft.md` that keeps the requested changes
 matching the brand voice.
 ```
 
+### `search_content`
+
+Full-text keyword search against Umbraco's published content via the **Examine External
+index** — the same search engine that powers Umbraco's own site-search feature. AgentRun
+does not build a parallel search index; this tool is a thin adapter that lets an agent
+query the existing index.
+
+**Parameters**
+
+| Name          | Type    | Required | Description                                                                      |
+|---------------|---------|----------|----------------------------------------------------------------------------------|
+| `query`       | string  | yes      | Keyword query. Lucene reserved characters are escaped automatically.             |
+| `contentType` | string  | no       | Filter to this document-type alias (e.g. `"articlePage"`). Omit for all types.   |
+| `parentId`    | integer | no       | Filter to descendants of this content node ID. Omit for whole-tree search.       |
+| `count`       | integer | no       | Max results. Default `10`, silently clamped to `50`.                             |
+
+**Return shape**
+
+JSON array of hits, ordered by `relevanceScore` descending:
+
+```json
+[
+  {
+    "id": 1100,
+    "name": "Pension Reform 2026",
+    "contentType": "articlePage",
+    "url": "/articles/pension-reform-2026",
+    "level": 3,
+    "relevanceScore": 4.72
+  }
+]
+```
+
+Empty index match returns `[]` (not an error). If the index is unavailable or the query
+fails, a structured error object is returned instead:
+
+```json
+{ "error": "index_unavailable", "message": "Umbraco's External Examine index is not available. …" }
+```
+
+Error kinds: `invalid_argument`, `index_unavailable`, `search_failure`. The tool never
+throws to the step except on cancellation.
+
+**Complement to `list_content`, not a replacement.** Two different jobs:
+
+- `list_content` → enumerate pages by filter (content type, parent). Use when you know *where* to look.
+- `search_content` → find pages by keyword. Use when you know *what* you're looking for but not where.
+
+A workflow can use both — e.g. a Scout agent uses `search_content` to discover candidates
+by keyword, then calls `get_content` on the top hits to read each one in full.
+
+**Known limitations — read before relying on results**
+
+1. **No `snippet` / highlight field.** Examine 3.x does not ship a first-party highlighter
+   API, and the Umbraco default indexer does not enable the term-vector indexing that
+   Lucene's `FastVectorHighlighter` would need. The tool returns hit *metadata* (id, name,
+   content type, url, level, score) — not match context. Agents that need match context
+   should call `get_content(id: …)` on the top hits.
+
+2. **Block List / Block Grid content is NOT indexed by default.** Umbraco's out-of-the-box
+   External indexer reliably covers `nodeName`, plain-text properties, and rich-text
+   (via Umbraco's `__Raw_*` transformation). It does **not** flatten Block List / Block
+   Grid JSON into searchable text without custom wiring. If block content must be
+   searchable on your site, wire a custom `IValueSetBuilder` or subscribe to the index's
+   `TransformingIndexValues` event — see Umbraco's docs on custom indexing. The tool
+   searches the index as it's configured; it cannot add content that isn't indexed.
+
+3. **External index only.** The Internal index (backoffice, unpublished content, members)
+   is deliberately not exposed — preventing accidental leaks of unpublished content to
+   LLM agents. No configurable `indexName` parameter.
+
+4. **No pagination.** `count` is capped at 50; there's no `skip`. If the top 50 hits don't
+   contain what you need, narrow via `contentType`/`parentId` or refine the `query` —
+   don't try to walk the whole index.
+
+5. **Cancellation latency.** Examine's query path doesn't accept a `CancellationToken`
+   in 3.x, so cancellation fires *between* query and mapping, not inside the Lucene call.
+   In practice this is single-digit milliseconds.
+
+6. **Stopwords are stripped.** Examine's default `StandardAnalyzer` filters common
+   English stopwords — `a`, `the`, `is`, `of`, `and`, `or`, `but`, and many more — from
+   both indexing and queries. A query of `"a"` alone returns `[]` even when nodes named
+   "About" or "All Services" exist. Use meaningful keywords; if a single-word query
+   returns nothing, try a less common synonym before assuming the content is missing.
+   Sites that have customised their analyser (e.g. to preserve stopwords for exact-match
+   search) will behave differently.
+
+**Usage examples**
+
+Content creator Scout — finding related articles by keyword:
+
+```yaml
+- name: scout
+  tools: [search_content, get_content, write_file]
+  writes_to: [scan-results.md]
+```
+
+```markdown
+<!-- agents/scout.md (excerpt) -->
+Call `search_content(query: "pension reform", contentType: "articlePage", count: 20)` to
+find articles already mentioning the topic. For each top hit, call `get_content(id: …)`
+to read the full page. Summarise the existing coverage in `scan-results.md`.
+```
+
+Content migration QA — stale-link audit:
+
+```markdown
+<!-- agents/qa.md (excerpt) -->
+Call `search_content(query: "old-hostname.com", count: 50)` to find any content still
+referencing the retired hostname. Report each offender with its URL in `stale-refs.md`.
+```
+
+Content audit Scanner — topic sampling rather than tree walk:
+
+```markdown
+<!-- agents/scanner.md (excerpt) -->
+Rather than enumerating the whole tree, call
+`search_content(query: "GDPR compliance", count: 50)` to focus the audit on pages that
+actually mention the topic.
+```
+
 ## Configuring Tool Tuning Values
 
 Tool behaviour can be tuned at multiple levels. Values resolve through a four-tier chain,

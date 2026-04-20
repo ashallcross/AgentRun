@@ -52,6 +52,36 @@ public class ContentToolHelpersTests
     }
 
     [Test]
+    public void ExtractRequiredStringArgument_MissingKey_ThrowsWithName()
+    {
+        var args = new Dictionary<string, object?>();
+        var ex = Assert.Throws<ToolExecutionException>(
+            () => ContentToolHelpers.ExtractRequiredStringArgument(args, "query"));
+        Assert.That(ex!.Message, Does.Contain("query"));
+    }
+
+    [Test]
+    public void ExtractRequiredStringArgument_PlainStringAndJsonElementAreReturned()
+    {
+        var args = new Dictionary<string, object?>
+        {
+            ["plain"] = "hello",
+            ["je"] = JsonDocument.Parse("\"world\"").RootElement
+        };
+        Assert.That(ContentToolHelpers.ExtractRequiredStringArgument(args, "plain"), Is.EqualTo("hello"));
+        Assert.That(ContentToolHelpers.ExtractRequiredStringArgument(args, "je"), Is.EqualTo("world"));
+    }
+
+    [Test]
+    public void ExtractRequiredStringArgument_WrongTypeThrows()
+    {
+        var args = new Dictionary<string, object?> { ["query"] = 42 };
+        var ex = Assert.Throws<ToolExecutionException>(
+            () => ContentToolHelpers.ExtractRequiredStringArgument(args, "query"));
+        Assert.That(ex!.Message, Does.Contain("query").And.Contain("string"));
+    }
+
+    [Test]
     public void ExtractOptionalIntArgument_CoercesAndEnforcesPositiveRange()
     {
         var args = new Dictionary<string, object?>

@@ -99,6 +99,11 @@ public class AgentRunComposer : IComposer
         builder.Services.AddSingleton<IWorkflowTool, GetContentTool>();
         builder.Services.AddSingleton<IWorkflowTool, ListContentTypesTool>();
 
+        // Keyword search via Umbraco's Examine External index (Story 11.12).
+        // Complements list_content (enumerate-by-filter) — same workflow can use both.
+        // v1 scope limits documented on SearchContentTool.
+        builder.Services.AddSingleton<IWorkflowTool, SearchContentTool>();
+
         // Umbraco.AI Context read-tool (Story 11.9). Platform tool: any workflow
         // step can opt in via `tools: [get_ai_context]`. Reads Contexts by alias
         // or by content-node tree-inheritance. No cache in v1.

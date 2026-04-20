@@ -32,6 +32,23 @@ public static class ContentToolHelpers
         };
     }
 
+    public static string ExtractRequiredStringArgument(
+        IDictionary<string, object?> arguments,
+        string name)
+    {
+        if (!arguments.TryGetValue(name, out var value) || value is null)
+        {
+            throw new ToolExecutionException($"Missing required argument: '{name}'");
+        }
+
+        return value switch
+        {
+            string s => s,
+            JsonElement { ValueKind: JsonValueKind.String } je => je.GetString() ?? string.Empty,
+            _ => throw new ToolExecutionException($"Argument '{name}' must be a string")
+        };
+    }
+
     public static int? ExtractOptionalIntArgument(
         IDictionary<string, object?> arguments,
         string name)
