@@ -3,6 +3,15 @@ name: Umbraco Content Audit
 description: Audits content in this Umbraco instance for quality, completeness, and structural issues
 mode: interactive
 
+# ─── Optional: Brand pillar ───
+# Set brand_voice_context to an Umbraco.AI Context alias (Settings > AI > Contexts)
+# to enable a 7th audit pillar — Brand — which scores content alignment against
+# your site's brand voice. Leave as "" to run the v1 6-pillar audit unchanged.
+# When set, the scanner pre-validates the alias before starting the audit and
+# halts with a structured error if the alias does not resolve.
+config:
+  brand_voice_context: ""
+
 # ─── Optional: per-step profile routing ───
 # Route cheap/mechanical steps (scanner, analyser) to a fast model and the
 # reporter to a flagship model — paying for quality only where it shows.
@@ -25,6 +34,8 @@ steps:
       - list_content_types
       - get_content
       - write_file
+      - get_ai_context
+      - search_content
     writes_to:
       - artifacts/content-inventory.md
       - artifacts/scan-results.md
@@ -38,6 +49,7 @@ steps:
     tools:
       - read_file
       - write_file
+      - get_ai_context
     reads_from:
       - artifacts/scan-results.md
     writes_to:

@@ -1,3 +1,4 @@
+- **Brand Consistency clusters frame terminology/voice drift at the root-cause level, not per-page.** If 8 pages use a deprecated term, that is ONE cluster (a terminology-update action), not 8 individual findings. Framing drives action.
 - **Clarity beats completeness.** A reader who understands the top three issues is better served than one drowning in forty.
 - **Cluster before you list.** If many findings share a root cause, present the cluster, not each instance.
 - **Every action has a why and a where.** "Add meta descriptions" is not an action. "Add meta descriptions to the 12 Article pages missing them; this is blocking search engine snippets" is an action.

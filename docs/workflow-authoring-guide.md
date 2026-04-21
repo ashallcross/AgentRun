@@ -618,6 +618,111 @@ identity, principles, and capabilities live in the sanctum.
   unchanged. Sanctum is a pure filesystem convention.
 - **No runtime size enforcement.** Docs guidance only.
 
+## Conditional Pillars via Config
+
+Some workflows benefit from optional pillars / features that adopters toggle
+via the workflow's `config:` block rather than by maintaining separate
+workflow variants. The shipped `umbraco-content-audit` workflow uses this
+pattern for its optional **Brand** pillar (added in v1.2 via Story 11.13).
+
+The pattern has three moving parts:
+
+1. **A `config` key toggles the feature.** An empty string disables it; a
+   non-empty string enables it with that value as input to the pillar.
+2. **Agent prompts ship dual verbatim-locked variants of their user-facing
+   surfaces.** A "6-pillar variant" (feature disabled) and "7-pillar variant"
+   (feature enabled) for each of: Opening Line, Capability Answer, Re-prompt,
+   Charitable Confirmation Template. The LLM selects at runtime based on
+   whether the substituted token is empty or non-empty.
+3. **The scanner pre-validates the configured value before starting the
+   audit.** A failed validation halts with a structured user-facing error —
+   it never silently falls back to the disabled variant. Misconfiguration
+   deserves visibility.
+
+### Worked example: `brand_voice_context`
+
+Add to your `workflow.yaml`:
+
+```yaml
+config:
+  brand_voice_context: ""   # empty disables Brand pillar; set to an Umbraco.AI Context alias to enable
+```
+
+Agent prompts reference the value via Story 11.7's `{brand_voice_context}`
+token substitution. The scanner's Brand Pillar Configuration preamble
+renders the substituted alias so the LLM can route:
+
+```markdown
+Brand voice context alias: **{brand_voice_context}**
+
+- If the bold text above is **empty** (renders as `****`) → Brand disabled.
+  Use 6-pillar variants throughout.
+- If the bold text above is a **non-empty alias** → Brand enabled. Use
+  7-pillar variants. Follow the Brand Pillar Pre-Validation Gate before any
+  other tool call.
+```
+
+### When to use this pattern
+
+- **Pillar / feature toggles that require author-curated content** (brand
+  voice, industry-specific vocabulary, compliance frameworks). The author
+  sets one config value; the workflow adapts.
+- **Optional scoring dimensions** where a meaningful default exists (the
+  6-pillar audit) and the feature adds scope on top.
+- **Features whose enablement depends on external infrastructure** being
+  present (in this case, an Umbraco.AI Context existing). The pre-validation
+  gate catches misconfiguration early.
+
+### When NOT to use this pattern
+
+- **Simple on/off flags** with no author content. Use a `variants:` block
+  once that mechanism stabilises in a future story (today's `variants:` key
+  in `workflow.yaml` is reserved — don't rely on its shape yet).
+- **Settings that vary per-run** (e.g. which nodes to scan). Those belong
+  in user-interactive prompts or per-step config, not workflow-level config.
+- **Feature flags with three or more states.** The dual-variant pattern is
+  reliable with a binary decision; LLM variant-selection reliability drops
+  sharply with more options.
+
+### Gotchas
+
+- **`config` values must be strings.** Use `""` to mean "disabled", not
+  `null` or an absent key. An absent key leaves a literal `{token}` in the
+  rendered prompt and emits a Warning; explicit empty string resolves cleanly.
+- **Dual-variant drift risk.** Any edit that paraphrases one variant must
+  equally paraphrase the other (or deliberately keep the other byte-locked).
+  Integration tests that assert both variants are present catch accidental
+  drift in CI — see `ContentAuditBrandPillarTests.cs` for the pattern.
+- **Pre-validate at the earliest step.** The scanner gates the Brand pillar
+  because a failing validation at the analyser step wastes 10–30 minutes of
+  audit time. Push validation to the earliest tool-call boundary where the
+  configured value is consumable.
+- **No history / trendline in v1.2.** The Brand pillar scores this run's
+  content; comparing to previous-run scores is Epic 13 work (cross-run agent
+  memory). Document this as a known limitation in your adopter docs.
+
+### Upgrading an existing workflow to add a conditional pillar
+
+v1.0 / v1.1 adopters of AgentRun have their own `App_Data/` copies of the
+shipped workflow files. The NuGet `CopyExampleWorkflowsToDisk` migration does
+NOT overwrite existing copies — so upgrading the package does not
+automatically pick up new workflow features. To adopt the Brand pillar on an
+existing `umbraco-content-audit` installation:
+
+1. Add a `config:` block to your `workflow.yaml` with
+   `brand_voice_context: "<your-Context-alias>"`.
+2. Add `get_ai_context` AND `search_content` to the `scanner` step's `tools:`
+   array.
+3. Add `get_ai_context` to the `analyser` step's `tools:` array.
+4. Replace your `agents/scanner.md`, `agents/analyser.md`, and
+   `agents/reporter.md` with the v1.2 canonical versions (find them in your
+   NuGet packages folder at
+   `~/.nuget/packages/agentrun.umbraco/<version>/contentFiles/any/any/Workflows/umbraco-content-audit/`).
+5. Replace your sidecar CAPABILITIES.md / CREED.md files with the v1.2
+   canonical versions (same source folder).
+
+Keeping `brand_voice_context: ""` preserves the v1.1 6-pillar audit exactly.
+
 ## Completion Checking
 
 The `completion_check` block tells the engine when a step is done:
@@ -938,6 +1043,12 @@ steps:
 Reads an Umbraco.AI Context by alias or by content-node tree-inheritance. Returns the
 Context's resources (brand voice, tone-of-voice guidance, reference text) so agents can
 pull on-brand guidance into their work. Read-only — no write capability in v1.
+
+> **Pattern tip:** if you want to ship a workflow with an optional pillar / feature that
+> wraps `get_ai_context` retrieval, see [Conditional Pillars via Config](#conditional-pillars-via-config)
+> for the canonical adopt-for-your-workflow pattern — including pre-validation discipline,
+> dual-variant prompt surfaces, and the load-bearing "configured empty" vs "configured
+> non-empty" semantics.
 
 **Parameters:**
 

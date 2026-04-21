@@ -2,6 +2,13 @@
 
 Identity and principles are injected from the Agent Sanctum (PERSONA / CREED / CAPABILITIES) — see `## Agent Sanctum` section in the assembled prompt.
 
+## Brand Pillar Configuration (Read This First)
+
+Whether the Brand pillar runs is determined by the Audit Configuration block at the top of `artifacts/scan-results.md` — NOT by any workflow-config token at this step. The scanner has already validated the Brand voice context alias (if present) and recorded both the Pillars list and the resolved alias in scan-results.md. Your job is to honour what scanner recorded.
+
+- If the Pillars list in the Audit Configuration block includes `Brand` → the Brand pillar is active. Read the Context alias from the `- **Brand voice context:** <alias>` line in that same block, then call `get_ai_context(alias: <value-read>)` as your second tool call (immediately after `read_file`). Score Brand per-node alongside the other pillars.
+- If the Pillars list does NOT include `Brand` → the Brand pillar is inactive. Do NOT call `get_ai_context`. Score only the pillars listed.
+
 ## Critical: Interactive Mode Behaviour
 
 This workflow runs in interactive mode. Any text you produce WITHOUT a tool call will pause execution and wait for user input. You MUST follow these rules:
@@ -27,7 +34,13 @@ The scanner records the user's pillar choice in the **Audit Configuration** bloc
 
 Score each node against ONLY those pillars. If a pillar is not in the list, skip it entirely — do not produce a score, do not produce justification, do not mention it.
 
-**Fallback:** If the Audit Configuration block is missing or the `Pillars:` field is absent, treat it as "all per-node pillars" — Completeness, Structure, SEO, Freshness, Readability, Accessibility.
+**Fallback:** If the Audit Configuration block is missing or the `Pillars:` field is absent, treat it as the v1 6-pillar set — Completeness, Structure, SEO, Freshness, Readability, Accessibility. Do NOT assume Brand when the block is absent — Brand runs only when scanner explicitly recorded it plus the Brand voice context alias.
+
+**When the fallback fires, you MUST surface it** — an audit that silently drops the user's configured pillars is worse than one that flags a problem. In the quality-scores.md `## Summary` section, prepend a warning line on its own paragraph, before the Highest / Lowest scoring bullets, using exactly this format:
+
+> **Warning:** Audit Configuration block missing from scan-results.md — fell back to default 6-pillar set. If 7 pillars were expected (Brand configured in workflow.yaml), investigate scanner output integrity and re-run.
+
+The reporter reads this warning line and surfaces it at the top of the audit report.
 
 ## Scoring Rubric
 
@@ -123,6 +136,32 @@ Heading hierarchy, link labels, alt text on in-body media — as derived from th
 
 **Note:** If no body sample was recorded, mark Accessibility as "Not applicable" for that node.
 
+### Brand (1–10)
+
+**Active ONLY when `Brand` appears in the Audit Configuration Pillars list AND the Brand voice context resolved successfully (Context envelope returned by `get_ai_context`).** Scores content against the site's author-curated BrandVoice Context (Resources + Settings extracted from the Umbraco.AI Context). Three combined scoring dimensions:
+
+- **Tone alignment** — does the prose match the brand voice rules the Context describes (conversational vs formal register, sentence length, emotional register, call-to-action style)?
+- **Terminology consistency** — are brand-preferred terms used where applicable? Are deprecated terms (if the Context names any) actively AVOIDED?
+- **Voice drift** — distance from reference samples or stylistic uniformity across the node's prose. A node that swings between brand-aligned and off-brand passages scores lower than a uniformly mid-aligned one.
+
+Score each dimension informally, then combine into a single 1–10:
+
+- **9–10:** Prose closely matches brand voice rules; preferred terminology used throughout; no deprecated terms; tone consistent with brand guidelines across the whole node.
+- **7–8:** Mostly aligned; one or two minor voice-drift passages; no deprecated terms.
+- **5–6:** Mixed alignment; several passages drift from brand voice OR one deprecated term used.
+- **3–4:** Noticeable voice drift across the node; multiple deprecated-term usages OR tone fundamentally off from the brand guide.
+- **1–2:** Complete voice mismatch or pervasive deprecated-terminology usage; brand guidelines not followed.
+
+**Good finding:** `Brand: 4/10 — bodyContent uses deprecated product name "AgentFlow" twice (per scan-results line 84); tone shifts to formal-corporate ("Our company will endeavor...") vs the brand guide's conversational directive. Counterfactual: replacing "AgentFlow" with "AgentRun" and softening two formal sentences raises to 7/10.`
+
+**Weak finding (do not write):** `Brand: 4/10 — doesn't feel on-brand.`
+
+**Note:** Evidence discipline applies strictly. Every Brand score cites specific prose passages from the scanned node's body sample AND references specific brand rules from the Context Settings. A Brand score without a cited passage is wrong — mark "Insufficient data" instead.
+
+**Note:** If the scanner did not record a body sample (no prose-bearing property on this content type), mark Brand as "Not applicable" for that node and do not include it in the overall-score average.
+
+**Brand voice context unavailable mid-run (defensive):** If the `get_ai_context` call at step 2a returns an error envelope (shouldn't happen — scanner gated it — but defensive), mark each node's Brand score as `Not scored — Brand voice context '<alias>' became unavailable mid-run. Report to site administrator.` and continue scoring the other pillars. Do NOT silently drop Brand.
+
 ## Counterfactual Pattern
 
 Every score below 7/10 SHOULD include a counterfactual: "if X were done, score becomes Y." This makes the reporter's action plan actionable. If you cannot articulate a counterfactual, the finding is underspecified — re-read the scan data.
@@ -131,6 +170,7 @@ Every score below 7/10 SHOULD include a counterfactual: "if X were done, score b
 
 1. Immediately call `read_file` to read `artifacts/scan-results.md`. Do not produce any text first.
 2. Extract the pillar list from the Audit Configuration block at the top of the file. Use the fallback if the block is missing.
+2a. **If (and only if) the Pillars list extracted in step 2 contains `Brand`**: extract the Brand voice context alias from the `- **Brand voice context:** <alias>` line in the Audit Configuration block, then call `get_ai_context(alias: <value-read>)` as your second tool call (immediately after the read_file). Extract Context Resources (particularly `injectionMode: always` resources + their `settings` field) as input to the Brand scoring rubric. If Brand is NOT in the Pillars list, skip this step entirely — do not call `get_ai_context`. If the `get_ai_context` call returns an error envelope, apply the defensive fallback documented in the Brand rubric above (mark each node's Brand as "Not scored — Brand voice context became unavailable mid-run" and continue scoring the other pillars).
 3. The scanner reads content directly from the Umbraco instance via `list_content_types`, `list_content`, and `get_content`. The entries in `scan-results.md` are deterministic facts about each content node's properties, content type, and template. Treat them as ground truth — do not re-parse, do not invent facts not in the file.
 4. **Only flag issues you can directly cite from the fields recorded in `scan-results.md`.**
 5. If a node has no properties listed (empty properties object), note it in the analysis and do not invent values.
@@ -162,9 +202,10 @@ Analysed: [n] nodes across [k] pillars | Date: {today} | Pillars: [resolved pill
 | Pillar | Score | Severity | Justification | Counterfactual (if <7) |
 |---|---|---|---|---|
 | Completeness | [n]/10 | [band] | [cited evidence] | [if applicable] |
-| [other selected pillars in same format] | | | | |
+| [other selected pillars in same format — fixed order: Structure, SEO, Freshness, Readability, Accessibility] | | | | |
+| Brand | [n]/10 | [band] | [cited brand-rule evidence + passage from node] | [if applicable] |
 
-[Repeat per node, ordered by overall score ascending (worst first)]
+[Repeat per node, ordered by overall score ascending (worst first). Row order within each per-node table is fixed: Completeness → Structure → SEO → Freshness → Readability → Accessibility → Brand. Include only rows for pillars actually in the Audit Configuration Pillars list; the Brand row appears ONLY when Brand is active.]
 
 ## Cross-Node Observations
 

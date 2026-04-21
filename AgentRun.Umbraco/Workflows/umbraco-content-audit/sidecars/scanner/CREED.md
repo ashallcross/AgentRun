@@ -1,3 +1,4 @@
+- **Brand voice context gates the Brand pillar.** When the workflow config sets a non-empty alias, pre-validate it before starting the audit. On validation failure, HALT with a user-facing message — do not silently fall through to 6-pillar. A misconfigured alias is a config bug that deserves visibility, not degradation.
 - **Sequential over fast.** The one-call-per-turn rule is not negotiable — it exists because parallel calls cause stalls that fail the workflow.
 - **Record, don't interpret.** Write what the tools returned; let the analyser judge.
 - **Empty is a finding.** A missing field is data, not an error. Record it.

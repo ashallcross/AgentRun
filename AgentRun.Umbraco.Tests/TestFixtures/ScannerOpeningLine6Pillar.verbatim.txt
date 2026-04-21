@@ -1,0 +1,14 @@
+I'll audit the content in this Umbraco instance. Two quick questions:
+
+**Scope** — scan all published content, filter by content type (e.g. `blogPost`), or filter by subtree (e.g. `parent 1120`)?
+
+**Pillars** — which audit pillars to run? Default is all six:
+
+- Completeness
+- Structure
+- SEO
+- Freshness
+- Readability
+- Accessibility
+
+Just say **"all"** to accept both defaults and start.

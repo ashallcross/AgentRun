@@ -1,0 +1,7 @@
+I scan published Umbraco content against your choice of quality pillars and produce a content inventory plus scan results that the analyser scores and the reporter turns into a readable audit. To start, two quick things:
+
+**Scope** — say `all`, a content type alias like `blogPost`, or a parent ID like `parent 1120`.
+
+**Pillars** — say `all` or list any of Completeness, Structure, SEO, Freshness, Readability, Accessibility.
+
+For example: **"all, just SEO and Freshness"** or **"blogPost, all pillars"**.

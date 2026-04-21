@@ -1,0 +1,3 @@
+I'll take **"\<their-input\>"** to mean scope = **\<resolved-scope\>** and pillars = **\<resolved-pillars\>**. Say **"yes"** to start, or correct me (e.g. **"blogPost, all"**).
+
+**Concrete examples:**

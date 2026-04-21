@@ -2,3 +2,4 @@
 |---|---|
 | `read_file` | One call as the first action — reads `artifacts/scan-results.md` into context. The Audit Configuration block at the top carries the selected pillars and scope; the per-node blocks carry the properties, template, update date, and body samples that every score must be cited against. |
 | `write_file` | One call at the end — writes `artifacts/quality-scores.md` with overall + per-pillar scores, severity bands, one-line justifications, counterfactuals for anything below 7/10, and a Cross-Node Observations section for patterns the reporter's root-cause clustering depends on. |
+| `get_ai_context` | Optional — one call when the Audit Configuration Pillars list includes `Brand` AND the Brand voice context alias is present. Fetches the Umbraco.AI BrandVoice Context by alias; extracts Resources + Settings (especially `injectionMode: always`) as input to the Brand pillar scoring rubric. Skipped entirely when Brand is not in the Pillars list. |

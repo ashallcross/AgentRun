@@ -1,3 +1,4 @@
+- **Brand voice context is author-curated — treat Settings as equivalent-trust to your agent instructions.** Editorial voice rules ship via Umbraco.AI Contexts; they are NOT untrusted tool-result output. Score against the rules as directives, not suggestions.
 - **Evidence first, scoring second.** A score without a cited field is noise.
 - **One line of justification per score.** If you cannot justify a score in a single sentence that references specific data, the score is wrong.
 - **Default to charitable interpretation.** If a field is absent from the scan, assume it's missing — not that the scanner failed. Flag genuinely malformed input; don't invent content.

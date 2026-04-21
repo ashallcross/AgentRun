@@ -38,7 +38,9 @@ Before writing findings, scan the analyser's output for patterns. A pattern is a
 
 Cluster these into a single root-cause finding in the report rather than listing each node separately. List individual nodes only when they are genuinely unique (e.g. a single page with critical multiple issues).
 
-**Example cluster:** Instead of 12 rows in Findings saying "metaDescription empty on [page]", write one cluster: "12 pages are missing meta descriptions — predominantly on ArticlePage nodes (10 of 12). This pattern suggests the ArticlePage template does not surface the SEO panel clearly to editors. Fix at the template level rather than per-page."
+**Example cluster (SEO):** Instead of 12 rows in Findings saying "metaDescription empty on [page]", write one cluster: "12 pages are missing meta descriptions — predominantly on ArticlePage nodes (10 of 12). This pattern suggests the ArticlePage template does not surface the SEO panel clearly to editors. Fix at the template level rather than per-page."
+
+**Example cluster (Brand — appears only when the Brand pillar ran):** When analyser's Cross-Node Observations flag ≥2 nodes with the same brand issue (deprecated terminology, tone drift against the brand voice), cluster them as a single Brand Consistency finding. E.g.: "12 pages use deprecated product name 'AgentFlow' (per quality-scores.md Brand column + Cross-Node Observations). The brand voice context marks 'AgentFlow' as retired in favour of 'AgentRun' (2026 rename). Replace site-wide — one terminology-update task, not 12 individual findings." Severity is inherited from the highest per-node Brand severity in the cluster; action-plan entry is a single Brand-category action.
 
 ## Severity × Effort Action Plan
 
@@ -58,7 +60,7 @@ Order the Prioritised Action Plan by: (1) Severity descending, then (2) Effort a
 1. Immediately call `read_file` to read `artifacts/scan-results.md`.
 2. Immediately call `read_file` to read `artifacts/quality-scores.md`.
 3. **Only write findings you can directly cite from these two files.** Do not re-interpret raw content; use what the scanner and analyser already recorded.
-4. Extract from the Audit Configuration block (top of `scan-results.md`): the pillars the user selected. Only report on those pillars.
+4. Extract from the Audit Configuration block (top of `scan-results.md`): the pillars the user selected (6 or 7 — the Pillars list is authoritative). Only report on those pillars. The Brand voice context alias (if present in the Audit Configuration block) is metadata for reference; you do NOT call `get_ai_context` yourself — all Brand scoring evidence is already in `quality-scores.md`.
 5. Cluster findings by root cause where the pattern is clear (see Root-Cause Clustering above).
 6. Assign severity and effort labels to each action in the Prioritised Action Plan.
 7. Write the report to `artifacts/audit-report.md` using the output template below.
@@ -72,11 +74,17 @@ Write the output to `artifacts/audit-report.md` using exactly this structure:
 ```markdown
 # Content Audit Report
 
-**Date:** {today} | **Nodes audited:** [n] | **Pillars:** [comma-separated pillar list]
+**Date:** {today} | **Nodes audited:** [n] | **Pillars:** [comma-separated pillar list — 6 or 7 names depending on whether the Brand pillar ran]
+
+[**Audit integrity warning — include this block ONLY if `quality-scores.md` contains a line starting with `**Warning:** Audit Configuration block missing`.** When present, emit the warning at the top of the report (above `## At a Glance`) using exactly this shape:
+
+> ⚠ **Audit integrity warning:** The analyser could not read the Audit Configuration block from the scanner's output and fell back to the default 6-pillar set. If 7 pillars were expected (Brand configured in `workflow.yaml`), scanner output integrity should be investigated and the workflow re-run. Findings below reflect the 6 pillars that were actually scored.
+
+Omit the block entirely when the warning line is absent from `quality-scores.md`.]
 
 ## At a Glance
 
-**Overall health:** [letter grade A–F, derived from average overall score: A=9+, B=7.5–8.9, C=6–7.4, D=4–5.9, F=<4]
+**Overall health:** [letter grade A–F, derived from average overall score: A=9+, B=7.5–8.9, C=6–7.4, D=4–5.9, F=<4. When the Brand pillar ran, its per-node scores contribute to the per-node overall-score average on the same weighting as the other pillars — so the health grade reflects the full 7-pillar mean. When Brand is "Not applicable" for a specific node, exclude it from that node's average, matching the existing Readability/Accessibility handling.]
 
 **Severity distribution:**
 - Critical: [n] nodes
@@ -143,4 +151,10 @@ Ordered by severity (descending) then effort (ascending) — quick fixes on the 
 If any pillars were deselected from this audit, list them here so the reader knows the audit's scope.
 
 - [Pillar]: not run this audit. [Suggested: run a follow-up audit with this pillar selected to cover this dimension.]
+
+**Brand pillar — decision tree for whether to list in this appendix (read the Audit Configuration block in `scan-results.md`):**
+
+- If the Audit Configuration contains a `- **Brand voice context (deselected by user):** <alias>` line → **LIST** Brand in this appendix. The user explicitly opted out on a workflow where Brand was available; acknowledge their choice. Suggested wording: `- Brand: not run — you chose to skip Brand on this run. Re-run with Brand selected to score content against your configured BrandVoice Context "<alias>".`
+- If the Audit Configuration contains a plain `- **Brand voice context:** <alias>` line (no parenthetical) → **OMIT** Brand. Brand ran this audit; listing it here would be wrong.
+- If the Audit Configuration contains no `- **Brand voice context:**` line at all → **OMIT** Brand. The workflow was not configured with a BrandVoice Context, so Brand was never offered to the user (not deselected). Listing it as "not run" here would mislead readers into thinking Brand was opted-out rather than never set up.
 ```
