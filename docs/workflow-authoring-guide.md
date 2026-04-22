@@ -2,6 +2,24 @@
 
 This guide covers everything you need to create custom AgentRun workflows for Umbraco.
 
+## Contents
+
+- [Overview](#overview)
+- [Workflow Structure](#workflow-structure)
+- [Writing Agent Prompts](#writing-agent-prompts)
+- [Artifact Handoff](#artifact-handoff)
+- [Prompt Variables](#prompt-variables)
+- [Prompt Caching](#prompt-caching)
+- [Agent Sanctum Pattern](#agent-sanctum-pattern)
+- [Conditional Pillars via Config](#conditional-pillars-via-config)
+- [Completion Checking](#completion-checking)
+- [Profile Configuration](#profile-configuration)
+- [Available Tools](#available-tools) — `fetch_url` · `read_file` · `write_file` · `list_files` · `list_content` · `get_content` · `list_content_types` · `web_search` · `get_ai_context` · `search_content`
+- [Configuring Tool Tuning Values](#configuring-tool-tuning-values)
+- [IDE Validation Setup](#ide-validation-setup)
+- [Walkthrough: Creating a 2-Step Workflow](#walkthrough-creating-a-2-step-workflow)
+- [Learning from the Examples](#learning-from-the-examples)
+
 ## Overview
 
 A workflow is a folder containing:
@@ -317,7 +335,7 @@ with it:
 |---|---|
 | OpenAI / Azure OpenAI | Ignores the hint. Automatic caching engages once the prompt crosses the provider's minimum-size threshold (currently ~1024 tokens). No action required. |
 | GitHub Copilot / Google Gemini / Ollama / local | Ignores the hint. Caching (if any) depends on the specific provider and is out of scope here. |
-| Anthropic (Claude) | **Today:** ignores the hint — the current Umbraco.AI.Anthropic + Microsoft.Extensions.AI chain does not translate the neutral hint into Anthropic's native `cache_control` marker. Tracked as a planned follow-up (see AgentRun's `deferred-work.md`). **Once that follow-up ships:** the System message will carry `cache_control: { type: "ephemeral" }` and subsequent turns within a step will read from cache. |
+| Anthropic (Claude) | **Today:** ignores the hint — the current Umbraco.AI.Anthropic + Microsoft.Extensions.AI chain does not translate the neutral hint into Anthropic's native `cache_control` marker. Tracked as a planned follow-up. **Once that follow-up ships:** the System message will carry `cache_control: { type: "ephemeral" }` and subsequent turns within a step will read from cache. |
 
 You don't need to do anything provider-specific in your workflow. Your job
 is to write cache-friendly prompts (below); the runner and the adapter
@@ -623,7 +641,7 @@ identity, principles, and capabilities live in the sanctum.
 Some workflows benefit from optional pillars / features that adopters toggle
 via the workflow's `config:` block rather than by maintaining separate
 workflow variants. The shipped `umbraco-content-audit` workflow uses this
-pattern for its optional **Brand** pillar (added in v1.2 via Story 11.13).
+pattern for its optional **Brand** pillar.
 
 The pattern has three moving parts:
 
@@ -648,9 +666,11 @@ config:
   brand_voice_context: ""   # empty disables Brand pillar; set to an Umbraco.AI Context alias to enable
 ```
 
-Agent prompts reference the value via Story 11.7's `{brand_voice_context}`
-token substitution. The scanner's Brand Pillar Configuration preamble
-renders the substituted alias so the LLM can route:
+Agent prompts reference the value via the
+[Prompt Variables](#prompt-variables) substitution pipeline — the
+`{brand_voice_context}` token resolves at prompt-assembly time. The
+scanner's Brand Pillar Configuration preamble renders the substituted
+alias so the LLM can route:
 
 ```markdown
 Brand voice context alias: **{brand_voice_context}**
@@ -1225,7 +1245,8 @@ steps:
 ```
 
 In the agent prompt, call `get_ai_context(alias: "{brand_voice_alias}")` — the
-`{brand_voice_alias}` token resolves via Story 11.7's prompt-variable injection.
+`{brand_voice_alias}` token resolves via the
+[Prompt Variables](#prompt-variables) substitution pipeline.
 
 **Content-node-ID mode** — the Context is attached to a content node via the AI Context
 Picker property editor; tree inheritance lets subtrees override parent contexts. For a
@@ -1539,7 +1560,8 @@ YAML extension, JetBrains IDEs).
 1. Copy the schema file from the NuGet cache to your workflows folder:
 
 ```bash
-cp ~/.nuget/packages/agentrun.umbraco/1.0.0-beta.1/contentFiles/any/any/App_Data/AgentRun.Umbraco/workflow-schema.json \
+# Replace <version> with the AgentRun.Umbraco version you installed (e.g. 1.2.0).
+cp ~/.nuget/packages/agentrun.umbraco/<version>/contentFiles/any/any/App_Data/AgentRun.Umbraco/workflow-schema.json \
    App_Data/AgentRun.Umbraco/workflow-schema.json
 ```
 
@@ -1685,10 +1707,16 @@ The shipped example workflows are practical references:
   with the same interactive pattern but a different domain. Good example of a minimal but
   production-quality workflow.
 
-- **Umbraco Content Audit** (`umbraco-content-audit/`) -- 3 steps (scanner, analyser, reporter)
-  using in-process content tools (`list_content_types`, `list_content`, `get_content`) instead
-  of `fetch_url`. No external URLs -- reads directly from Umbraco's published content cache.
-  Good example of the content tool pattern for workflows that operate on the site's own data.
+- **Umbraco Content Audit** (`umbraco-content-audit/`) -- 3 steps (scanner, analyser,
+  reporter) using in-process content tools (`list_content_types`, `list_content`,
+  `get_content`, `search_content`) plus the Umbraco.AI Context reader (`get_ai_context`)
+  -- no external URLs, reads directly from Umbraco's published content cache. Scores a
+  6-pillar content audit by default; enable the optional 7th **Brand** pillar by setting
+  `config.brand_voice_context:` to an Umbraco.AI Context alias (see
+  [Conditional Pillars via Config](#conditional-pillars-via-config)). Good example of the
+  content-tool pattern, the [Agent Sanctum Pattern](#agent-sanctum-pattern) (agent identity
+  split across `sidecars/{step}/PERSONA.md` / `CREED.md` / `CAPABILITIES.md`), and the
+  prompt-variable + `config:` block pattern for authoring optional features.
 
 Read these alongside this guide. The agent prompts in `agents/` show what works in practice --
 especially the invariant patterns for preventing interactive-mode stalls.

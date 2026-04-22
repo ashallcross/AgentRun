@@ -1,7 +1,7 @@
 {
   "$schema": "https://marketplace.umbraco.com/umbraco-marketplace-schema.json",
   "Title": "AgentRun for Umbraco",
-  "Description": "AI-powered workflow engine for Umbraco. Define multi-step agent workflows in YAML and run them from the backoffice. Ships with three ready-to-run examples: Umbraco Content Audit (analyses your site's content tree), Content Quality Audit (scores any public URL), and Accessibility Quick-Scan (WCAG 2.1 AA findings). Extensible tool system — add custom tools for your editorial workflows. Apache 2.0 licensed, built on Umbraco.AI.",
+  "Description": "AI-powered workflow engine for Umbraco. Define multi-step agent workflows in YAML and run them from the backoffice. Ten shipped tools cover HTTP fetch, file I/O, Umbraco content (list, get, search via Examine), Umbraco.AI Contexts, and web search (Brave / Tavily) — plus a simple .NET interface for plugging in your own custom tools. Three ready-to-run examples: an Umbraco Content Audit that scores six-or-seven pillars against real prose extracted from Block List / Block Grid / Rich Text body copy (the optional seventh Brand pillar lights up when you attach an Umbraco.AI Context), a Content Quality Audit for any public URL, and an Accessibility Quick-Scan for WCAG 2.1 AA findings. Prompt caching, prompt-variable injection, per-step model profiles, and an Agent Sanctum pattern for identity-heavy agents are all built in. Apache 2.0 licensed, built on Umbraco.AI.",
   "Category": "Artificial Intelligence",
   "AlternateCategory": "Developer Tools",
   "PackageType": "Package",
@@ -13,7 +13,9 @@
     "content audit",
     "accessibility",
     "automation",
-    "llm"
+    "llm",
+    "umbraco.ai",
+    "search"
   ],
   "DocumentationUrl": "https://github.com/ashallcross/AgentRun#readme",
   "IssueTrackerUrl": "https://github.com/ashallcross/AgentRun/issues",
