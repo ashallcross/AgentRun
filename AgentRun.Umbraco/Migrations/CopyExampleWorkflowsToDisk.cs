@@ -25,21 +25,6 @@ public class CopyExampleWorkflowsToDisk : AsyncMigrationBase
     /// </summary>
     private const string ResourcePrefix = "AgentRun.Umbraco.Workflows.";
 
-    /// <summary>
-    /// Embedded-resource name for the workflow JSON schema. Must match the csproj
-    /// <c>&lt;EmbeddedResource Include="Schemas\workflow-schema.json" /&gt;</c> entry.
-    /// </summary>
-    public const string SchemaResourceName = "AgentRun.Umbraco.Schemas.workflow-schema.json";
-
-    /// <summary>
-    /// Relative path under <c>App_Data/AgentRun.Umbraco/</c> where the schema lands.
-    /// Matches the <c>yaml-language-server: $schema=../../Schemas/workflow-schema.json</c>
-    /// directive shipped at the top of every example workflow.yaml — that directive,
-    /// resolved from <c>App_Data/AgentRun.Umbraco/workflows/&lt;name&gt;/workflow.yaml</c>,
-    /// expects the schema at <c>App_Data/AgentRun.Umbraco/Schemas/workflow-schema.json</c>.
-    /// </summary>
-    public static readonly string SchemaTargetRelativePath = Path.Combine("Schemas", "workflow-schema.json");
-
     private readonly IHostEnvironment _hostEnvironment;
 
     public CopyExampleWorkflowsToDisk(IMigrationContext context, IHostEnvironment hostEnvironment)
@@ -109,67 +94,6 @@ public class CopyExampleWorkflowsToDisk : AsyncMigrationBase
 
             Logger.LogInformation("Copied {Count} files for workflow '{Folder}'", matchingResources.Count, folder);
         }
-
-        // Copy the JSON schema so the `yaml-language-server: $schema=../../Schemas/...`
-        // directive at the top of every shipped workflow.yaml resolves to a real file
-        // on disk. Without this, adopters see "Unable to load schema: No content" in
-        // the IDE + dotnet output on first install. Kept as a separate step from the
-        // workflow loop because the schema lives under a different resource prefix
-        // (Schemas. vs Workflows.) and the skip-if-exists discipline preserves any
-        // user-modified copy.
-        await CopySchemaIfMissingAsync(contentRoot, assembly, Logger);
-    }
-
-    /// <summary>
-    /// Copies <c>Schemas/workflow-schema.json</c> from embedded resources to
-    /// <c>App_Data/AgentRun.Umbraco/Schemas/workflow-schema.json</c> on the consumer's
-    /// disk. No-op if the target file already exists — preserves user modifications,
-    /// same discipline as the workflow-folder skip in <see cref="MigrateAsync" />.
-    /// </summary>
-    /// <remarks>
-    /// Public + static so it can be unit-tested against a temp content root without
-    /// instantiating the full migration + its IMigrationContext dependency.
-    /// </remarks>
-    public static async Task CopySchemaIfMissingAsync(
-        string contentRoot,
-        Assembly assembly,
-        ILogger? logger,
-        CancellationToken cancellationToken = default)
-    {
-        var targetPath = Path.Combine(
-            contentRoot, "App_Data", "AgentRun.Umbraco", SchemaTargetRelativePath);
-
-        if (File.Exists(targetPath))
-        {
-            logger?.LogDebug(
-                "Schema file already exists at {Path} — skipping to preserve user modifications",
-                targetPath);
-            return;
-        }
-
-        await using var stream = assembly.GetManifestResourceStream(SchemaResourceName);
-        if (stream is null)
-        {
-            logger?.LogWarning(
-                "Embedded resource '{Resource}' could not be read — workflow-schema.json will "
-                + "not be available for IDE validation on this install",
-                SchemaResourceName);
-            return;
-        }
-
-        var targetDir = Path.GetDirectoryName(targetPath)!;
-        Directory.CreateDirectory(targetDir);
-
-        var tmpPath = $"{targetPath}.tmp";
-        await using (var fileStream = File.Create(tmpPath))
-        {
-            await stream.CopyToAsync(fileStream, cancellationToken);
-        }
-
-        File.Move(tmpPath, targetPath, overwrite: true);
-
-        logger?.LogInformation(
-            "Copied workflow-schema.json to App_Data/AgentRun.Umbraco/Schemas/ for IDE validation");
     }
 
     /// <summary>
