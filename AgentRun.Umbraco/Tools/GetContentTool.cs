@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
@@ -15,13 +16,25 @@ namespace AgentRun.Umbraco.Tools;
 
 public class GetContentTool : IWorkflowTool
 {
+    // AC3 / D1 / D7 — hard-coded default cap on body_text when the workflow.yaml
+    // `content_audit_body_max_chars` config key is missing or invalid. Workflows
+    // that don't configure this key fall through to the default silently; only
+    // an invalid value (non-integer / zero / negative) produces a Warning.
+    private const int DefaultBodyMaxChars = 15000;
+
+    // D7 — per-(stepId, rawValue) Warning dedup. Static ConcurrentDictionary
+    // matches the Story 11.8 WebSearchToolFactory precedent: memory is bounded
+    // by (# distinct stepIds × # distinct bad values) — tiny in practice.
+    private static readonly ConcurrentDictionary<(string stepId, string rawValue), byte>
+        _warnedInvalidBodyCaps = new();
+
     private static readonly JsonElement Schema = JsonDocument.Parse("""
         {
             "type": "object",
             "properties": {
                 "id": {
-                    "type": "integer",
-                    "description": "The ID of the published content node to retrieve."
+                    "type": ["integer", "string"],
+                    "description": "The node reference — either the Umbraco GUID Key (preferred; durable across environments) or the integer tree ID (legacy; env-variable). The backoffice URL typically shows the GUID. Both formats accepted."
                 }
             },
             "required": ["id"],
@@ -86,7 +99,7 @@ public class GetContentTool : IWorkflowTool
 
         ContentToolHelpers.RejectUnknownParameters(arguments, KnownParameters);
 
-        var id = ContentToolHelpers.ExtractRequiredIntArgument(arguments, "id");
+        var (idArg, keyArg) = ContentToolHelpers.ExtractRequiredNodeRefArgument(arguments, "id");
 
         using var contextReference = _umbracoContextFactory.EnsureUmbracoContext();
         var contentCache = contextReference.UmbracoContext.Content;
@@ -97,20 +110,44 @@ public class GetContentTool : IWorkflowTool
                 "Umbraco content cache is not available — the site may still be starting up");
         }
 
-        var node = contentCache.GetById(id);
+        var node = keyArg.HasValue
+            ? contentCache.GetById(keyArg.Value)
+            : contentCache.GetById(idArg!.Value);
         if (node is null)
         {
+            var displayRef = keyArg?.ToString("D") ?? idArg!.Value.ToString();
             throw new ToolExecutionException(
-                $"Content node with ID {id} not found or is not published");
+                $"Content node with ID {displayRef} not found or is not published");
         }
+
+        // Resolve the lookup-vs-node identity pair so the handle carries both
+        // the GUID Key (primary, durable) AND the integer Id (display-only).
+        // A caller that passed int resolves a node with a valid Key; a caller
+        // that passed Guid resolves a node with a valid Id — surface both.
+        var id = node.Id;
+        var key = node.Key;
 
         // Resolve creator name
         var creatorName = ResolveCreatorName(node.CreatorId);
 
         var properties = ExtractProperties(node);
 
+        // Body extraction runs BEFORE cache-file serialisation so the handle
+        // can carry pre-extracted body_text + body_metadata. The cache file
+        // additionally gets `key` as the primary node reference (durable GUID
+        // per the GUID-first retrofit, memory feedback_guid_over_integer_id).
+        var bodyMaxChars = ResolveBodyMaxChars(context.Workflow, context.StepId);
+        var bodyExtraction = BodyContentExtractor.Extract(node, bodyMaxChars, _logger);
+        if (bodyExtraction.UntruncatedLength is int total && total > bodyMaxChars)
+        {
+            _logger.LogDebug(
+                "Content {NodeId}: body_text truncated — {CapturedLength} of {TotalLength} chars captured",
+                id, bodyMaxChars, total);
+        }
+
         var result = new
         {
+            key = node.Key,
             id = node.Id,
             name = node.Name ?? string.Empty,
             contentType = node.ContentType.Alias,
@@ -139,6 +176,7 @@ public class GetContentTool : IWorkflowTool
                 }
                 var subsetResult = new
                 {
+                    key = result.key,
                     id = result.id,
                     name = result.name,
                     contentType = result.contentType,
@@ -192,6 +230,7 @@ public class GetContentTool : IWorkflowTool
             nodeName = nodeName[..100] + "...";
 
         var handle = new GetContentHandle(
+            key,
             id,
             nodeName,
             node.ContentType.Alias,
@@ -199,12 +238,51 @@ public class GetContentTool : IWorkflowTool
             includedCount,
             sizeBytes,
             relPath,
-            truncated);
+            truncated,
+            bodyExtraction.BodyText,
+            bodyExtraction.Metadata);
 
         return JsonSerializer.Serialize(handle, HandleJsonOptions);
     }
 
+    // AC3 / D1 — read the per-workflow cap from context.Workflow.Config. This
+    // is the first tool to read workflow-level config at runtime (the surface
+    // has been available since Story 11.7 via ToolExecutionContext.Workflow
+    // but was previously used for prompt-variable substitution only). Absent
+    // key silently falls through to the default (don't spam Warnings on every
+    // non-content-audit workflow that calls get_content); invalid values
+    // (non-integer / zero / negative / above MaxBodyMaxChars) emit a
+    // per-(stepId, rawValue)-deduped Warning per D7.
+    private int ResolveBodyMaxChars(Workflows.WorkflowDefinition? workflow, string stepId)
+    {
+        if (workflow?.Config is not null
+            && workflow.Config.TryGetValue("content_audit_body_max_chars", out var rawCap))
+        {
+            if (int.TryParse(rawCap, System.Globalization.NumberStyles.Integer,
+                    System.Globalization.CultureInfo.InvariantCulture, out var parsed)
+                && parsed > 0
+                && parsed <= BodyContentExtractor.MaxBodyMaxChars)
+            {
+                return parsed;
+            }
+
+            if (_warnedInvalidBodyCaps.TryAdd((stepId, rawCap ?? string.Empty), 0))
+            {
+                _logger.LogWarning(
+                    "Workflow config 'content_audit_body_max_chars' value \"{RawValue}\" is not a positive integer between 1 and {Max:N0} — using default {Default} (step: {StepId})",
+                    rawCap, BodyContentExtractor.MaxBodyMaxChars, DefaultBodyMaxChars, stepId);
+            }
+        }
+
+        return DefaultBodyMaxChars;
+    }
+
+    // Handle field order is (key, id, ...) — key is the PRIMARY node reference
+    // (durable GUID, stable across env promotion / DB restores). id is retained
+    // for backwards-compat display only; callers authoring durable artifacts
+    // should reference nodes by key, not id. Per memory feedback_guid_over_integer_id.
     private sealed record GetContentHandle(
+        [property: JsonPropertyName("key")] Guid Key,
         [property: JsonPropertyName("id")] int Id,
         [property: JsonPropertyName("name")] string Name,
         [property: JsonPropertyName("contentType")] string ContentType,
@@ -212,7 +290,9 @@ public class GetContentTool : IWorkflowTool
         [property: JsonPropertyName("propertyCount")] int PropertyCount,
         [property: JsonPropertyName("size_bytes")] int SizeBytes,
         [property: JsonPropertyName("saved_to")] string SavedTo,
-        [property: JsonPropertyName("truncated")] bool Truncated);
+        [property: JsonPropertyName("truncated")] bool Truncated,
+        [property: JsonPropertyName("body_text")] string? BodyText,
+        [property: JsonPropertyName("body_metadata")] BodyMetadata? BodyMetadata);
 
     private Dictionary<string, object?> ExtractProperties(IPublishedContent node)
     {

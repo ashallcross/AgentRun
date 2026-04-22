@@ -21,8 +21,8 @@ public class ListContentTool : IWorkflowTool
                     "description": "Filter by document type alias (e.g. 'blogPost'). Returns all types if omitted."
                 },
                 "parentId": {
-                    "type": "integer",
-                    "description": "Filter to direct children of this content node ID. Returns all content if omitted."
+                    "type": ["integer", "string"],
+                    "description": "Filter to direct children of this node — either the Umbraco GUID Key (preferred; durable across environments) or the integer tree ID (legacy; env-variable). Returns all content if omitted."
                 }
             },
             "additionalProperties": false
@@ -83,7 +83,24 @@ public class ListContentTool : IWorkflowTool
         ContentToolHelpers.RejectUnknownParameters(arguments, KnownParameters);
 
         var contentTypeFilter = ContentToolHelpers.ExtractOptionalStringArgument(arguments, "contentType");
-        var parentId = ContentToolHelpers.ExtractOptionalIntArgument(arguments, "parentId");
+
+        int? parentIdArg;
+        Guid? parentKeyArg;
+        try
+        {
+            (parentIdArg, parentKeyArg) = ContentToolHelpers.ExtractOptionalNodeRefArgument(arguments, "parentId");
+        }
+        catch (ToolExecutionException)
+        {
+            // Match SearchContentTool: surface malformed-ref validation as a
+            // structured error envelope the LLM can self-correct on, rather
+            // than throwing a raw exception up the stack.
+            return Task.FromResult<object>(JsonSerializer.Serialize(new
+            {
+                error = "invalid_argument",
+                message = "'parentId' must be a positive integer or a GUID string."
+            }));
+        }
 
         using var contextReference = _umbracoContextFactory.EnsureUmbracoContext();
         var contentCache = contextReference.UmbracoContext.Content;
@@ -94,13 +111,14 @@ public class ListContentTool : IWorkflowTool
                 "Umbraco content cache is not available — the site may still be starting up");
         }
 
-        var nodes = CollectNodes(contentCache, contentTypeFilter, parentId);
+        var nodes = CollectNodes(contentCache, contentTypeFilter, parentIdArg, parentKeyArg);
 
         // Resolve creator names
         var creatorNames = ResolveCreatorNames(nodes);
 
         var items = nodes.Select(n => new
         {
+            key = n.Key,
             id = n.Id,
             name = n.Name ?? string.Empty,
             contentType = n.ContentType.Alias,
@@ -128,14 +146,17 @@ public class ListContentTool : IWorkflowTool
     private List<IPublishedContent> CollectNodes(
         global::Umbraco.Cms.Core.PublishedCache.IPublishedContentCache contentCache,
         string? contentTypeFilter,
-        int? parentId)
+        int? parentId,
+        Guid? parentKey)
     {
         IEnumerable<IPublishedContent> source;
 
-        if (parentId.HasValue)
+        if (parentId.HasValue || parentKey.HasValue)
         {
-            // Get direct children of the specified parent
-            var parent = contentCache.GetById(parentId.Value);
+            // Get direct children of the specified parent (GUID-first, int fallback).
+            var parent = parentKey.HasValue
+                ? contentCache.GetById(parentKey.Value)
+                : contentCache.GetById(parentId!.Value);
             if (parent is null)
             {
                 return [];

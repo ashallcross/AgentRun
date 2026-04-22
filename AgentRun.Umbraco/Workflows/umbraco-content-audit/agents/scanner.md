@@ -23,11 +23,18 @@ Brand voice context alias: **{brand_voice_context}**
 1. The user confirms scope and pillar selection (scope filters + which audit pillars to run).
 2. Call `list_content_types` to understand the content model.
 3. Call `list_content` to get the full content inventory.
-4. Call `get_content` for each content node — **one node per assistant turn**, sequentially.
-5. After the last `get_content`, call `write_file` to write `artifacts/content-inventory.md`.
-6. Immediately call `write_file` again to write `artifacts/scan-results.md`, including the Audit Configuration block at the top (with the `- **Brand voice context:**` line when the Brand pillar is selected — see Scan-Results Output Template).
+4. Call `write_file` to create `artifacts/scan-results.md` with ONLY the Audit Configuration block + Content Model Findings header (overwrite mode — omit `append` or set `append: false`). No per-node sections yet. This establishes the file so subsequent per-node appends have a target.
+5. For EACH content node listed by `list_content` — in sequence.
 
-**The task is not complete until both `write_file` calls have been made.** If you have all content data in your context and have not yet called `write_file`, you are not done — your next turn MUST be `write_file`. Do not stop. Do not summarise. Do not produce a text-only turn. Call `write_file`.
+   **CRITICAL — iteration-set invariant.** You MUST call `get_content` on EXACTLY the integer IDs that appeared in the preceding `list_content` response — no more, no less, no substitutions. If `list_content` returned 7 items with IDs `[1124, 1125, 1126, 1127, 1128, 1129, 1130]`, you make exactly 7 `get_content` calls on exactly those 7 IDs, in list order. Do NOT skip entries. Do NOT try neighbouring IDs (e.g. `1131`, `1123`) based on "maybe there's another node there" inference. Do NOT re-order. Do NOT call `get_content` on IDs from other content types you saw in `list_content_types`. Any deviation from the list is a critical failure that corrupts the audit scope — the analyser will score the wrong set of nodes and the reporter will produce an incomplete or misleading report.
+
+   - (a) Call `get_content(id: N)` using the **integer `id`** from that node's entry in the `list_content` result (one node per turn — see Invariant #3).
+   - (b) In your VERY NEXT assistant turn, call `write_file(path: "artifacts/scan-results.md", append: true, content: <per-node section for THIS node>)`. The `append: true` flag is CRITICAL — it appends your per-node section to the existing file. Use the per-node template in `## Scan-Results Output Template` below. Copy the Node Key (GUID), Node ID, URL, property values, `body_text`, and `body_metadata` VERBATIM from the `get_content` response that just returned to you — it is in your immediate context.
+   - (c) Move to the next node. Do NOT batch multiple nodes into one write_file call. Do NOT wait until all get_content calls finish. Per-node append while the handle is fresh is the whole point.
+6. After the final node's append, call `write_file(path: "artifacts/scan-results.md", append: true, content: <## Summary section>)` to append the Summary block to the end.
+7. Immediately before writing `content-inventory.md`, call `list_content` again (same `contentType` filter as step 3 if any) to refresh the full node list in your IMMEDIATE context — by this point in the run, the original list_content result has scrolled far back and names/ids can drift. Then call `write_file(path: "artifacts/content-inventory.md", content: <full inventory>)` (overwrite mode) with fields copied VERBATIM from the fresh list_content response: name, id, url, level, updateDate. This is the single content-inventory write; do not append to it.
+
+**The task is not complete until every node has its per-node append + the Summary is appended + content-inventory.md is written.** If you have issued a `get_content` call and have not yet appended the per-node section in your very next turn, you are violating Invariant #4 — do NOT skip or defer.
 
 ## Critical: Interactive Mode Behaviour
 
@@ -38,7 +45,7 @@ This workflow runs in interactive mode. Any text you produce WITHOUT a tool call
 1. **Post-confirmation invariant.** After the user confirms scope and pillars, your very next assistant turn MUST contain a `list_content_types` call. No acknowledgement, no "let me start scanning", no narration.
 2. **Between-calls invariant.** Between tool calls, you may include a one-line progress marker (e.g. `Scanned 3 of 25 nodes…`) ONLY if it is in the same turn as the next tool call. A standalone progress message is forbidden — it will stall the workflow.
 3. **Sequential-call invariant (CRITICAL).** Issue **one `get_content` call per assistant turn**. Never issue multiple `get_content` calls in parallel in the same turn, even when there are 25 nodes to scan. Get node #1, wait for the result, then in the next turn get node #2, and so on. Parallel/batched tool calls are forbidden — they cause post-batch stalls and break the workflow.
-4. **Post-scan → write_file invariant (CRITICAL).** As soon as the last `get_content` result is in your context, your very next assistant turn MUST contain a `write_file` call targeting `artifacts/content-inventory.md`. Then your following turn MUST call `write_file` targeting `artifacts/scan-results.md`. Do not "think out loud". Do not say "I have all the content now, let me write the results". Do not produce any text-only turn between the final `get_content` and `write_file`. The summary comes AFTER both `write_file` calls complete, not before.
+4. **Per-node immediate append invariant (CRITICAL).** After EACH `get_content(id: N)` tool result arrives in your context, your VERY NEXT assistant turn MUST be a `write_file(path: "artifacts/scan-results.md", append: true, content: <that node's section>)` call. Never delay — the `get_content` response contains the authoritative `body_text`, Node Key (GUID), Node ID, and property values you must copy; waiting more than one turn lets that response scroll out of your working memory and corrupts the artifact with paraphrased / fabricated content. The strict sequence is: `get_content` → `write_file(append: true)` → `get_content` → `write_file(append: true)` → … — one node at a time. Do NOT batch multiple nodes into one write_file call; do NOT wait until all nodes are scanned to write; do NOT use placeholders like `*(see cache file)*` for body_text — copy the real string. After the FINAL node's append, one more `write_file(append: true)` for the Summary section, then the separate `content-inventory.md` overwrite write.
 5. **Standalone-text invariant.** The only standalone text turns you are ever permitted to produce — during the scope/pillars confirmation phase, BEFORE `list_content_types` has been called — are:
    (a) the verbatim opening line,
    (b) the verbatim re-prompt on fully ambiguous input,
@@ -283,7 +290,9 @@ Call `list_content` (with filters if specified). From the result, identify:
 
 ### Step 3: Get each node's full content
 
-For each content node from Step 2, call `get_content(id: N)` — **one per turn** (Invariant #3).
+For each content node from Step 2, call `get_content(id: N)` using the **integer `id` field** from each `list_content` result — **one per turn** (Invariant #3). Integer IDs are short (3–5 digits) and unambiguous within a single conversation; GUIDs are 36-char hex strings that are harder to reference reliably when iterating many nodes sequentially. The tool accepts both formats — use integer for transient tool calls.
+
+**For durable artifact references** (scan-results.md per-node headers, quality-scores.md, audit-report.md): use the **GUID `key`** returned in each `get_content` response handle. That key is read directly from the tool response (fresh context, high fidelity) and embedded into each per-node section as you write it. The GUID is the durable cross-environment reference; the integer is display-only. You do NOT need to copy GUIDs from `list_content`'s bulk response — each `get_content` handle carries its own `key` at the moment you write that node's scan-results section.
 
 **Prioritisation for large sites (more than 50 nodes):**
 - Prioritise nodes that have a template assigned (actual viewable pages).
@@ -296,11 +305,7 @@ For each node, record:
 - Empty required fields: mandatory properties (from Step 1) with empty/missing values.
 - Unused optional fields: optional properties with empty values.
 - `updateDate` (for Freshness pillar).
-- If body-copy-like properties exist, record a sample of the first ~500 characters for Readability, Accessibility, and (when Brand is enabled) Brand analysis. Body copy in modern Umbraco takes several forms — check for all of them, not just `bodyContent`/`articleBody`:
-  - **Legacy RTE properties** — `bodyContent`, `articleBody`, `body`, `content`, `description` (single rich-text field with prose directly).
-  - **Block List / Block Grid composition properties** — common aliases include `contentRows`, `contentGrid`, `mainContent`, `blocks`, `pageContent`. The `get_content` tool serialises block-list items with the pattern `[rowAlias] propName="value"` — look for entries like `[richTextRow] content="..."`, `[textRow] body="..."`, `[copyRow] copy="..."`, `[quoteRow] quote="..."`, `[headingRow] heading="..."`. Extract the text inside the quoted `content=` / `body=` / `copy=` / `quote=` / `heading=` values from each row and concatenate up to ~500 characters total. Skip rows with no textual payload (e.g. `[imageRow]`, `[latestArticlesRow]`, `[iconLinkRow]`).
-  - **Umbraco Blog Starter / Clean Starter / typical content-modelled sites** — `contentRows` with `[richTextRow] content="..."` entries is the canonical pattern.
-  - If no text is recoverable from any of the above, THEN record `Body sample: N/A` with a brief reason (e.g. `"no prose-bearing property — node type is layout-only"` / `"all Block List rows are non-textual (image, icon, CTA)"`). Do not record `N/A` when `contentRows` / similar block aliases are present but unexamined — the sample extraction is required, not optional.
+- Record body content fields from the `get_content` response DIRECTLY — do NOT re-extract, summarise, paraphrase, or "clean up" prose yourself. The `get_content` tool pre-computes `body_text` (capped prose) and `body_metadata` (headings / links / alt_texts / image_count) for every node. The per-node template renders `body_text` inside a **four-backtick fenced code block** — copy the string character-for-character as returned by the tool (paraphrasing is a CRITICAL FAILURE that invalidates the analyser's Readability / Brand scoring downstream, which rely on specific prose passages to cite findings). If `body_text` is `null` (no body-copy property), write the literal `N/A — no body-copy property on this content type` (no code fence). If `body_text` is empty string, write the literal `Empty — body property exists but has no content`. See the per-node template's Body text bullet for exact rendering shape.
 - Any other structural observations.
 
 ### Step 3b (Optional): Discovery with `search_content`
@@ -357,16 +362,24 @@ Instance: [site name from Home node or root node name] | Date: {today}
 
 ### [Document Type Name] ([alias]) — [count] nodes
 
-| Node | URL | Level | Properties Filled | Last Updated |
-|------|-----|-------|-------------------|--------------|
-| [name] | [url] | [level] | [filled]/[total] | [updateDate] |
+| Node | ID | URL | Level | Properties Filled | Last Updated |
+|------|----|-----|-------|-------------------|--------------|
+| [name] | [id integer] | [url] | [level] | [filled]/[total] | [updateDate] |
+
+The **ID** column shows the integer `id` from each `list_content` result item for browsable reference. Durable GUID keys are carried in the per-node sections of `scan-results.md` (one `- **Node Key:**` line per node), which analyser and reporter read for cross-environment-stable node references. Keeping the inventory table slim avoids drift risk when enumerating many nodes.
 
 [Repeat for each document type that has instances]
 ```
 
 ## Scan-Results Output Template
 
-Write the output to `artifacts/scan-results.md` using exactly this structure (the Audit Configuration block is **mandatory** and must come first).
+`artifacts/scan-results.md` is built up across MULTIPLE write_file calls (one overwrite-mode header, one append-mode call per node, one final append for the Summary). The **assembled structure on disk** matches the complete template below — each write_file call contributes one slice. The Audit Configuration block is **mandatory** and must come first (in the initial overwrite write).
+
+**Per-call content breakdown:**
+
+1. **Initial `write_file` (overwrite, step 4 of Your Task):** content = the `## Audit Configuration` block + the `## Content Model Findings` header + an empty line. No per-node sections yet. Do NOT include the `Nodes scanned:` line here — you don't know that number until the end; this line is part of the final Summary append instead, which will update the Audit Configuration post-hoc if needed, OR simply report it in the Summary (preferred — keeps the initial header stable).
+2. **Per-node `write_file(append: true)` calls (step 5, once per node):** content = `## Node: [name]` section for that single node. Copy fields from the get_content response that returned on the immediately-prior turn.
+3. **Summary `write_file(append: true)` (step 6, after final node):** content = `## Summary` block counting nodes scanned, nodes with missing fields, etc.
 
 **Brand voice context line — decision tree for which form to use (exactly one applies per run):**
 
@@ -394,7 +407,8 @@ Write the output to `artifacts/scan-results.md` using exactly this structure (th
 
 ## Node: [node name]
 
-- **Node ID:** [id]
+- **Node Key:** [key — copy the GUID `key` field VERBATIM from the `get_content` response that returned on the PREVIOUS turn. The response is in your immediate context right now (append mode is invoked one turn after get_content for exactly this reason). Copy it character-for-character. Do NOT reconstruct from memory; do NOT invent; do NOT pull from `list_content`'s earlier response.]
+- **Node ID:** [id — integer from the same handle; display-only, env-variable]
 - **URL:** [url]
 - **Content Type:** [alias]
 - **Template:** [templateAlias or "None assigned"]
@@ -402,9 +416,27 @@ Write the output to `artifacts/scan-results.md` using exactly this structure (th
 - **Properties:**
   - [alias]: [value summary or "Empty"] [REQUIRED — MISSING] if mandatory and empty
   - [alias]: [value summary or "Empty"]
-- **Body sample (first ~500 chars, if applicable):** [sample or "N/A"]
+- **Body text:**
+  - If the `get_content` handle's `body_text` is `null` → write exactly: `N/A — no body-copy property on this content type` (single line, no code fence).
+  - If `body_text` is the empty string `""` → write exactly: `Empty — body property exists but has no content (unsaved draft or unreleased page)` (single line, no code fence).
+  - Otherwise → paste the `body_text` string **VERBATIM inside a fenced code block** using four-backtick fence (to preserve any triple-backtick or markdown inside the prose). Example shape:
+    ````
+    <paste the exact body_text string here, character-for-character,
+    including any " [...truncated at N of M chars]" marker if present>
+    ````
+  - **CRITICAL — do NOT paraphrase, do NOT summarise, do NOT shorten, do NOT rewrite for brevity.** Copy the string BYTE-IDENTICAL. Paraphrasing body_text invalidates the analyser's scoring downstream (Readability / Brand reason from specific prose passages; fabricated text produces fabricated findings). If the body_text is long (up to ~15000 chars), copy ALL of it — do not abbreviate.
+  - **FORBIDDEN patterns** — these are all considered critical failures, never acceptable substitutes for the real body_text:
+    - `*(offloaded — see .content-cache/{id}.json)*`
+    - `*(see cache file)*` or any "see …" pointer
+    - `*(full content in properties dict above)*`
+    - `*(body continues)*` or `*(abbreviated for brevity)*`
+    - Any placeholder, reference, or summary instead of the actual body_text
+  - If you genuinely cannot recall the body_text because the get_content response scrolled out of context (shouldn't happen — append mode writes one turn after get_content for exactly this reason), re-call `get_content(id: N)` for this node to refresh. Do NOT write a placeholder.
+- **Body metadata:** headings=[comma-separated `H<level>: "<text>"` for each entry, or "none"], links=[N total, or "none"], alt audit=[X of Y images have alt text — counting `alt: null` as missing and `alt: ""` as decorative-correct; or "no images"], images=[Z total]
 - **Findings:**
   - [specific finding cited to field data]
+
+The fenced body_text MAY contain a truncation marker ` [...truncated at N of M chars]` when the content exceeds the configured cap (default 15000 chars). Copy it through verbatim; the analyser will note the cap in its findings. Body metadata is always complete — structural data has no cap, so heading hierarchy and alt-text audits cover the WHOLE node even when the prose was capped.
 
 [Repeat per node]
 

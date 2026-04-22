@@ -110,7 +110,7 @@ Recency of update.
 
 ### Readability (1–10)
 
-Prose quality from body-copy fields (use the body sample recorded in scan-results).
+Prose quality from body-copy fields. Use the `body_text` value recorded in the scan-results.md "Body text:" line for this node. When the value contains the truncation marker ` [...truncated at N of M chars]`, cite the sampling boundary in your finding.
 
 - **9–10:** Clear short sentences, minimal jargon, active voice dominant.
 - **7–8:** Mostly clear, occasional long sentences or jargon.
@@ -118,13 +118,17 @@ Prose quality from body-copy fields (use the body sample recorded in scan-result
 - **3–4:** Many long sentences, heavy jargon, passive-voice dominant.
 - **1–2:** Impenetrable prose, extreme jargon density, or empty body.
 
-**Good finding:** `Readability: 5/10 — bodyContent averages 34 words/sentence; 6 passive-voice constructions in 200 words.`
+**Good finding:** `Readability: 5/10 — body_text averages 34 words/sentence; 6 passive-voice constructions in 200 words.`
 
-**Note:** If the scanner did not record a body sample (no applicable body-copy property on the content type), mark Readability as "Not applicable" for that node and do not include it in the node's overall-score average.
+**Good finding (with truncation marker):** `Readability: 6/10 — body_text averages 28 words/sentence across first 15000 of 42800 chars; findings reflect the sampled portion only.`
+
+**Note:** If the Body text line reads `"N/A — no body-copy property on this content type"`, mark Readability as "Not applicable" for that node and exclude from the node's overall-score average. If the Body text line reads `"Empty — body property exists but has no content"`, score Readability as **3/10** (an empty body is a real editorial-quality issue worth surfacing, not a skip) with finding: `Readability: 3/10 — body property is empty; unsaved draft or unreleased page. Counterfactual: populating the body raises Readability to match the site's typical range.`
 
 ### Accessibility (1–10)
 
-Heading hierarchy, link labels, alt text on in-body media — as derived from the body sample.
+Heading hierarchy, link labels, alt text on in-body media — from the `body_metadata` structural audit recorded in scan-results.md "Body metadata:" line for this node (full-extraction; no truncation).
+
+**Key:** Body metadata is ALWAYS fully extracted regardless of content length — the `body_text` cap does NOT apply to `body_metadata`. Heading hierarchy checks and alt-text audits cover ALL headings / ALL images on the node, even on long articles where `body_text` was truncated.
 
 - **9–10:** Correct heading order (H1→H2→H3); descriptive link labels; all media has alt text.
 - **7–8:** One or two minor issues.
@@ -132,9 +136,9 @@ Heading hierarchy, link labels, alt text on in-body media — as derived from th
 - **3–4:** Multiple accessibility issues across categories.
 - **1–2:** Pervasive issues; content not meaningfully accessible.
 
-**Good finding:** `Accessibility: 4/10 — heading jump from H1 to H3 (no H2); 3 of 5 images have empty alt attributes per bodyContent scan.`
+**Good finding:** `Accessibility: 4/10 — heading jump from H1 to H3 (no H2); 3 of 5 images are missing alt attributes (alt: null in body_metadata — WCAG 1.1.1 failure). 1 of 5 uses empty alt (alt: "" — accessibility-correct decorative marker, not a finding).`
 
-**Note:** If no body sample was recorded, mark Accessibility as "Not applicable" for that node.
+**Note:** If the Body metadata line indicates the content type has no body-copy property (matches the Body text `"N/A — no body-copy property on this content type"` state), mark Accessibility as "Not applicable" for that node.
 
 ### Brand (1–10)
 
@@ -152,13 +156,15 @@ Score each dimension informally, then combine into a single 1–10:
 - **3–4:** Noticeable voice drift across the node; multiple deprecated-term usages OR tone fundamentally off from the brand guide.
 - **1–2:** Complete voice mismatch or pervasive deprecated-terminology usage; brand guidelines not followed.
 
-**Good finding:** `Brand: 4/10 — bodyContent uses deprecated product name "AgentFlow" twice (per scan-results line 84); tone shifts to formal-corporate ("Our company will endeavor...") vs the brand guide's conversational directive. Counterfactual: replacing "AgentFlow" with "AgentRun" and softening two formal sentences raises to 7/10.`
+**Good finding:** `Brand: 4/10 — body_text contains deprecated product name "AgentFlow" twice (per scan-results.md Body text line for this node); tone shifts to formal-corporate ("Our company will endeavor...") vs the brand guide's conversational directive. Counterfactual: replacing "AgentFlow" with "AgentRun" and softening two formal sentences raises to 7/10.`
 
 **Weak finding (do not write):** `Brand: 4/10 — doesn't feel on-brand.`
 
-**Note:** Evidence discipline applies strictly. Every Brand score cites specific prose passages from the scanned node's body sample AND references specific brand rules from the Context Settings. A Brand score without a cited passage is wrong — mark "Insufficient data" instead.
+**Note:** Evidence discipline applies strictly. Every Brand score cites specific prose passages from the scanned node's `body_text` AND references specific brand rules from the Context Settings. A Brand score without a cited passage is wrong — mark "Insufficient data" instead.
 
-**Note:** If the scanner did not record a body sample (no prose-bearing property on this content type), mark Brand as "Not applicable" for that node and do not include it in the overall-score average.
+**Note:** If the Body text line reads `"N/A — no body-copy property on this content type"`, mark Brand as "Not applicable" for that node and exclude from overall-score average. If the Body text line reads `"Empty — body property exists but has no content"`, mark Brand as `Not applicable — empty body cannot be scored for brand alignment` (distinct from Readability's 3/10 score for empty body; Brand strictly requires prose to score).
+
+**Truncation-marker citation discipline:** When `body_text` contains the truncation marker ` [...truncated at N of M chars]`, cite the sampling boundary in your finding (`"scored against first 15000 of 42800 chars"`); the cap does not lower the score per se, but the counterfactual may reasonably note that a fuller sample could change the assessment.
 
 **Brand voice context unavailable mid-run (defensive):** If the `get_ai_context` call at step 2a returns an error envelope (shouldn't happen — scanner gated it — but defensive), mark each node's Brand score as `Not scored — Brand voice context '<alias>' became unavailable mid-run. Report to site administrator.` and continue scoring the other pillars. Do NOT silently drop Brand.
 
@@ -193,7 +199,8 @@ Analysed: [n] nodes across [k] pillars | Date: {today} | Pillars: [resolved pill
 
 ## Node: [node name]
 
-- **Node ID:** [id]
+- **Node Key:** [key — the GUID read from the Node Key field in scan-results.md; primary node reference]
+- **Node ID:** [id — from scan-results.md; display-only, env-variable]
 - **URL:** [url]
 - **Content Type:** [alias]
 - **Overall Score:** [average]/10

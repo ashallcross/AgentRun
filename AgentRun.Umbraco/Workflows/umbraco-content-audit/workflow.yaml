@@ -9,8 +9,20 @@ mode: interactive
 # your site's brand voice. Leave as "" to run the v1 6-pillar audit unchanged.
 # When set, the scanner pre-validates the alias before starting the audit and
 # halts with a structured error if the alias does not resolve.
+#
+# content_audit_body_max_chars caps the body_text field on each get_content
+# response (block-list / RTE / body-copy prose is extracted in C# before the
+# response envelope is returned, stripped of HTML, and capped at this many
+# chars with a literal "[...truncated at N of M chars]" marker appended when
+# the full prose exceeds the cap). Default 15000 covers ~95% of editorial
+# content fully. Lower for large-site audits (200+ nodes) where prompt budget
+# matters; raise for sites with long-form pillar pages. Non-integer / zero /
+# negative values fall back to the 15000 default + a per-step Warning log.
+# Body metadata (headings / links / alt_texts / image_count) is always fully
+# extracted — this cap does NOT apply to structural audits.
 config:
   brand_voice_context: ""
+  content_audit_body_max_chars: "15000"
 
 # ─── Optional: per-step profile routing ───
 # Route cheap/mechanical steps (scanner, analyser) to a fast model and the

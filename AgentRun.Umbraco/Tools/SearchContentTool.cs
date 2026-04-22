@@ -62,8 +62,8 @@ public class SearchContentTool : IWorkflowTool
                     "description": "Filter results to this document-type alias (e.g. 'articlePage'). Omit to search across all types."
                 },
                 "parentId": {
-                    "type": "integer",
-                    "description": "Filter results to descendants of this content node ID. Omit to search the whole tree."
+                    "type": ["integer", "string"],
+                    "description": "Filter results to descendants of this node — either the Umbraco GUID Key (preferred; durable across environments) or the integer tree ID (legacy; env-variable). Omit to search the whole tree."
                 },
                 "count": {
                     "type": "integer",
@@ -138,17 +138,18 @@ public class SearchContentTool : IWorkflowTool
         var contentType = ContentToolHelpers.ExtractOptionalStringArgument(arguments, "contentType");
 
         int? parentId;
+        Guid? parentKey;
         try
         {
-            parentId = ContentToolHelpers.ExtractOptionalIntArgument(arguments, "parentId");
+            (parentId, parentKey) = ContentToolHelpers.ExtractOptionalNodeRefArgument(arguments, "parentId");
         }
         catch (ToolExecutionException)
         {
-            // Surface positive-integer validation as a structured error rather than throwing.
+            // Surface malformed-ref validation as a structured error rather than throwing.
             return Task.FromResult<object>(JsonSerializer.Serialize(new
             {
                 error = "invalid_argument",
-                message = "'parentId' must be a positive integer."
+                message = "'parentId' must be a positive integer or a GUID string."
             }));
         }
 
@@ -229,7 +230,7 @@ public class SearchContentTool : IWorkflowTool
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var hits = MapHits(searchResults, parentId);
+        var hits = MapHits(searchResults, parentId, parentKey);
 
         if (hits.Count == 0)
         {
@@ -240,13 +241,32 @@ public class SearchContentTool : IWorkflowTool
         return Task.FromResult<object>(JsonSerializer.Serialize(hits, JsonOptions));
     }
 
-    private List<object> MapHits(ISearchResults results, int? parentId)
+    // Per-execution dedup gate for the "key resolution failed" Warning so a
+    // stale-index cluster of hits doesn't produce per-hit log spam. Reset on
+    // every MapHits invocation; never a long-lived static.
+    private bool _loggedKeyResolutionFailure;
+
+    private List<object> MapHits(ISearchResults results, int? parentId, Guid? parentKey)
     {
-        // Narrow UmbracoContext scope to the URL-provider call path (D10).
-        // IPublishedUrlProvider.GetUrl(int) requires an ambient Umbraco context; the
-        // Examine query itself does not. We materialise the list inside the scope so
-        // the context stays open for all GetUrl calls.
+        _loggedKeyResolutionFailure = false;
+
+        // Narrow UmbracoContext scope to the URL-provider + key-resolution call paths (D10).
+        // IPublishedUrlProvider.GetUrl(int) and IPublishedContentCache.GetById(int) require
+        // an ambient Umbraco context; the Examine query itself does not. We materialise the
+        // list inside the scope so the context stays open for all lookup calls.
         using var contextReference = _umbracoContextFactory.EnsureUmbracoContext();
+        var contentCache = contextReference.UmbracoContext.Content;
+
+        // Resolve GUID parentKey → int at the filter boundary (deferred-work option a) so
+        // the existing __Path CSV-containment logic can continue to use integer matching
+        // — Umbraco's path field is integer-based by construction. Returns null if the
+        // GUID doesn't resolve to a published node; the filter then rejects every hit.
+        int? effectiveParentId = parentId;
+        if (!effectiveParentId.HasValue && parentKey.HasValue && contentCache is not null)
+        {
+            var parent = contentCache.GetById(parentKey.Value);
+            effectiveParentId = parent?.Id;
+        }
 
         var list = new List<object>();
         var preFilterCount = 0;
@@ -263,13 +283,50 @@ public class SearchContentTool : IWorkflowTool
                 continue;
             }
 
-            if (parentId.HasValue && !IsDescendantOf(r, parentId.Value))
+            if (effectiveParentId.HasValue && !IsDescendantOf(r, effectiveParentId.Value))
             {
                 continue;
             }
 
+            // Resolve GUID Key for each hit — prefer Examine's __Key field if indexed,
+            // fall back to content-cache lookup. Umbraco's default External index writes
+            // __Key for all content items, so the Examine path is the common case.
+            //
+            // When neither source resolves the key (rare — stale index entry pointing at
+            // a deleted node, or a custom indexer that omits __Key), emit `key: null`
+            // rather than `Guid.Empty`. Guid.Empty would silently collide across failed
+            // hits AND get rejected by ExtractRequiredNodeRefArgument — confusing for
+            // downstream agents. A null key signals "key unavailable; fall back to id
+            // for this hit" and is logged once per execution so operators can diagnose
+            // index drift without log-spam per hit.
+            Guid? key = null;
+            if (r.Values.TryGetValue("__Key", out var keyRaw)
+                && !string.IsNullOrWhiteSpace(keyRaw)
+                && Guid.TryParse(keyRaw, out var parsedKey)
+                && parsedKey != Guid.Empty)
+            {
+                key = parsedKey;
+            }
+            else if (contentCache is not null)
+            {
+                var cacheKey = contentCache.GetById(id)?.Key;
+                if (cacheKey.HasValue && cacheKey.Value != Guid.Empty)
+                {
+                    key = cacheKey.Value;
+                }
+            }
+
+            if (!key.HasValue && !_loggedKeyResolutionFailure)
+            {
+                _loggedKeyResolutionFailure = true;
+                _logger.LogWarning(
+                    "search_content: one or more hits returned without a resolvable GUID key (id {Id}) — agents will see `key: null` and should fall back to `id`. This typically indicates index drift or a custom indexer that omits __Key.",
+                    id);
+            }
+
             list.Add(new
             {
+                key,
                 id,
                 name = r.Values.TryGetValue(NodeNameField, out var n) ? n ?? string.Empty : string.Empty,
                 contentType = r.Values.TryGetValue(NodeTypeAliasField, out var t) ? t ?? string.Empty : string.Empty,
@@ -279,11 +336,11 @@ public class SearchContentTool : IWorkflowTool
             });
         }
 
-        if (parentId.HasValue && list.Count < preFilterCount)
+        if (effectiveParentId.HasValue && list.Count < preFilterCount)
         {
             _logger.LogDebug(
                 "search_content: parentId {ParentId} filter reduced {PreFilter} hits to {PostFilter} (descendants of {ParentId})",
-                parentId.Value, preFilterCount, list.Count, parentId.Value);
+                effectiveParentId.Value, preFilterCount, list.Count, effectiveParentId.Value);
         }
 
         return list;

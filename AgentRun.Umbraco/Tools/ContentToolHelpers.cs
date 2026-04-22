@@ -71,6 +71,124 @@ public static class ContentToolHelpers
         return CoerceToPositiveInt(value, name);
     }
 
+    /// <summary>
+    /// Extract a node reference argument that accepts EITHER a positive integer (legacy
+    /// tree ID — display-only, not durable across environments) OR a GUID string (Umbraco
+    /// Key — durable, cross-environment-stable). Returns exactly one of <paramref name="id"/>
+    /// or <paramref name="key"/> populated; the other is <see langword="null"/>. Throws
+    /// <see cref="ToolExecutionException"/> on missing / empty / malformed input.
+    /// </summary>
+    /// <remarks>
+    /// Mirror of <c>GetAiContextTool.TryExtractContentNodeRef</c> but as a throwing helper
+    /// that matches the <c>ExtractRequiredIntArgument</c> contract used by the other
+    /// content tools. Captured under memory <c>feedback_guid_over_integer_id.md</c> — the
+    /// going-forward rule is that node references in tool contracts must accept GUIDs.
+    /// </remarks>
+    public static (int? Id, Guid? Key) ExtractRequiredNodeRefArgument(
+        IDictionary<string, object?> arguments,
+        string name)
+    {
+        if (!arguments.TryGetValue(name, out var value) || value is null)
+        {
+            throw new ToolExecutionException($"Missing required argument: '{name}'");
+        }
+
+        return CoerceToNodeRef(value, name, required: true)
+               ?? throw new ToolExecutionException($"Missing required argument: '{name}'");
+    }
+
+    /// <summary>
+    /// Optional-variant of <see cref="ExtractRequiredNodeRefArgument"/>. Returns
+    /// <c>(null, null)</c> when the argument is missing, null, or a whitespace-only
+    /// string (LLMs occasionally emit `" "` as a filler for "no value"). Otherwise
+    /// exactly one of <c>Id</c> / <c>Key</c> is populated. Throws on non-whitespace
+    /// malformed input (e.g. `"0"`, `"abc"`) so bad references surface loudly.
+    /// </summary>
+    public static (int? Id, Guid? Key) ExtractOptionalNodeRefArgument(
+        IDictionary<string, object?> arguments,
+        string name)
+    {
+        if (!arguments.TryGetValue(name, out var value) || value is null)
+        {
+            return (null, null);
+        }
+
+        // Whitespace-only strings and whitespace-only JsonElement strings are
+        // treated as "absent" to match ExtractOptionalStringArgument's semantics.
+        if (value is string s && string.IsNullOrWhiteSpace(s))
+        {
+            return (null, null);
+        }
+        if (value is JsonElement je
+            && je.ValueKind == JsonValueKind.String
+            && string.IsNullOrWhiteSpace(je.GetString()))
+        {
+            return (null, null);
+        }
+
+        return CoerceToNodeRef(value, name, required: false)
+               ?? (null, null);
+    }
+
+    private static (int? Id, Guid? Key)? CoerceToNodeRef(object value, string name, bool required)
+    {
+        // Unwrap JsonElement to native value so one parsing path covers CLR and JSON inputs.
+        object? unwrapped = value;
+        if (value is JsonElement je)
+        {
+            unwrapped = je.ValueKind switch
+            {
+                JsonValueKind.Number => je.TryGetInt64(out var n) ? (object)n : null,
+                JsonValueKind.String => je.GetString(),
+                JsonValueKind.Null => null,
+                _ => null
+            };
+            if (unwrapped is null)
+            {
+                if (!required) return (null, null);
+                throw new ToolExecutionException(
+                    $"Argument '{name}' must be a positive integer or a GUID string");
+            }
+        }
+
+        // Integer path — accepts int, long (range-checked), double-whole, or numeric string.
+        // String-numeric inputs (e.g. "1124") parse as int BEFORE attempting GUID parse so
+        // callers that want to pass integers as strings aren't forced to the GUID error path.
+        int? parsedInt = unwrapped switch
+        {
+            int i => i,
+            long l when l is <= int.MaxValue and >= int.MinValue => (int)l,
+            double d when !double.IsNaN(d) && !double.IsInfinity(d)
+                           && d <= int.MaxValue && d >= int.MinValue
+                           && Math.Abs(d - Math.Truncate(d)) < double.Epsilon => (int)d,
+            string s when int.TryParse(s, System.Globalization.NumberStyles.Integer,
+                                       System.Globalization.CultureInfo.InvariantCulture, out var n) => n,
+            _ => null
+        };
+
+        if (parsedInt is not null)
+        {
+            if (parsedInt <= 0)
+            {
+                throw new ToolExecutionException(
+                    $"Argument '{name}' must be a positive integer or a GUID string");
+            }
+            return (parsedInt, null);
+        }
+
+        // GUID path — string that parses as Guid (D format and variants accepted).
+        if (unwrapped is string str && !string.IsNullOrWhiteSpace(str))
+        {
+            if (Guid.TryParse(str, out var key) && key != Guid.Empty)
+            {
+                return (null, key);
+            }
+        }
+
+        throw new ToolExecutionException(
+            $"Argument '{name}' must be a positive integer or a GUID string");
+    }
+
     // Binary-search truncation: find the largest prefix of `items` whose serialised JSON
     // plus marker fits within `limitBytes`. Replaces O(n²) "remove-one-re-serialise" loops.
     // `serialise` owns the outer shape so GetContentTool can wrap the subset in a

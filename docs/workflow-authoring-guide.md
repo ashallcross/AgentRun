@@ -867,9 +867,35 @@ Writes content to a file in the instance's working directory.
 |------|----------|-------------|
 | `path` | Yes | Relative file path within the instance folder |
 | `content` | Yes | The content to write (can be empty) |
+| `append` | No | If `true`, append content to the existing file (creating it if absent). If `false` or omitted, overwrite the file atomically. |
 
-Creates parent directories as needed. Writes are atomic (temp file + rename) so partially
-written files never appear on disk.
+Creates parent directories as needed. **Overwrite mode** (default) is atomic (temp file +
+rename) so partially written files never appear on disk. **Append mode** is not atomic — the
+file may be partially written if cancellation fires mid-write. That's the right trade-off for
+append's use case: streaming per-item outputs where each append happens while the source data
+is fresh in the agent's context.
+
+**Append size cap.** Append-mode writes are bounded at 10 MB per file (aggregate existing
+size + incoming content). A write that would exceed this returns a structured
+`ToolExecutionException` the agent can self-correct on. The cap guards against runaway
+tool-call loops and keeps `read_file` downstream readable. Overwrite-mode writes have no
+aggregate cap — they're naturally bounded by each call's content size.
+
+**Append typo guard.** When `append: true` creates a previously-missing file, a Warning is
+logged so operators can catch path typos (e.g. `scan-resultts.md` vs `scan-results.md`)
+that silently produce parallel malformed artifacts.
+
+**When to use `append: true`.** LLMs reliably copy tool-result data into markdown while that
+data is in immediate context (1–2 turns old), but lose fidelity as the data scrolls back
+(4+ turns). A workflow that scans N items and writes a consolidated report can hit
+content-drift / hallucination if it batches all N items into a single final `write_file`
+call. The fix: initialise the report with `write_file(append: false)` (header only), then after
+each per-item tool call immediately append that item's section via `write_file(append: true,
+content: <that item's section>)`. Each append happens one turn after the item's tool response
+so the data is fresh, producing byte-accurate markdown. Then a final append for any summary.
+
+This pattern is the intended use for streaming scanners, per-URL fetch-and-summarise workflows,
+per-node audit reports, per-ticket triage logs, and similar iteration-heavy outputs.
 
 **Security:** same path sandboxing as `read_file`.
 
@@ -911,16 +937,23 @@ indicating how many nodes were returned vs total.
 
 ### `get_content`
 
-Gets the full details and property values of a single published content node by ID.
+Gets the full details and property values of a single published content node by ID or Key.
 
 **Parameters:**
 
 | Name | Required | Description |
 |------|----------|-------------|
-| `id` | Yes | The ID of the published content node to retrieve |
+| `id` | Yes | The node reference — either the Umbraco GUID **Key** (preferred; durable across environments) or the integer tree ID (legacy; env-variable). Both formats accepted; the backoffice URL typically shows the GUID. |
 
-Returns a JSON object: `id`, `name`, `contentType`, `url`, `level`, `createDate`, `updateDate`,
-`creatorName`, `templateAlias`, `properties` (object mapping alias to extracted text value).
+Returns a **summary handle** to the LLM (full content is offloaded to an instance-local cache
+file — see "Offload" below): **`key`** (GUID — primary node reference), `id` (integer — display
+only), `name`, `contentType`, `url`, `propertyCount`, `size_bytes`, `saved_to`, `truncated`,
+**`body_text`**, **`body_metadata`**.
+
+**GUID-first node identification:** Integer `id` values vary across environments (dev ≠ stage ≠
+prod, DB restores can renumber) and should be treated as display-only. The GUID `key` is the
+durable reference. Artifacts that reference nodes (scan-results.md, quality-scores.md,
+downstream memory, cross-workflow refs) should carry the GUID to survive environment promotion.
 
 Property extraction: Rich Text is stripped to plain text, Text String/Textarea as-is, Content
 Picker shows name + URL, Media Picker shows name + URL + alt text, Block List/Grid shows
@@ -929,6 +962,112 @@ source value.
 
 **Access:** same in-process published content cache. Large responses are truncated by removing
 properties from the end.
+
+#### Offload
+
+The full response (11 fields: `key`, `id`, `name`, `contentType`, `url`, `level`,
+`createDate`, `updateDate`, `creatorName`, `templateAlias`, and the `properties` dict) is
+written to `.content-cache/{id}.json` within the workflow instance folder. The LLM receives
+only the summary handle. Workflows that need to re-read full content between steps use
+`read_file` on the cache file path in `saved_to`.
+
+Note: the cache file carries `key` (GUID) as its primary node reference alongside the
+integer `id` — durable artifacts that reference nodes should read the GUID from the cache
+file, not just the display-only integer id. `body_text` and `body_metadata` are handle-only
+and do NOT appear in the cache file.
+
+#### Body extraction (`body_text` + `body_metadata`)
+
+Two additive fields on the summary handle carry pre-extracted body content, computed
+deterministically in C# before the response is returned:
+
+- **`body_text`** — concatenated prose extracted from the node's body-copy property, HTML
+  stripped and whitespace normalised. Capped via workflow-level config (default 15000 chars).
+  When the full prose exceeds the cap, the literal marker ` [...truncated at N of M chars]` is
+  appended — M is the pre-cap length, so operators can see how much content was excluded.
+- **`body_metadata`** — always-full structural extraction (never capped): `headings` (list of
+  `{level, text}`), `links` (list of `{text, target}`), `alt_texts` (list of
+  `{image_src, alt}`), `image_count`. Parsed via AngleSharp from the full concatenated HTML
+  (not the truncated body_text).
+
+**Which property yields the body?** A 3-tier first-match-wins priority list walks
+`node.Properties`:
+
+1. **Tier 1 — Block List / Block Grid composition aliases (in order):**
+   `contentRows`, `mainContent`, `pageContent`, `blocks`, `contentGrid`
+2. **Tier 2 — direct text / RTE aliases (in order):** `bodyContent`, `bodyText`, `articleBody`,
+   `body`, `content`, `description`, `richText`
+3. **Tier 3 — editor-alias fallback:** any property whose `PropertyType.EditorAlias` is
+   `Umbraco.RichText`, `Umbraco.BlockList`, or `Umbraco.BlockGrid` (in property-declaration
+   order). `Umbraco.TextBox` / `Umbraco.TextArea` are intentionally NOT matched in Tier 3 —
+   short-text editors imply non-body use (headlines, SEO titles).
+
+**Three-state return distinction:**
+
+- Both fields `null` → content type has no body-copy property at all (layout-only / navigation /
+  redirect node).
+- `body_text: ""` + `body_metadata: {headings: [], links: [], alt_texts: [], image_count: 0}` →
+  body property exists but contains no prose (unsaved draft, empty block list, all blocks are
+  non-textual — images only, CTAs only, etc.).
+- `body_text: "<prose>"` + populated `body_metadata` → body content was successfully extracted.
+
+**Alt-text three-state preservation (WCAG-aware):**
+
+| HTML | `alt_texts` entry |
+|---|---|
+| `<img src="/hero.jpg" alt="Hero banner">` | `{image_src: "/hero.jpg", alt: "Hero banner"}` |
+| `<img src="/deco.jpg" alt="">` | `{image_src: "/deco.jpg", alt: ""}` (decorative — WCAG H67 correct) |
+| `<img src="/missing.jpg">` | `{image_src: "/missing.jpg", alt: null}` (WCAG 1.1.1 failure) |
+
+#### Configuration — `content_audit_body_max_chars`
+
+Set in the workflow's `config:` block (per-workflow, not site-wide):
+
+```yaml
+config:
+  content_audit_body_max_chars: "15000"  # string per YAML constraint; parsed at tool runtime
+```
+
+- Default: **15000** (covers ~95% of editorial content fully; very long pillar pages get
+  truncated with marker).
+- Lower (e.g. `"5000"`) for large-site audits where prompt budget matters across 200+ nodes.
+- Raise (e.g. `"50000"`) for sites with long-form pillar pages where sampling risk matters.
+- Non-integer / zero / negative values fall back to 15000 + a per-(stepId, value) deduped
+  Warning log.
+- Values above 10,000,000 (the internal upper bound guarding against OOM allocations) also
+  fall back to 15000 with the same deduped Warning.
+- The cap applies to `body_text` ONLY. `body_metadata` is never capped for `body_text`
+  budget reasons, but each metadata list (`headings`, `links`, `alt_texts`) is bounded at
+  1000 items as a defensive cap against pathological auto-generated pages.
+  `image_count` always reflects the true image total so accessibility audits can detect
+  the truncation.
+
+#### Caveats
+
+- **Nested Block Lists / Block Grids** — the extractor recurses up to 5 levels deep. Nested
+  block content (Block Grid column containing a Block List, etc.) is extracted. Deeper
+  nesting than 5 levels is truncated with a Warning log — surface those as separate
+  top-level properties if you need to audit them.
+- **Empty Block Lists** — a content type with an empty Block List property alongside a
+  populated Rich Text body (common draft pattern) falls through to the Rich Text property
+  rather than returning the "empty body" state. The empty state is reserved for content
+  types whose only body-bearing property is genuinely empty (null or zero blocks).
+- **Multi-language variants** — extracts the default-language value (same as existing
+  `get_content` behaviour for all properties).
+- **Custom property editors** — Tier 3 only matches Umbraco's built-in RichText/BlockList/
+  BlockGrid editors. A custom editor alias that stores rich prose but doesn't match any alias
+  in Tiers 1/2 will be missed. Standardise on the canonical aliases (`contentRows`,
+  `bodyContent`, etc.) to benefit from extraction.
+- **Cache file has 11 fields, body fields are handle-only** — `.content-cache/{id}.json`
+  carries `key` (GUID) + 10 node-identity/content fields. `body_text` and `body_metadata`
+  are NOT in the cache file; downstream tools reading the cache get the raw `properties`
+  dict and can run their own extraction if needed.
+- **Character-set safety** — truncation walks back to the previous grapheme boundary if the
+  cap would split a surrogate pair (emoji, CJK supplementary-plane characters) so
+  `body_text` always round-trips cleanly through UTF-8.
+- **Scripts and styles stripped** — `<script>` / `<style>` subtrees are removed wholesale
+  before tag-stripping so neither their tags nor their text content appear in `body_text`.
+  Metadata (`body_metadata`) is parsed via AngleSharp and follows the same DOM semantics.
 
 ### `list_content_types`
 

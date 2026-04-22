@@ -226,6 +226,165 @@ public class ContentToolHelpersTests
         Assert.That(json, Does.Contain("[truncated — 0 of 1]"));
     }
 
+    // ---------- Node-ref extractor: GUID-first retrofit ----------
+
+    [Test]
+    public void ExtractRequiredNodeRefArgument_IntegerInput_ReturnsIdNullKey()
+    {
+        var args = new Dictionary<string, object?> { ["id"] = 1124 };
+
+        var (id, key) = ContentToolHelpers.ExtractRequiredNodeRefArgument(args, "id");
+
+        Assert.That(id, Is.EqualTo(1124));
+        Assert.That(key, Is.Null);
+    }
+
+    [Test]
+    public void ExtractRequiredNodeRefArgument_GuidStringInput_ReturnsKeyNullId()
+    {
+        var guid = Guid.NewGuid();
+        var args = new Dictionary<string, object?> { ["id"] = guid.ToString("D") };
+
+        var (id, key) = ContentToolHelpers.ExtractRequiredNodeRefArgument(args, "id");
+
+        Assert.That(id, Is.Null);
+        Assert.That(key, Is.EqualTo(guid));
+    }
+
+    [Test]
+    public void ExtractRequiredNodeRefArgument_StringIntegerInput_ResolvesAsInt()
+    {
+        // Callers that pass integer-as-string should take the int path rather
+        // than falling through to the GUID parser error.
+        var args = new Dictionary<string, object?> { ["id"] = "1124" };
+
+        var (id, key) = ContentToolHelpers.ExtractRequiredNodeRefArgument(args, "id");
+
+        Assert.That(id, Is.EqualTo(1124));
+        Assert.That(key, Is.Null);
+    }
+
+    [Test]
+    public void ExtractRequiredNodeRefArgument_JsonElementInteger_Works()
+    {
+        var doc = JsonDocument.Parse("""{"id": 1124}""");
+        var args = new Dictionary<string, object?> { ["id"] = doc.RootElement.GetProperty("id") };
+
+        var (id, key) = ContentToolHelpers.ExtractRequiredNodeRefArgument(args, "id");
+
+        Assert.That(id, Is.EqualTo(1124));
+        Assert.That(key, Is.Null);
+    }
+
+    [Test]
+    public void ExtractRequiredNodeRefArgument_JsonElementGuidString_Works()
+    {
+        var guid = Guid.NewGuid();
+        var doc = JsonDocument.Parse($$"""{"id": "{{guid:D}}"}""");
+        var args = new Dictionary<string, object?> { ["id"] = doc.RootElement.GetProperty("id") };
+
+        var (id, key) = ContentToolHelpers.ExtractRequiredNodeRefArgument(args, "id");
+
+        Assert.That(id, Is.Null);
+        Assert.That(key, Is.EqualTo(guid));
+    }
+
+    [TestCase(0)]
+    [TestCase(-1)]
+    public void ExtractRequiredNodeRefArgument_NonPositiveInt_Throws(int bad)
+    {
+        var args = new Dictionary<string, object?> { ["id"] = bad };
+
+        var ex = Assert.Throws<ToolExecutionException>(
+            () => ContentToolHelpers.ExtractRequiredNodeRefArgument(args, "id"));
+        Assert.That(ex!.Message, Does.Contain("positive integer or a GUID string"));
+    }
+
+    [TestCase("not-a-guid")]
+    [TestCase("12.34")]
+    [TestCase("00000000-0000-0000-0000-000000000000")] // Guid.Empty rejected
+    public void ExtractRequiredNodeRefArgument_MalformedString_Throws(string bad)
+    {
+        var args = new Dictionary<string, object?> { ["id"] = bad };
+
+        Assert.Throws<ToolExecutionException>(
+            () => ContentToolHelpers.ExtractRequiredNodeRefArgument(args, "id"));
+    }
+
+    [Test]
+    public void ExtractRequiredNodeRefArgument_Missing_Throws()
+    {
+        var args = new Dictionary<string, object?>();
+
+        var ex = Assert.Throws<ToolExecutionException>(
+            () => ContentToolHelpers.ExtractRequiredNodeRefArgument(args, "id"));
+        Assert.That(ex!.Message, Does.Contain("Missing required argument"));
+    }
+
+    [Test]
+    public void ExtractOptionalNodeRefArgument_Missing_ReturnsNullPair()
+    {
+        var args = new Dictionary<string, object?>();
+
+        var (id, key) = ContentToolHelpers.ExtractOptionalNodeRefArgument(args, "parentId");
+
+        Assert.That(id, Is.Null);
+        Assert.That(key, Is.Null);
+    }
+
+    [Test]
+    public void ExtractOptionalNodeRefArgument_GuidString_ReturnsKey()
+    {
+        var guid = Guid.NewGuid();
+        var args = new Dictionary<string, object?> { ["parentId"] = guid.ToString("D") };
+
+        var (id, key) = ContentToolHelpers.ExtractOptionalNodeRefArgument(args, "parentId");
+
+        Assert.That(id, Is.Null);
+        Assert.That(key, Is.EqualTo(guid));
+    }
+
+    // ---------- Post-2026-04-22 code review patches ----------
+
+    [Test]
+    public void ExtractOptionalNodeRefArgument_WhitespaceOnlyString_ReturnsNullPair()
+    {
+        // Regression for Edge Case Hunter #15: LLMs occasionally emit " " as a
+        // filler for "no value". Other optional helpers (ExtractOptionalStringArgument)
+        // treat whitespace as null; the node-ref optional helper now does the same.
+        var args = new Dictionary<string, object?> { ["parentId"] = "   " };
+
+        var (id, key) = ContentToolHelpers.ExtractOptionalNodeRefArgument(args, "parentId");
+
+        Assert.That(id, Is.Null);
+        Assert.That(key, Is.Null);
+    }
+
+    [Test]
+    public void ExtractOptionalNodeRefArgument_WhitespaceOnlyJsonString_ReturnsNullPair()
+    {
+        // Same rule for JsonElement-wrapped whitespace-only strings.
+        using var doc = System.Text.Json.JsonDocument.Parse("\"   \"");
+        var args = new Dictionary<string, object?> { ["parentId"] = doc.RootElement.Clone() };
+
+        var (id, key) = ContentToolHelpers.ExtractOptionalNodeRefArgument(args, "parentId");
+
+        Assert.That(id, Is.Null);
+        Assert.That(key, Is.Null);
+    }
+
+    [Test]
+    public void ExtractOptionalNodeRefArgument_MalformedNonWhitespaceString_StillThrows()
+    {
+        // Non-whitespace malformed strings must still surface loudly so bad
+        // references aren't silently dropped. Distinct from the whitespace case.
+        var args = new Dictionary<string, object?> { ["parentId"] = "not-a-ref" };
+
+        var ex = Assert.Throws<ToolExecutionException>(
+            () => ContentToolHelpers.ExtractOptionalNodeRefArgument(args, "parentId"));
+        Assert.That(ex!.Message, Does.Contain("positive integer"));
+    }
+
     private static int ComputeLinearReferenceCount<T>(
         IList<T> items,
         int limitBytes,

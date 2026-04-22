@@ -161,7 +161,10 @@ public class SearchContentToolTests
 
         Assert.That(props.GetProperty("query").GetProperty("type").GetString(), Is.EqualTo("string"));
         Assert.That(props.GetProperty("contentType").GetProperty("type").GetString(), Is.EqualTo("string"));
-        Assert.That(props.GetProperty("parentId").GetProperty("type").GetString(), Is.EqualTo("integer"));
+        // parentId accepts both integer (legacy) and GUID string (preferred) post-GUID retrofit.
+        var parentIdType = props.GetProperty("parentId").GetProperty("type");
+        var parentIdTypes = parentIdType.EnumerateArray().Select(t => t.GetString()).ToArray();
+        Assert.That(parentIdTypes, Is.EquivalentTo(new[] { "integer", "string" }));
         Assert.That(props.GetProperty("count").GetProperty("type").GetString(), Is.EqualTo("integer"));
     }
 
@@ -509,6 +512,39 @@ public class SearchContentToolTests
         Assert.That(async () => await _tool.ExecuteAsync(
             new Dictionary<string, object?> { ["query"] = "x" }, ctx, CancellationToken.None),
             Throws.TypeOf<ToolContextMissingException>());
+    }
+
+    // ---------- Post-2026-04-22 code review patches ----------
+
+    [Test]
+    public async Task KeyResolution_Fails_EmitsNullKeyNotGuidEmpty()
+    {
+        // Regression for Blind Hunter #2: when neither the Examine __Key field
+        // nor the content cache resolves the hit's GUID key, the pre-patch code
+        // emitted Guid.Empty. That value (a) collides across failed hits and
+        // (b) is rejected by ExtractRequiredNodeRefArgument. The patch emits
+        // `key: null` instead so agents can fall back to `id`.
+        ArrangeResults(
+            MakeHit(1100, "Unresolved 1", "articlePage", "-1,1000,1100"),
+            MakeHit(1200, "Unresolved 2", "articlePage", "-1,1000,1200"));
+
+        var result = await Exec(new Dictionary<string, object?> { ["query"] = "x" });
+        var json = JsonDocument.Parse(result).RootElement;
+
+        Assert.That(json.GetArrayLength(), Is.EqualTo(2),
+            "Hits with unresolvable key must still be emitted, not dropped");
+
+        foreach (var hit in json.EnumerateArray())
+        {
+            var keyElement = hit.GetProperty("key");
+            Assert.That(keyElement.ValueKind, Is.EqualTo(JsonValueKind.Null),
+                "key must be null (not Guid.Empty) when neither __Key nor content cache resolves");
+        }
+
+        Assert.That(_logger.Entries.Count(e => e.Level == LogLevel.Warning
+            && e.Message.Contains("without a resolvable GUID key", StringComparison.Ordinal)),
+            Is.EqualTo(1),
+            "Per-execution Warning must fire exactly once regardless of the number of unresolved hits");
     }
 
     // ---------- Shared test helper ----------

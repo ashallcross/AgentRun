@@ -291,14 +291,20 @@ public class ListContentToolTests
     }
 
     [Test]
-    public void NegativeParentId_ThrowsToolExecutionException()
+    public async Task NegativeParentId_ReturnsStructuredInvalidArgumentEnvelope()
     {
+        // Post-11.16 code review patch — ListContentTool now surfaces malformed
+        // parentId values via a structured error envelope that matches
+        // SearchContentTool's behaviour. Agents can self-correct without their
+        // tool-call loop being interrupted by a raw exception.
         var args = new Dictionary<string, object?> { ["parentId"] = -1 };
 
-        var ex = Assert.ThrowsAsync<ToolExecutionException>(
-            () => _tool.ExecuteAsync(args, _context, CancellationToken.None));
+        var result = await _tool.ExecuteAsync(args, _context, CancellationToken.None);
+        var json = JsonDocument.Parse((string)result).RootElement;
 
-        Assert.That(ex!.Message, Does.Contain("positive integer"));
+        Assert.That(json.GetProperty("error").GetString(), Is.EqualTo("invalid_argument"));
+        Assert.That(json.GetProperty("message").GetString(), Does.Contain("positive integer"));
+        Assert.That(json.GetProperty("message").GetString(), Does.Contain("GUID"));
     }
 
     [Test]
